@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.log
+*.csv
+*.json
+.idea/
+.vscode/
+*.swp
+*.swo
+
+generated_data/
+generated_reports/
