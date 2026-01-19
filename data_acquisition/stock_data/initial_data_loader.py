@@ -14,12 +14,13 @@ import json
 from datetime import datetime
 from typing import Optional, Tuple, List
 
-from utils.unified_schema import StockData
+from utils.unified_schema import StockData, IncomeStatement, BalanceSheet, CashFlow
 from utils.logger import setup_logger
 from data_acquisition.stock_data.yahoo_fetcher import YahooFetcher
 from data_acquisition.stock_data.edgar_fetcher import EdgarFetcher
 from data_acquisition.stock_data.fmp_fetcher import FMPFetcher
 from data_acquisition.stock_data.data_merger import DataMerger
+from data_acquisition.stock_data.intelligent_merger import IntelligentMerger
 from data_acquisition.stock_data.field_validator import FieldValidator, OverallValidationResult
 
 logger = setup_logger('data_loader')
@@ -436,3 +437,134 @@ class StockDataLoader:
         except Exception as e:
             logger.error(f"Failed to load data from {file_path}: {e}")
             raise
+
+    def get_stock_data_v2(self, symbol: str) -> StockData:
+        """
+        Fetch complete data for a stock using intelligent field-level merging.
+        
+        This version collects all raw data from each source first, then uses
+        IntelligentMerger for field-level priority merging based on field_registry.
+        
+        Args:
+            symbol: Stock ticker symbol (e.g., 'AAPL')
+            
+        Returns:
+            StockData: Unified StockData object with intelligently merged fields
+        """
+        symbol = symbol.upper().strip()
+        logger.info(f"[V2] Starting intelligent data acquisition for: {symbol}")
+        
+        # =====================================================================
+        # STEP 1: Collect raw data from all sources
+        # =====================================================================
+        
+        # Yahoo Finance (Primary)
+        print(f"    Fetching from Yahoo Finance...")
+        yahoo_data = None
+        try:
+            yahoo_fetcher = YahooFetcher(symbol)
+            yahoo_data = yahoo_fetcher.fetch_all()
+            if yahoo_data.profile and yahoo_data.profile.std_sector:
+                yahoo_data.profile.std_sector = DataMerger.normalize_sector(yahoo_data.profile.std_sector)
+        except Exception as e:
+            logger.error(f"Yahoo fetch failed: {e}")
+        
+        # EDGAR (Official Source)
+        print(f"    [2/4] Fetching from SEC EDGAR...")
+        edgar_data = {'income_statements': [], 'balance_sheets': [], 'cash_flows': []}
+        try:
+            edgar_fetcher = EdgarFetcher()
+            edgar_data = edgar_fetcher.fetch_all_financials(symbol)
+        except Exception as e:
+            logger.error(f"EDGAR fetch failed: {e}")
+        
+        # FMP (Supplementary)
+        print(f"    [3/4] Fetching from FMP...")
+        fmp_data = {'income_statements': [], 'balance_sheets': [], 'cash_flows': [], 'profile': None, 'analyst_targets': None}
+        try:
+            fmp_fetcher = FMPFetcher(symbol)
+            fmp_data = fmp_fetcher.fetch_all()
+        except Exception as e:
+            logger.error(f"FMP fetch failed: {e}")
+        
+        # Alpha Vantage (Final Fallback)
+        av_income, av_balance, av_cashflow = [], [], []
+        if self.use_alphavantage:
+            print(f"    [4/4] Fetching from Alpha Vantage...")
+            try:
+                from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
+                av_fetcher = AlphaVantageFetcher(symbol)
+                av_income = av_fetcher.fetch_income_statements()
+                av_balance = av_fetcher.fetch_balance_sheets()
+                av_cashflow = av_fetcher.fetch_cash_flows()
+            except Exception as e:
+                logger.error(f"Alpha Vantage fetch failed: {e}")
+        
+        # =====================================================================
+        # STEP 2: Intelligent field-level merging
+        # =====================================================================
+        print(f"    Merging data with field-level priority...")
+        merger = IntelligentMerger(symbol)
+        
+        # Merge income statements
+        merged_income = merger.merge_statements(
+            yahoo_stmts=yahoo_data.income_statements if yahoo_data else [],
+            edgar_stmts=edgar_data.get('income_statements', []),
+            fmp_stmts=fmp_data.get('income_statements', []),
+            av_stmts=av_income,
+            statement_class=IncomeStatement
+        )
+        
+        # Merge balance sheets
+        merged_balance = merger.merge_statements(
+            yahoo_stmts=yahoo_data.balance_sheets if yahoo_data else [],
+            edgar_stmts=edgar_data.get('balance_sheets', []),
+            fmp_stmts=fmp_data.get('balance_sheets', []),
+            av_stmts=av_balance,
+            statement_class=BalanceSheet
+        )
+        
+        # Merge cash flows
+        merged_cashflow = merger.merge_statements(
+            yahoo_stmts=yahoo_data.cash_flows if yahoo_data else [],
+            edgar_stmts=edgar_data.get('cash_flows', []),
+            fmp_stmts=fmp_data.get('cash_flows', []),
+            av_stmts=av_cashflow,
+            statement_class=CashFlow
+        )
+        
+        # Merge profile (Yahoo > FMP > AV)
+        merged_profile = yahoo_data.profile if yahoo_data else None
+        if fmp_data.get('profile') and not merged_profile:
+            merged_profile = fmp_data['profile']
+        
+        # Merge analyst targets (Yahoo > FMP)
+        analyst_targets = yahoo_data.analyst_targets if yahoo_data else None
+        if fmp_data.get('analyst_targets') and not analyst_targets:
+            analyst_targets = fmp_data['analyst_targets']
+        
+        # =====================================================================
+        # STEP 3: Create final merged StockData
+        # =====================================================================
+        merged_data = StockData(
+            symbol=symbol,
+            profile=merged_profile,
+            price_history=yahoo_data.price_history if yahoo_data else [],
+            income_statements=merged_income,
+            balance_sheets=merged_balance,
+            cash_flows=merged_cashflow,
+            analyst_targets=analyst_targets
+        )
+        
+        # Validate and log
+        validation = self._validate_data(merged_data, "IntelligentMerge")
+        self._log_status(merged_data)
+        self.validation_result = validation
+        
+        # Log merge statistics
+        stats = merger.get_merge_statistics()
+        if stats:
+            stats_str = ", ".join(f"{k}:{v}" for k, v in stats.items())
+            logger.info(f"Merge statistics: {stats_str}")
+        
+        return merged_data
