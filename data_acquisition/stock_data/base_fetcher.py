@@ -1,151 +1,144 @@
 """
-Base Fetcher - Abstract base class for data fetchers.
-Provides common interface for all data sources (Yahoo, FMP, Alpha Vantage, SEC EDGAR).
-Designed for easy extension to add new data sources.
+Base Fetcher - Common utilities and protocol for all data fetchers.
+
+Provides:
+1. Standardized field creation with source tracking
+2. Common helper methods for date parsing and value conversion
+3. Registry-aware field lookups
+
+基础数据获取器 - 所有数据获取器的通用工具和协议。
 """
 
+import math
+import pandas as pd
 from abc import ABC, abstractmethod
-from typing import Optional, List, Any
-from enum import Enum
+from typing import Optional, Any, List, Dict
+from utils.unified_schema import FieldWithSource, TextFieldWithSource
+from utils.field_registry import DataSource, get_source_field_name, get_merge_priority
+from utils.logger import setup_logger
 
-from utils.unified_schema import (
-    StockData, IncomeStatement, BalanceSheet, CashFlow,
-    CompanyProfile, AnalystTargets, PriceData
-)
-
-
-class DataSource(Enum):
-    """Enumeration of available data sources with priority order."""
-    YAHOO = "yahoo"
-    FMP = "fmp"
-    ALPHAVANTAGE = "alphavantage"
-    SEC_EDGAR = "sec_edgar"  # Reserved for future implementation
+logger = setup_logger('base_fetcher')
 
 
 class BaseFetcher(ABC):
     """
     Abstract base class for all data fetchers.
-    Implementations must provide the following methods.
+    Provides common utilities and enforces consistent interface.
     """
     
-    def __init__(self, symbol: str):
+    def __init__(self, symbol: str, source: DataSource):
+        self.symbol = symbol
+        self.source = source
+    
+    def _create_field(self, value: Any) -> Optional[FieldWithSource]:
         """
-        Initialize fetcher for a specific stock symbol.
+        Create a FieldWithSource from a raw value.
+        Automatically sets the source based on the fetcher's source.
         
         Args:
-            symbol: Stock ticker symbol (e.g., 'AAPL')
-        """
-        self.symbol = symbol.upper()
-    
-    @property
-    @abstractmethod
-    def source(self) -> DataSource:
-        """Return the data source identifier."""
-        pass
-    
-    @abstractmethod
-    def fetch_profile(self) -> Optional[CompanyProfile]:
-        """
-        Fetch company profile information.
-        
-        Returns:
-            CompanyProfile object or None if fetch fails
-        """
-        pass
-    
-    @abstractmethod
-    def fetch_income_statements(self) -> List[IncomeStatement]:
-        """
-        Fetch income statements (typically 5 years annual).
-        
-        Returns:
-            List of IncomeStatement objects
-        """
-        pass
-    
-    @abstractmethod  
-    def fetch_balance_sheets(self) -> List[BalanceSheet]:
-        """
-        Fetch balance sheets (typically 5 years annual).
-        
-        Returns:
-            List of BalanceSheet objects
-        """
-        pass
-    
-    @abstractmethod
-    def fetch_cash_flows(self) -> List[CashFlow]:
-        """
-        Fetch cash flow statements (typically 5 years annual).
-        
-        Returns:
-            List of CashFlow objects
-        """
-        pass
-    
-    def fetch_price_history(self, period: str = "1y") -> List[PriceData]:
-        """
-        Fetch historical price data.
-        Optional - not all sources provide this.
-        
-        Args:
-            period: Time period (e.g., '1y', '5y')
+            value: Raw value (can be float, int, string number, or None/NaN)
             
         Returns:
-            List of PriceData objects
+            FieldWithSource with value and source, or None if value is missing
         """
-        return []
-    
-    def fetch_analyst_targets(self) -> Optional[AnalystTargets]:
-        """
-        Fetch analyst price targets.
-        Optional - not all sources provide this.
+        # Handle missing values
+        if value is None:
+            return None
         
-        Returns:
-            AnalystTargets object or None
-        """
-        return None
-    
-    def fetch_all(self) -> StockData:
-        """
-        Fetch all available data from this source.
+        # Handle pandas NA
+        if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+            return None
         
-        Returns:
-            StockData object populated with available data
+        if pd.isna(value):
+            return None
+        
+        # Convert to float
+        try:
+            float_value = float(value)
+            if math.isnan(float_value) or math.isinf(float_value):
+                return None
+            return FieldWithSource(value=float_value, source=self.source.value)
+        except (ValueError, TypeError):
+            return None
+    
+    def _create_text_field(self, value: Any) -> Optional[TextFieldWithSource]:
         """
-        return StockData(
-            symbol=self.symbol,
-            profile=self.fetch_profile(),
-            income_statements=self.fetch_income_statements(),
-            balance_sheets=self.fetch_balance_sheets(),
-            cash_flows=self.fetch_cash_flows(),
-            price_history=self.fetch_price_history(),
-            analyst_targets=self.fetch_analyst_targets(),
-        )
+        Create a TextFieldWithSource from a raw value.
+        
+        Args:
+            value: Raw value (string or convertible to string)
+            
+        Returns:
+            TextFieldWithSource with value and source, or None if value is missing
+        """
+        if value is None:
+            return None
+        
+        if pd.isna(value):
+            return None
+        
+        str_value = str(value).strip()
+        if not str_value:
+            return None
+        
+        return TextFieldWithSource(value=str_value, source=self.source.value)
+    
+    def _safe_get(self, data: Dict, key: str, default: Any = None) -> Any:
+        """
+        Safely get a value from a dictionary.
+        
+        Args:
+            data: Source dictionary
+            key: Key to look up
+            default: Default value if key not found
+            
+        Returns:
+            Value from dictionary or default
+        """
+        if not data:
+            return default
+        return data.get(key, default)
+    
+    def _safe_float(self, value: Any) -> Optional[float]:
+        """
+        Safely convert a value to float.
+        
+        Args:
+            value: Value to convert
+            
+        Returns:
+            Float value or None if conversion fails
+        """
+        if value is None:
+            return None
+        
+        try:
+            result = float(value)
+            if math.isnan(result) or math.isinf(result):
+                return None
+            return result
+        except (ValueError, TypeError):
+            return None
 
 
+# Fetcher registry for dynamic source selection
 class FetcherRegistry:
-    """
-    Registry for managing available data fetchers.
-    Allows dynamic registration of new data sources.
-    """
+    """Registry of available fetchers by data source."""
     
-    _fetchers = {}
+    _fetchers: Dict[DataSource, type] = {}
     
     @classmethod
     def register(cls, source: DataSource, fetcher_class: type):
         """Register a fetcher class for a data source."""
         cls._fetchers[source] = fetcher_class
+        logger.info(f"Registered fetcher: {fetcher_class.__name__} for {source.value}")
     
     @classmethod
-    def get_fetcher(cls, source: DataSource, symbol: str) -> Optional[BaseFetcher]:
-        """Get an instance of fetcher for the specified source."""
-        fetcher_class = cls._fetchers.get(source)
-        if fetcher_class:
-            return fetcher_class(symbol)
-        return None
+    def get(cls, source: DataSource) -> Optional[type]:
+        """Get the fetcher class for a data source."""
+        return cls._fetchers.get(source)
     
     @classmethod
-    def get_available_sources(cls) -> List[DataSource]:
-        """Get list of registered data sources."""
+    def available_sources(cls) -> List[DataSource]:
+        """Get list of available data sources."""
         return list(cls._fetchers.keys())

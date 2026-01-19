@@ -22,6 +22,7 @@ class EdgarFetcher:
     
     # Standard mapping from US-GAAP tags to our internal schema fields
     # Priority ordered list of tags to check for each field
+    # NOTE: This should mirror field_registry.py for EDGAR source mappings
     TAG_MAPPING = {
         # Income Statement
         'std_revenue': ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet', 'SalesRevenueServicesNet', 'SalesRevenueGoodsNet'],
@@ -29,6 +30,8 @@ class EdgarFetcher:
         'std_gross_profit': ['GrossProfit'],
         'std_operating_expenses': ['OperatingExpenses'],
         'std_operating_income': ['OperatingIncomeLoss'],
+        'std_pretax_income': ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'IncomeLossFromContinuingOperationsBeforeIncomeTaxes'],
+        'std_income_tax_expense': ['IncomeTaxExpenseBenefit'],
         'std_net_income': ['NetIncomeLoss', 'ProfitLoss'],
         'std_eps': ['EarningsPerShareBasic'],
         'std_eps_diluted': ['EarningsPerShareDiluted'],
@@ -38,18 +41,20 @@ class EdgarFetcher:
         'std_total_assets': ['Assets'],
         'std_total_liabilities': ['Liabilities'],
         'std_shareholder_equity': ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
-        'std_total_debt': ['LongTermDebt', 'LongTermDebtNoncurrent', 'DebtInstrumentCarryingAmount'], # Augmented
+        'std_total_debt': ['LongTermDebt', 'LongTermDebtNoncurrent', 'DebtInstrumentCarryingAmount'],
         'std_current_assets': ['AssetsCurrent'],
         'std_current_liabilities': ['LiabilitiesCurrent'],
         'std_cash': ['CashAndCashEquivalentsAtCarryingValue'],
+        'std_accounts_receivable': ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent'],
+        'std_inventory': ['InventoryNet', 'InventoryFinishedGoodsNetOfReserves'],
         
         # Cash Flow
         'std_operating_cash_flow': ['NetCashProvidedByUsedInOperatingActivities'],
         'std_investing_cash_flow': ['NetCashProvidedByUsedInInvestingActivities'],
         'std_financing_cash_flow': ['NetCashProvidedByUsedInFinancingActivities'],
-        'std_capex': ['PaymentsToAcquireProductiveAssets', 'PaymentsToAcquirePropertyPlantAndEquipment', 'CapitalExpendituresIncurredButNotYetPaid'], # Augmented
+        'std_capex': ['PaymentsToAcquireProductiveAssets', 'PaymentsToAcquirePropertyPlantAndEquipment', 'CapitalExpendituresIncurredButNotYetPaid'],
         'std_stock_based_compensation': ['ShareBasedCompensation', 'ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsVestedInPeriod'],
-        'std_depreciation_amortization': ['DepreciationDepletionAndAmortization', 'Depreciation', 'AmortizationOfIntangibleAssets'], # For EBITDA calculation
+        'std_depreciation_amortization': ['DepreciationDepletionAndAmortization', 'Depreciation', 'AmortizationOfIntangibleAssets'],
         'std_dividends_paid': ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'PaymentsOfDividendsMinorityInterest'],
     }
 
@@ -156,11 +161,11 @@ class EdgarFetcher:
         # Define fields based on type
         if stmt_type == 'balance':
             TargetClass = BalanceSheet
-            fields_needed = ['std_total_assets','std_total_liabilities','std_shareholder_equity','std_total_debt','std_current_assets','std_current_liabilities','std_cash']
+            fields_needed = ['std_total_assets','std_total_liabilities','std_shareholder_equity','std_total_debt','std_current_assets','std_current_liabilities','std_cash','std_accounts_receivable','std_inventory']
             allowed_forms = ['10-K', '10-Q']
         elif stmt_type == 'income':
             TargetClass = IncomeStatement
-            fields_needed = ['std_revenue','std_net_income','std_eps','std_gross_profit', 'std_operating_income', 'std_cost_of_revenue', 'std_operating_expenses', 'std_eps_diluted', 'std_shares_outstanding', 'std_ebitda', 'std_depreciation_amortization']
+            fields_needed = ['std_revenue','std_net_income','std_eps','std_gross_profit', 'std_operating_income', 'std_cost_of_revenue', 'std_operating_expenses', 'std_eps_diluted', 'std_shares_outstanding', 'std_ebitda', 'std_depreciation_amortization', 'std_pretax_income', 'std_income_tax_expense']
             allowed_forms = ['10-K'] # Keep income annual for consistency
         else: # cashflow
             TargetClass = CashFlow
