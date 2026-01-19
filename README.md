@@ -7,7 +7,11 @@
 
 ### 1. 深度个股分析 (`run_analysis.py`)
 针对单个股票进行全流程分析：
-- **数据获取**: 自动从 Yahoo Finance, FMP, Alpha Vantage 获取最新财报和市场数据。优先使用免费源，自动处理数据缺失。
+- **数据获取**: 采用 4 层级联数据源策略：
+    - **T1 Yahoo Finance**: 主要数据源，提供实时行情和历史财报。
+    - **T2 SEC EDGAR**: 官方 XBRL 数据源，直接从美国证监会获取原始财务报表。
+    - **T3 FMP**: 补充分析师预期和其他结构化数据。
+    - **T4 Alpha Vantage**: 最终后备源，填补冷门股票的数据空缺。
 - **财务评分**: 基于 ROIC, ROE, 利润率, 增长率, 资本配置等 20+ 个指标进行加权打分 (0-100)。评分考虑了行业基准（Damodaran 数据）。
 - **技术评分**: 结合 RSI, MACD, 均线系统 (SMA/EMA) 评估当前趋势与动能。
 - **估值模型**: 
@@ -27,7 +31,7 @@
 ## 目录结构
 ```
 .
-├── data_acquisition/       # 数据获取模块 (Yahoo, FMP, Alpha Vantage)
+├── data_acquisition/       # 数据获取模块 (Yahoo, EDGAR, FMP, Alpha Vantage)
 │   ├── benchmark_data/     # 行业基准数据获取
 │   └── stock_data/         # 个股财务数据获取
 ├── fundamentals/           # 核心分析逻辑

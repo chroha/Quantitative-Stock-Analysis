@@ -7,7 +7,11 @@ This is an advanced quantitative stock analysis and screening tool designed to a
 
 ### 1. Deep Stock Analysis (`run_analysis.py`)
 Performs a full-pipeline analysis for a single stock:
-- **Data Acquisition**: Automatically fetches latest financial and market data from Yahoo Finance, FMP, and Alpha Vantage. Prioritizes free sources and handles data gaps automatically.
+- **Data Acquisition**: Uses a 4-tier cascading data strategy:
+    - **T1 Yahoo Finance**: Primary source for real-time quotes and historical financials.
+    - **T2 SEC EDGAR**: Official XBRL data directly from the U.S. Securities and Exchange Commission.
+    - **T3 FMP**: Supplements analyst estimates and structured financial data.
+    - **T4 Alpha Vantage**: Final fallback for obscure stocks with data gaps.
 - **Financial Scoring**: Scores the company (0-100) based on 20+ weighted metrics including ROIC, ROE, margins, growth rates, and capital allocation, benchmarked against industry standards (Damodaran data).
 - **Technical Scoring**: Evaluates current trend and momentum using RSI, MACD, and Moving Averages (SMA/EMA).
 - **Valuation Models**: 
@@ -27,7 +31,7 @@ Performs a full-pipeline analysis for a single stock:
 ## Directory Structure
 ```
 .
-├── data_acquisition/       # Data Fetching Modules (Yahoo, FMP, Alpha Vantage)
+├── data_acquisition/       # Data Fetching Modules (Yahoo, EDGAR, FMP, Alpha Vantage)
 │   ├── benchmark_data/     # Industry Benchmark Data
 │   └── stock_data/         # Stock Financial Data
 ├── fundamentals/           # Core Analysis Logic
