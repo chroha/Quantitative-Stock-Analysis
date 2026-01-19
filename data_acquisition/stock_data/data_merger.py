@@ -203,14 +203,20 @@ class DataMerger:
     @staticmethod
     def merge_and_validate(
         yahoo_data: StockData,
-        fmp_data: dict,
+        secondary_data: dict,
         manual_data: Optional[dict] = None
     ) -> StockData:
         """
         Merges data and validates it. Main processing entry point.
+        
+        Args:
+            yahoo_data: Primary data from Yahoo Finance
+            secondary_data: Supplementary data dict from any source (EDGAR, FMP, Alpha Vantage)
+                           Expected keys: 'income_statements', 'balance_sheets', 'cash_flows', 'profile', 'analyst_targets'
+            manual_data: Optional manual override data
         """
         # 1. 执行合并 / Execute Merge
-        merged_data = DataMerger._merge_logic(yahoo_data, fmp_data, manual_data)
+        merged_data = DataMerger._merge_logic(yahoo_data, secondary_data, manual_data)
         
         # 2. Execute Validation
         logger.info("Validating merged data...")
@@ -231,16 +237,16 @@ class DataMerger:
     @staticmethod
     def _merge_logic(
         yahoo_data: StockData,
-        fmp_data: dict,
+        secondary_data: dict,
         manual_data: Optional[dict] = None
     ) -> StockData:
         """
         Internal merge logic.
-        Priority: Yahoo > FMP > Manual
+        Priority: Yahoo > Secondary (EDGAR/FMP) > Manual
         Strategy:
         1. Base on Yahoo data (usually verified).
-        2. Backfill older years from FMP.
-        3. Fill missing fields in Yahoo periods from FMP.
+        2. Backfill older years from secondary source.
+        3. Fill missing fields in Yahoo periods from secondary source.
         """
         from datetime import datetime, timedelta
 
@@ -249,7 +255,7 @@ class DataMerger:
         # Merge profile
         merged_profile = DataMerger.merge_profile(
             yahoo_data.profile,
-            fmp_data.get('profile')
+            secondary_data.get('profile')
         )
         
         # Merge analyst targets: Priority Yahoo > FMP
@@ -257,8 +263,8 @@ class DataMerger:
         if yahoo_data.analyst_targets:
             analyst_targets = yahoo_data.analyst_targets
             logger.info("Using analyst targets from Yahoo Finance")
-        elif fmp_data.get('analyst_targets'):
-            analyst_targets = fmp_data.get('analyst_targets')
+        elif secondary_data.get('analyst_targets'):
+            analyst_targets = secondary_data.get('analyst_targets')
             logger.info("Using analyst targets from FMP (Yahoo unavailable)")
         else:
             logger.warning("No analyst targets available from any source")
@@ -356,13 +362,13 @@ class DataMerger:
             return final_list
 
         logger.info("Merging Income Statements...")
-        income_statements = combine_statement_lists(yahoo_data.income_statements, fmp_data.get('income_statements'))
+        income_statements = combine_statement_lists(yahoo_data.income_statements, secondary_data.get('income_statements'))
         
         logger.info("Merging Balance Sheets...")
-        balance_sheets = combine_statement_lists(yahoo_data.balance_sheets, fmp_data.get('balance_sheets'))
+        balance_sheets = combine_statement_lists(yahoo_data.balance_sheets, secondary_data.get('balance_sheets'))
         
         logger.info("Merging Cash Flows...")
-        cash_flows = combine_statement_lists(yahoo_data.cash_flows, fmp_data.get('cash_flows'))
+        cash_flows = combine_statement_lists(yahoo_data.cash_flows, secondary_data.get('cash_flows'))
         
         # Create merged stock data
         merged = StockData(

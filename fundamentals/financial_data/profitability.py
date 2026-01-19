@@ -374,8 +374,14 @@ class ProfitabilityCalculator(CalculatorBase):
         cash = self.get_field_value(latest_balance, 'std_cash')
         
         # Log inputs for debugging discrepancies
-        self.logger.debug(f"ROIC Inputs: OpInc={operating_income:,.0f}, Tax={income_tax_expense:,.0f}")
-        self.logger.debug(f"IC Inputs: Equity={total_equity:,.0f}, Debt={total_debt:,.0f}, Cash={cash:,.0f}")
+        op_inc_str = f"{operating_income:,.0f}" if operating_income is not None else "None"
+        tax_str = f"{income_tax_expense:,.0f}" if income_tax_expense is not None else "None"
+        self.logger.debug(f"ROIC Inputs: OpInc={op_inc_str}, Tax={tax_str}")
+        
+        eq_str = f"{total_equity:,.0f}" if total_equity is not None else "None"
+        debt_str = f"{total_debt:,.0f}" if total_debt is not None else "None"
+        cash_str = f"{cash:,.0f}" if cash is not None else "None"
+        self.logger.debug(f"IC Inputs: Equity={eq_str}, Debt={debt_str}, Cash={cash_str}")
         
         # Calculate ROIC (now with tax data)
         roic_result = self.calculate_roic(

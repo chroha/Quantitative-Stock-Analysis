@@ -231,13 +231,34 @@ class YahooFetcher:
             return []
     
     def fetch_balance_sheets(self) -> list[BalanceSheet]:
-        """Fetch balance sheets."""
+        """Fetch balance sheets (Annual + latest Quarterly)."""
         try:
             if not self.ticker:
                 self.ticker = yf.Ticker(self.symbol)
             
-            balance_sheet = self.ticker.balance_sheet
-            return self._parse_financial_statement(balance_sheet, 'balance')
+            # Fetch Annual
+            annual_df = self.ticker.balance_sheet
+            annual_stmts = self._parse_financial_statement(annual_df, 'balance')
+            
+            # Fetch Quarterly
+            quarterly_df = self.ticker.quarterly_balance_sheet
+            quarterly_stmts = self._parse_financial_statement(quarterly_df, 'balance')
+            
+            # Merge and deduplicate by date
+            # Key: date string. Value: Statement object
+            merged = {s.std_period: s for s in annual_stmts}
+            # Update with quarterly (prefer quarterly if duplicate date exists, or vice versa? 
+            # Usually annual is more audited, but for same date they should be identical.
+            # We want to capture the NEWER dates from quarterly.)
+            for s in quarterly_stmts:
+                if s.std_period not in merged:
+                    merged[s.std_period] = s
+            
+            # Convert back to list and sort descending
+            final_list = list(merged.values())
+            final_list.sort(key=lambda x: x.std_period, reverse=True)
+            
+            return final_list
         
         except Exception as e:
             logger.error(f"Failed to fetch balance sheets from Yahoo: {e}")

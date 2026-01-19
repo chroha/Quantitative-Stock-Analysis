@@ -30,6 +30,7 @@ class OverallValidationResult:
     incomplete_periods: int = 0
     period_results: List[FieldValidationResult] = field(default_factory=list)
     average_completeness: float = 1.0
+    expected_periods: int = 18  # Expected number of period validations (6 years * 3 statement types)
     
     def add_result(self, result: FieldValidationResult):
         self.period_results.append(result)
@@ -38,9 +39,11 @@ class OverallValidationResult:
             self.incomplete_periods += 1
             self.is_complete = False
         
-        # Recalculate average
+        # Recalculate average using expected_periods as denominator floor
+        # This ensures if we have fewer periods than expected, completeness is penalized
         total_score = sum(r.completeness_score for r in self.period_results)
-        self.average_completeness = total_score / len(self.period_results) if self.period_results else 0
+        denominator = max(len(self.period_results), self.expected_periods)
+        self.average_completeness = total_score / denominator if denominator > 0 else 0
 
 
 class FieldValidator:
@@ -203,7 +206,8 @@ class FieldValidator:
         symbol: str,
         income_statements: List[Any],
         balance_sheets: List[Any],
-        cash_flows: List[Any]
+        cash_flows: List[Any],
+        expected_years: int = 6
     ) -> OverallValidationResult:
         """
         Validate all financial statements for a stock.
@@ -213,11 +217,14 @@ class FieldValidator:
             income_statements: List of income statement objects
             balance_sheets: List of balance sheet objects  
             cash_flows: List of cash flow objects
+            expected_years: Expected number of fiscal years (default 6)
             
         Returns:
             OverallValidationResult with complete validation info
         """
-        result = OverallValidationResult(symbol=symbol)
+        # Multiply by 3 because we validate 3 statement types per year
+        expected_total = expected_years * 3
+        result = OverallValidationResult(symbol=symbol, expected_periods=expected_total)
         
         # Validate income statements
         for stmt in income_statements:

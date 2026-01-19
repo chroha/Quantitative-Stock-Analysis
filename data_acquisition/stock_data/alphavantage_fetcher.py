@@ -168,17 +168,12 @@ class AlphaVantageFetcher(BaseFetcher):
             return None
     
     def _parse_period(self, date_str: str) -> str:
-        """Parse fiscal date to period string (e.g., '2024-FY')."""
+        """Parse fiscal date to unified format (YYYY-MM-DD)."""
         if not date_str:
             return 'unknown'
         
-        try:
-            # Alpha Vantage uses YYYY-MM-DD format
-            date = datetime.strptime(date_str, '%Y-%m-%d')
-            # For annual reports, usually end in Q4 (Sept-Dec for most companies)
-            return f"{date.year}-FY"
-        except ValueError:
-            return date_str
+        # Return the date string directly as YYYY-MM-DD is the new standard
+        return date_str
     
     def fetch_profile(self) -> Optional[CompanyProfile]:
         """Fetch company overview/profile."""
@@ -244,57 +239,108 @@ class AlphaVantageFetcher(BaseFetcher):
         return statements
     
     def fetch_balance_sheets(self) -> List[BalanceSheet]:
-        """Fetch annual balance sheets."""
+        """Fetch balance sheets (Annual + Quarterly)."""
         data = self._make_request('BALANCE_SHEET')
         
-        if not data or 'annualReports' not in data:
+        if not data:
             return []
         
-        statements = []
+        def process_reports(reports):
+            stmts = []
+            for report in reports:
+                # Calculate total debt from short-term and long-term
+                short_debt = report.get('shortTermDebt') or report.get('currentDebt')
+                long_debt = report.get('longTermDebt') or report.get('longTermDebtNoncurrent')
+                
+                total_debt = None
+                if short_debt and long_debt:
+                    try:
+                        total_debt = float(short_debt) + float(long_debt)
+                    except (ValueError, TypeError):
+                        pass
+                elif short_debt:
+                    try:
+                        total_debt = float(short_debt)
+                    except (ValueError, TypeError):
+                        pass
+                elif long_debt:
+                    try:
+                        total_debt = float(long_debt)
+                    except (ValueError, TypeError):
+                        pass
+                
+                stmt = BalanceSheet(
+                    std_period=self._parse_period(report.get('fiscalDateEnding')), # Note: _parse_period adds -FY, we might want to check this behavior
+                    std_total_assets=self._create_field_with_source(report.get('totalAssets')),
+                    std_current_assets=self._create_field_with_source(report.get('totalCurrentAssets')),
+                    std_cash=self._create_field_with_source(
+                        report.get('cashAndCashEquivalentsAtCarryingValue') or 
+                        report.get('cashAndShortTermInvestments')
+                    ),
+                    std_accounts_receivable=self._create_field_with_source(report.get('currentNetReceivables')),
+                    std_inventory=self._create_field_with_source(report.get('inventory')),
+                    std_total_liabilities=self._create_field_with_source(report.get('totalLiabilities')),
+                    std_current_liabilities=self._create_field_with_source(report.get('totalCurrentLiabilities')),
+                    std_total_debt=FieldWithSource(value=total_debt, source='alphavantage') if total_debt else None,
+                    std_shareholder_equity=self._create_field_with_source(report.get('totalShareholderEquity')),
+                )
+                stmts.append(stmt)
+            return stmts
+
         annual_reports = data.get('annualReports', [])
+        quarterly_reports = data.get('quarterlyReports', [])
         
-        logger.info(f"Fetched {len(annual_reports)} balance sheets for {self.symbol} from Alpha Vantage")
+        annual_stmts = process_reports(annual_reports[:5])
+        # _parse_period currently appends -FY to everything if it looks like a date. 
+        # We need to ensure quarterly reports get their specific date or a different suffix?
+        # Let's check _parse_period implementation. 
+        # It takes YYYY-MM-DD and makes it YYYY-FY. That's bad for quarterly merging.
+        # I should probably update _parse_period or bypass it here.
+        # For now, let's bypass it for now by setting std_period directly to date string if possible?
+        # Actually, let's look at _parse_period again.
         
-        for report in annual_reports[:5]:  # Limit to 5 years
-            # Calculate total debt from short-term and long-term
-            short_debt = report.get('shortTermDebt') or report.get('currentDebt')
-            long_debt = report.get('longTermDebt') or report.get('longTermDebtNoncurrent')
-            
-            total_debt = None
-            if short_debt and long_debt:
-                try:
-                    total_debt = float(short_debt) + float(long_debt)
-                except (ValueError, TypeError):
-                    pass
-            elif short_debt:
-                try:
-                    total_debt = float(short_debt)
-                except (ValueError, TypeError):
-                    pass
-            elif long_debt:
-                try:
-                    total_debt = float(long_debt)
-                except (ValueError, TypeError):
-                    pass
-            
-            stmt = BalanceSheet(
-                std_period=self._parse_period(report.get('fiscalDateEnding')),
-                std_total_assets=self._create_field_with_source(report.get('totalAssets')),
-                std_current_assets=self._create_field_with_source(report.get('totalCurrentAssets')),
-                std_cash=self._create_field_with_source(
-                    report.get('cashAndCashEquivalentsAtCarryingValue') or 
-                    report.get('cashAndShortTermInvestments')
-                ),
-                std_accounts_receivable=self._create_field_with_source(report.get('currentNetReceivables')),
-                std_inventory=self._create_field_with_source(report.get('inventory')),
-                std_total_liabilities=self._create_field_with_source(report.get('totalLiabilities')),
-                std_current_liabilities=self._create_field_with_source(report.get('totalCurrentLiabilities')),
-                std_total_debt=FieldWithSource(value=total_debt, source='alphavantage') if total_debt else None,
-                std_shareholder_equity=self._create_field_with_source(report.get('totalShareholderEquity')),
-            )
-            statements.append(stmt)
+        # Override _parse_period behavior here by manually setting std_period to date string for quarterly
+        quarterly_stmts = []
+        for report in quarterly_reports[:4]:
+             # Copy-paste logic from process_reports but with direct date for period
+                short_debt = report.get('shortTermDebt') or report.get('currentDebt')
+                long_debt = report.get('longTermDebt') or report.get('longTermDebtNoncurrent')
+                total_debt = None
+                if short_debt and long_debt:
+                    try: total_debt = float(short_debt) + float(long_debt)
+                    except: pass
+                elif short_debt:
+                    try: total_debt = float(short_debt)
+                    except: pass
+                elif long_debt:
+                    try: total_debt = float(long_debt)
+                    except: pass
+                
+                stmt = BalanceSheet(
+                    std_period=report.get('fiscalDateEnding'), # Use direct date string for Quarterly
+                    std_total_assets=self._create_field_with_source(report.get('totalAssets')),
+                    std_current_assets=self._create_field_with_source(report.get('totalCurrentAssets')),
+                    std_cash=self._create_field_with_source(report.get('cashAndCashEquivalentsAtCarryingValue') or report.get('cashAndShortTermInvestments')),
+                    std_accounts_receivable=self._create_field_with_source(report.get('currentNetReceivables')),
+                    std_inventory=self._create_field_with_source(report.get('inventory')),
+                    std_total_liabilities=self._create_field_with_source(report.get('totalLiabilities')),
+                    std_current_liabilities=self._create_field_with_source(report.get('totalCurrentLiabilities')),
+                    std_total_debt=FieldWithSource(value=total_debt, source='alphavantage') if total_debt else None,
+                    std_shareholder_equity=self._create_field_with_source(report.get('totalShareholderEquity')),
+                )
+                quarterly_stmts.append(stmt)
+
+        # Merge
+        merged = {s.std_period: s for s in annual_stmts}
+        for s in quarterly_stmts:
+            if s.std_period and s.std_period not in merged:
+                merged[s.std_period] = s
         
-        return statements
+        final_list = list(merged.values())
+        final_list.sort(key=lambda x: x.std_period if x.std_period else "", reverse=True)
+        
+        logger.info(f"Fetched {len(final_list)} balance sheets (Annual+Quarterly) from Alpha Vantage")
+        return final_list
     
     def fetch_cash_flows(self) -> List[CashFlow]:
         """Fetch annual cash flow statements."""

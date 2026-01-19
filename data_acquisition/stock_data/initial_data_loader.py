@@ -17,6 +17,7 @@ from typing import Optional, Tuple, List
 from utils.unified_schema import StockData
 from utils.logger import setup_logger
 from data_acquisition.stock_data.yahoo_fetcher import YahooFetcher
+from data_acquisition.stock_data.edgar_fetcher import EdgarFetcher
 from data_acquisition.stock_data.fmp_fetcher import FMPFetcher
 from data_acquisition.stock_data.data_merger import DataMerger
 from data_acquisition.stock_data.field_validator import FieldValidator, OverallValidationResult
@@ -30,10 +31,9 @@ class StockDataLoader:
     
     Implements 3-tier cascading data fetch:
     - Tier 1: Yahoo Finance (primary, most comprehensive)
-    - Tier 2: FMP (fallback, good financial data)
-    - Tier 3: Alpha Vantage (second fallback, GAAP-compliant)
-    
-    Reserved for future: SEC EDGAR as Tier 4 (official source)
+    - Tier 2: SEC EDGAR (official source, XBRL-based)
+    - Tier 3: FMP (fallback, good financial data)
+    - Tier 4: Alpha Vantage (second fallback, GAAP-compliant)
     """
     
     def __init__(self, use_alphavantage: bool = True):
@@ -47,6 +47,12 @@ class StockDataLoader:
         self.validator = FieldValidator()
         self.validation_result: Optional[OverallValidationResult] = None
     
+    def _log_status(self, data: StockData, prefix: str = "->"):
+        """Helper to log completeness and history depth."""
+        valid = self._validate_data(data, "StatusCheck")
+        hist_years = len(data.income_statements)
+        print(f"          {prefix} Completeness: {valid.average_completeness:.1%} | History: {hist_years} years")
+
     def get_stock_data(self, symbol: str) -> StockData:
         """
         Fetch complete data for a stock with cascading fallback and field validation.
@@ -69,12 +75,62 @@ class StockDataLoader:
         yahoo_data = yahoo_fetcher.fetch_all()
         
         # Validate Yahoo data
+        # Fix: Normalize sector immediately (e.g. Basic Materials -> Materials)
+        if yahoo_data.profile and yahoo_data.profile.std_sector:
+             yahoo_data.profile.std_sector = DataMerger.normalize_sector(yahoo_data.profile.std_sector)
+
         validation = self._validate_data(yahoo_data, "Yahoo")
+        self._log_status(yahoo_data)
         
+        merged_data = yahoo_data
+
         # =====================================================================
-        # TIER 2: FMP (Supplementary Source) - Always fetch for analyst targets
+        # TIER 2: SEC EDGAR (Official Source) - First Supplementary
         # =====================================================================
-        print(f"    Fetching from FMP (Supplementary)...")
+        # Trigger if: incomplete OR insufficient history (< 5 years)
+        insufficient_history = len(merged_data.income_statements) < 5
+        needs_edgar = (
+            not validation.is_complete or 
+            validation.average_completeness < 1.0 or
+            insufficient_history
+        )
+        
+        if needs_edgar:
+            trigger_reason = []
+            if not validation.is_complete: trigger_reason.append("missing fields")
+            if insufficient_history: trigger_reason.append(f"insufficient history ({len(merged_data.income_statements)}<5 yrs)")
+            
+            print(f"    [2/4] Fetching from SEC EDGAR (Supplementary)...")
+            logger.info(f"Fetching data from SEC EDGAR (Trigger: {', '.join(trigger_reason)})...")
+            try:
+                edgar_fetcher = EdgarFetcher()
+                # Fetch dictionary of all lists {income_statements, balance_sheets, cash_flows}
+                edgar_data_dict = edgar_fetcher.fetch_all_financials(symbol)
+                
+                # Check if we got any data
+                has_data = any(len(v) > 0 for v in edgar_data_dict.values())
+                
+                if has_data:
+                     merged_data = DataMerger.merge_and_validate(merged_data, edgar_data_dict)
+                     validation = self._validate_data(merged_data, "Yahoo+EDGAR")
+                     self._log_status(merged_data)
+                else:
+                     logger.warning("EDGAR fetch returned no data")
+            except Exception as e:
+                logger.error(f"Failed to fetch/merge EDGAR data: {e}")
+
+        # =====================================================================
+        # TIER 3: FMP (Second Supplementary) - Always fetch for analyst targets
+        # =====================================================================
+        # Also trigger if insufficient history remains
+        insufficient_history = len(merged_data.income_statements) < 5
+        needs_fmp = (
+            not validation.is_complete or 
+            validation.average_completeness < 1.0 or
+            insufficient_history
+        )
+
+        print(f"    [3/4] Fetching from FMP (Supplementary)...")
         logger.info("Fetching data from FMP...")
         fmp_data = None
         try:
@@ -84,12 +140,13 @@ class StockDataLoader:
             logger.error(f"Failed to fetch FMP data: {e}")
             fmp_data = {'analyst_targets': None, 'profile': None}
         
-        # Merge Yahoo and FMP data
-        logger.info("Merging Yahoo and FMP data...")
-        merged_data = DataMerger.merge_and_validate(yahoo_data, fmp_data)
+        # Merge with existing data (Yahoo + possibly EDGAR)
+        logger.info("Merging FMP data...")
+        merged_data = DataMerger.merge_and_validate(merged_data, fmp_data)
         
         # Re-validate after FMP merge
-        validation = self._validate_data(merged_data, "Yahoo+FMP")
+        validation = self._validate_data(merged_data, "Yahoo+EDGAR+FMP")
+        self._log_status(merged_data)
         
         # =====================================================================
         # TIER 3: Alpha Vantage (Second Fallback)
@@ -102,7 +159,7 @@ class StockDataLoader:
         
         if self.use_alphavantage and needs_alphavantage:
             trigger_reason = "missing required fields" if not validation.is_complete else f"completeness {validation.average_completeness:.1%} < 100%"
-            print(f"    Data incomplete ({validation.average_completeness:.1%}), fetching from Alpha Vantage...")
+            print(f"    [4/4] Data incomplete, fetching from Alpha Vantage...")
             logger.info(f"Attempting Alpha Vantage fetch ({trigger_reason})...")
             
             try:
@@ -152,13 +209,13 @@ class StockDataLoader:
                 
                 # Merge Alpha Vantage data
                 if av_profile or av_income or av_balance or av_cashflow:
-                    print(f"    Fetched supplemental data from Alpha Vantage")
                     merged_data = self._merge_alphavantage_data(
                         merged_data, av_profile, av_income, av_balance, av_cashflow
                     )
                     
-                    # Final validation
-                    validation = self._validate_data(merged_data, "Yahoo+FMP+AV")
+                # Always show final status after Alpha Vantage attempt
+                validation = self._validate_data(merged_data, "Yahoo+EDGAR+FMP+AV")
+                self._log_status(merged_data)
                     
             except ImportError as e:
                 logger.warning(f"Alpha Vantage fetcher not available: {e}")

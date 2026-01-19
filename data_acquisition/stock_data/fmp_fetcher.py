@@ -200,41 +200,53 @@ class FMPFetcher:
     
     def fetch_balance_sheets(self) -> list:
         """
-        Fetch balance sheets from FMP /stable/balance-sheet-statement endpoint.
-        
-        Returns:
-            List of BalanceSheet objects
+        Fetch balance sheets (Annual + Quarterly).
         """
         from utils.unified_schema import BalanceSheet
         
-        data = self._make_request("balance-sheet-statement")
+        # Helper to process raw data list
+        def process_data(data_list):
+            stmts = []
+            if not data_list: return stmts
+            for item in data_list:
+                try:
+                    stmt = BalanceSheet(
+                        std_period=item.get('date'),
+                        std_total_assets=FieldWithSource(value=float(item['totalAssets']), source='fmp') if item.get('totalAssets') else None,
+                        std_current_assets=FieldWithSource(value=float(item['totalCurrentAssets']), source='fmp') if item.get('totalCurrentAssets') else None,
+                        std_cash=FieldWithSource(value=float(item['cashAndCashEquivalents']), source='fmp') if item.get('cashAndCashEquivalents') else None,
+                        std_accounts_receivable=FieldWithSource(value=float(item['netReceivables']), source='fmp') if item.get('netReceivables') else None,
+                        std_inventory=FieldWithSource(value=float(item['inventory']), source='fmp') if item.get('inventory') else None,
+                        std_total_liabilities=FieldWithSource(value=float(item['totalLiabilities']), source='fmp') if item.get('totalLiabilities') else None,
+                        std_current_liabilities=FieldWithSource(value=float(item['totalCurrentLiabilities']), source='fmp') if item.get('totalCurrentLiabilities') else None,
+                        std_total_debt=FieldWithSource(value=float(item['totalDebt']), source='fmp') if item.get('totalDebt') else None,
+                        std_shareholder_equity=FieldWithSource(value=float(item['totalStockholdersEquity']), source='fmp') if item.get('totalStockholdersEquity') else None,
+                    )
+                    stmts.append(stmt)
+                except (ValueError, KeyError) as e:
+                    continue
+            return stmts
+
+        # 1. Fetch Annual
+        annual_data = self._make_request("balance-sheet-statement")
+        annual_stmts = process_data(annual_data[:6]) if annual_data else []
+
+        # 2. Fetch Quarterly (latest 4 is enough to get the recent one)
+        quarterly_data = self._make_request("balance-sheet-statement", {'period': 'quarter', 'limit': 4})
+        quarterly_stmts = process_data(quarterly_data) if quarterly_data else []
+
+        # 3. Merge and Deduplicate
+        merged = {s.std_period: s for s in annual_stmts}
+        for s in quarterly_stmts:
+             # If date not present, add it. (Quarterly is usually newer or same date as annual)
+             if s.std_period not in merged:
+                 merged[s.std_period] = s
         
-        if not data or not isinstance(data, list):
-            logger.warning(f"No balance sheet data from FMP for {self.symbol}")
-            return []
+        final_list = list(merged.values())
+        final_list.sort(key=lambda x: x.std_period, reverse=True)
         
-        statements = []
-        for item in data[:6]:
-            try:
-                stmt = BalanceSheet(
-                    std_period=item.get('date'),
-                    std_total_assets=FieldWithSource(value=float(item['totalAssets']), source='fmp') if item.get('totalAssets') else None,
-                    std_current_assets=FieldWithSource(value=float(item['totalCurrentAssets']), source='fmp') if item.get('totalCurrentAssets') else None,
-                    std_cash=FieldWithSource(value=float(item['cashAndCashEquivalents']), source='fmp') if item.get('cashAndCashEquivalents') else None,
-                    std_accounts_receivable=FieldWithSource(value=float(item['netReceivables']), source='fmp') if item.get('netReceivables') else None,
-                    std_inventory=FieldWithSource(value=float(item['inventory']), source='fmp') if item.get('inventory') else None,
-                    std_total_liabilities=FieldWithSource(value=float(item['totalLiabilities']), source='fmp') if item.get('totalLiabilities') else None,
-                    std_current_liabilities=FieldWithSource(value=float(item['totalCurrentLiabilities']), source='fmp') if item.get('totalCurrentLiabilities') else None,
-                    std_total_debt=FieldWithSource(value=float(item['totalDebt']), source='fmp') if item.get('totalDebt') else None,
-                    std_shareholder_equity=FieldWithSource(value=float(item['totalStockholdersEquity']), source='fmp') if item.get('totalStockholdersEquity') else None,
-                )
-                statements.append(stmt)
-            except (ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse FMP balance sheet for period {item.get('date')}: {e}")
-                continue
-        
-        logger.info(f"Fetched {len(statements)} balance sheets from FMP for {self.symbol}")
-        return statements
+        logger.info(f"Fetched {len(final_list)} balance sheets (Annual+Quarterly) from FMP")
+        return final_list
     
     def fetch_cash_flows(self) -> list:
         """

@@ -44,6 +44,7 @@ class DataAggregator:
         fin_path = self._find_latest_file(f"financial_score_{symbol}_*.json")
         tech_path = self._find_latest_file(f"technical_score_{symbol}_*.json")
         val_path = self._find_latest_file(f"valuation_{symbol}_*.json")
+        raw_path = self._find_latest_file(f"initial_data_{symbol}_*.json")
         
         if not fin_path or not tech_path or not val_path:
             return None
@@ -55,13 +56,43 @@ class DataAggregator:
         # Extract date from one of the files
         date_str = fin_path.stem.split('_')[-1]
         
+        # Extract period info from raw data
+        latest_period = "Unknown"
+        history_years = 0
+        latest_period = "Unknown"
+        history_years = 0
+        if raw_path:
+            raw_data = self._load_json(raw_path)
+            stmts = raw_data.get('income_statements', [])
+            bs_stmts = raw_data.get('balance_sheets', [])
+            
+            p1 = ""
+            p2 = ""
+            
+            if stmts and len(stmts) > 0:
+                p1 = stmts[0].get('std_period', '')
+                history_years = len(stmts)
+                
+            if bs_stmts and len(bs_stmts) > 0:
+                p2 = bs_stmts[0].get('std_period', '')
+                
+            # Take the latest date string (YYYY-MM-DD comparison works alphabetically)
+            if p1 and p2:
+                latest_period = max(p1, p2)
+            elif p1:
+                latest_period = p1
+            elif p2:
+                latest_period = p2
+
         # Build simplified structure
         aggregated = {
             "stock_info": {
                 "symbol": symbol,
                 "sector": fin_data.get('metadata', {}).get('sector', 'Unknown'), # Sector moved to meta in fin data? Check structure
                 "price": tech_data.get('score', {}).get('data_info', {}).get('current_price', 0),
-                "date": date_str
+                "date": date_str,
+                "latest_period": latest_period,
+                "history_years": history_years
             },
             
             "financial_score": self._simplify_financial(fin_data.get('score', {})),
