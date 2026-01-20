@@ -242,11 +242,13 @@ class StockDataLoader:
             try:
                 fmp_fetcher = FMPFetcher(symbol)
                 fmp_data = fmp_fetcher.fetch_all()
-                # Show incremental completeness after FMP
-                temp_merged = self._quick_merge(yahoo_data, edgar_data, fmp_data, [], [], [], merger, symbol)
-                validation = self._validate_data(temp_merged, "FMP")
-                self._log_status(temp_merged)
-                current_completeness = validation.average_completeness
+                
+                # Only show completeness if FMP wasn't blocked by free tier
+                if not fmp_fetcher._free_tier_blocked:
+                    temp_merged = self._quick_merge(yahoo_data, edgar_data, fmp_data, [], [], [], merger, symbol)
+                    validation = self._validate_data(temp_merged, "FMP")
+                    self._log_status(temp_merged)
+                    current_completeness = validation.average_completeness
             except Exception as e:
                 logger.error(f"FMP fetch failed: {e}")
         else:
