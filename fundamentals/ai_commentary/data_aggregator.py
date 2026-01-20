@@ -260,7 +260,12 @@ class DataAggregator:
         """
         Generate a markdown appendix with all raw data for reference.
         Format: English Name | Chinese Name | Value | Field ID
+        Uses utils.metric_registry for standardized naming.
         """
+        from utils.metric_registry import (
+            FINANCIAL_METRICS, TECHNICAL_INDICATORS, VALUATION_MODELS, MetricFormat
+        )
+        
         symbol = symbol.upper()
         lines = []
         
@@ -273,27 +278,21 @@ class DataAggregator:
         lines.append("## 📊 原始数据附表 (Raw Data Appendix)\n")
         lines.append("> 方便查阅每个指标的原始值和程序字段名。\n")
         
-        # Definitions for mapping
-        fin_map = {
-            # Profitability
-            'roic': ('ROIC', '投资资本回报率'),
-            'roe': ('ROE', '股本回报率'),
-            'net_margin': ('Net Profit Margin', '净利率'),
-            'operating_margin': ('Operating Margin', '营业利润率'),
-            'gross_margin': ('Gross Margin', '毛利率'),
-            # Growth
-            'revenue_cagr_5y': ('Revenue CAGR (5Y)', '5年营收复合增长'),
-            'net_income_cagr_5y': ('Net Income CAGR (5Y)', '5年净利复合增长'),
-            'fcf_cagr_5y': ('FCF CAGR (5Y)', '5年自由现金流增长'),
-            # Capital
-            'earnings_quality_3y': ('Quality of Earnings', '盈利质量(OCF/NI)'),
-            'fcf_to_debt_ratio': ('FCF to Debt', '自由现金流/债务'),
-            'debt_coverage': ('Debt Coverage', '债务覆盖率'),
-            'share_dilution_cagr_5y': ('Share Dilution CAGR', '股份稀释率(负为回购)'),
-            'capex_intensity_3y': ('Capex Intensity', '资本支出强度'),
-            'debt_to_equity': ('Debt to Equity', '债务股本比')
-        }
-        
+        # Helper for formatting values based on Registry Definition
+        def format_val(val, fmt_type):
+            if val is None: return "N/A (Missing)"
+            if isinstance(val, (int, float)):
+                if fmt_type == MetricFormat.PERCENT:
+                    # Heuristic: if value is small decimal (e.g. 0.15), it's likely 15%
+                    # But some might be pre-multiplied. Assuming standard schema is generally decimals for rates.
+                    # Exception: Some growth rates might be huge.
+                    return f"{val*100:.2f}%"
+                elif fmt_type == MetricFormat.CURRENCY:
+                    return f"${val:.2f}"
+                elif fmt_type == MetricFormat.DECIMAL:
+                    return f"{val:.4f}" if abs(val) < 10 else f"{val:.2f}"
+            return str(val)
+
         # === Financial Metrics (Source: Financial Score) ===
         if fin_score_path:
             fd = self._load_json(fin_score_path)
@@ -303,30 +302,16 @@ class DataAggregator:
                 lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
                 lines.append("|---|---|---|---|")
                 
-                # Flatten metrics from all categories in the Score file
+                # Flatten metrics
                 all_metrics = {}
                 for cat in cat_scores.values():
-                    # Each category has 'metrics' dict
                     all_metrics.update(cat.get('metrics', {}))
                     
-                for key, (en_name, cn_name) in fin_map.items():
-                    # In score file, value is inside 'value' key
+                for key, defn in FINANCIAL_METRICS.items():
                     m_data = all_metrics.get(key, {})
                     val = m_data.get('value')
-                    
-                    if val is None:
-                        val_str = "N/A (Missing)"
-                    elif isinstance(val, float):
-                        if 'margin' in key or 'roic' in key or 'roe' in key or 'cagr' in key:
-                            val_str = f"{val*100:.2f}%"
-                        elif abs(val) < 100:
-                            val_str = f"{val:.4f}"
-                        else:
-                            val_str = f"{val:.2f}"
-                    else:
-                        val_str = str(val)
-                        
-                    lines.append(f"| {en_name} | {cn_name} | {val_str} | `{key}` |")
+                    val_str = format_val(val, defn.format)
+                    lines.append(f"| {defn.en_name} | {defn.cn_name} | {val_str} | `{key}` |")
                 lines.append("")
         
         # === Technical Indicators (Source: Technical Score) ===
@@ -334,37 +319,20 @@ class DataAggregator:
             td = self._load_json(tech_score_path)
             if td:
                 cats = td.get('score', {}).get('categories', {})
-                
                 lines.append("### 2. 技术指标 (Technical Indicators)\n")
                 lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
                 lines.append("|---|---|---|---|")
                 
-                tech_map = {
-                    'rsi': ('RSI', '相对强弱指数'),
-                    'macd': ('MACD', '指数平滑异同移动平均'),
-                    'adx': ('ADX', '平均趋向指数'),
-                    'atr': ('ATR', '平均真实波幅'),
-                    'obv': ('OBV', '能量潮'),
-                    'roc': ('ROC', '变动率'),
-                    'current_price': ('Current Price', '当前价格'),
-                    'price_position': ('52W Position', '52周位置(%)'),
-                    'bollinger': ('Bollinger/Bandwidth', '布林带/带宽'),
-                    'volume_ratio': ('Volume Ratio', '量比'),
-                    'trend_strength': ('Trend Strength', '趋势强度'),
-                }
-                
-                # Flatten technical indicators for lookup
+                # Flatten technical indicators
                 all_tech = {}
                 for cat_data in cats.values():
                     all_tech.update(cat_data.get('indicators', {}))
                 
-                for ind_key, (en_name, cn_name) in tech_map.items():
-                    ind_data = all_tech.get(ind_key, {})
+                for key, defn in TECHNICAL_INDICATORS.items():
+                    ind_data = all_tech.get(key, {})
                     value = None
-                    field_key = ind_key
+                    field_key = key
                     
-                    # Try to find value using specific logic per indicator type if needed
-                    # Common value keys in technical_score indicators
                     if ind_data:
                         # Priority keys for value
                         for k in ['value', 'current_price', 'adx', 'rsi', 'position', 'bandwidth', 'volume_ratio']:
@@ -372,16 +340,11 @@ class DataAggregator:
                                  value = ind_data[k]
                                  field_key = k
                                  break
-                        # Fallback
                         if value is None and 'value' in ind_data:
                              value = ind_data['value']
                     
-                    if value is None:
-                        val_str = "N/A (Missing)"
-                    else:
-                        val_str = f"{value:.2f}" if isinstance(value, float) else str(value)
-                        
-                    lines.append(f"| {en_name} | {cn_name} | {val_str} | `{field_key}` |")
+                    val_str = format_val(value, defn.format)
+                    lines.append(f"| {defn.en_name} | {defn.cn_name} | {val_str} | `{field_key}` |")
                 lines.append("")
 
         # === Valuation Models (Source: Valuation Result) ===
@@ -392,29 +355,15 @@ class DataAggregator:
                 lines.append("| English Name | 中文名称 | Fair Value (公允价) | Field ID (字段) |")
                 lines.append("|---|---|---|---|")
                 
-                # Correct structure: method_results -> key
                 method_results = vd.get('method_results', {})
                 
-                models = [
-                    ('pe', 'PE Valuation', '市盈率估值'),
-                    ('pb', 'PB Valuation', '市净率估值'),
-                    ('ps', 'PS Valuation', '市销率估值'),
-                    ('ev_ebitda', 'EV/EBITDA', '企业价值倍数'),
-                    ('ddm', 'DDM Model', '股息折现模型'),
-                    ('dcf', 'DCF Model', '自由现金流折现'),
-                    ('graham', 'Graham Number', '格雷厄姆估值'),
-                    ('peter_lynch', 'Peter Lynch Fair Value', '彼得林奇估值'),
-                    ('analyst', 'Analyst Target', '分析师目标价'),
-                ]
-                
-                for key, en_name, cn_name in models:
+                for key, defn in VALUATION_MODELS.items():
                     model = method_results.get(key, {})
                     fv = model.get('fair_value')
                     
-                    if fv is not None:
-                         lines.append(f"| {en_name} | {cn_name} | ${fv:.2f} | `{key}` |")
-                    else:
-                         lines.append(f"| {en_name} | {cn_name} | N/A (Missing) | `{key}` |")
+                    # Special handling: if model missing in dict, val is None
+                    val_str = format_val(fv, defn.format)
+                    lines.append(f"| {defn.en_name} | {defn.cn_name} | {val_str} | `{key}` |")
                 lines.append("")
         
         return "\n".join(lines)
