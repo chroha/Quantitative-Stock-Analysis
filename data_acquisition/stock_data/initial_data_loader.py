@@ -140,12 +140,8 @@ class StockDataLoader:
         """
         Fetch complete data for a stock using intelligent field-level merging.
         
-        This is the default data acquisition method. It collects raw data from all 
-        sources first, then uses IntelligentMerger for field-level priority merging 
-        based on field_registry.
-        
-        For debugging or comparison, use get_stock_data_legacy() which uses the 
-        older incremental merge approach.
+        This method collects raw data from all sources (Yahoo, EDGAR, FMP, Alpha Vantage)
+        then uses IntelligentMerger for field-level priority merging based on field_registry.
         
         Args:
             symbol: Stock ticker symbol (e.g., 'AAPL')
@@ -168,6 +164,8 @@ class StockDataLoader:
             yahoo_data = yahoo_fetcher.fetch_all()
             if yahoo_data.profile and yahoo_data.profile.std_sector:
                 yahoo_data.profile.std_sector = DataMerger.normalize_sector(yahoo_data.profile.std_sector)
+            # Show Yahoo completeness
+            self._log_status(yahoo_data)
         except Exception as e:
             logger.error(f"Yahoo fetch failed: {e}")
         
