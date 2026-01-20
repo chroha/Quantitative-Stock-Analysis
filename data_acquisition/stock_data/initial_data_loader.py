@@ -222,31 +222,40 @@ class StockDataLoader:
         # EDGAR (Official Source)
         print(f"    [2/4] Fetching from SEC EDGAR...")
         edgar_data = {'income_statements': [], 'balance_sheets': [], 'cash_flows': []}
+        current_completeness = 0.0
         try:
             edgar_fetcher = EdgarFetcher()
             edgar_data = edgar_fetcher.fetch_all_financials(symbol)
             # Show incremental completeness after EDGAR
             if any(len(v) > 0 for v in edgar_data.values()):
                 temp_merged = self._quick_merge(yahoo_data, edgar_data, None, [], [], [], merger, symbol)
+                validation = self._validate_data(temp_merged, "EDGAR")
                 self._log_status(temp_merged)
+                current_completeness = validation.average_completeness
         except Exception as e:
             logger.error(f"EDGAR fetch failed: {e}")
         
-        # FMP (Supplementary)
-        print(f"    [3/4] Fetching from FMP...")
+        # FMP (Supplementary) - Skip if already 100% complete
         fmp_data = {'income_statements': [], 'balance_sheets': [], 'cash_flows': [], 'profile': None, 'analyst_targets': None}
-        try:
-            fmp_fetcher = FMPFetcher(symbol)
-            fmp_data = fmp_fetcher.fetch_all()
-            # Show incremental completeness after FMP
-            temp_merged = self._quick_merge(yahoo_data, edgar_data, fmp_data, [], [], [], merger, symbol)
-            self._log_status(temp_merged)
-        except Exception as e:
-            logger.error(f"FMP fetch failed: {e}")
+        if current_completeness < 1.0:
+            print(f"    [3/4] Fetching from FMP...")
+            try:
+                fmp_fetcher = FMPFetcher(symbol)
+                fmp_data = fmp_fetcher.fetch_all()
+                # Show incremental completeness after FMP
+                temp_merged = self._quick_merge(yahoo_data, edgar_data, fmp_data, [], [], [], merger, symbol)
+                validation = self._validate_data(temp_merged, "FMP")
+                self._log_status(temp_merged)
+                current_completeness = validation.average_completeness
+            except Exception as e:
+                logger.error(f"FMP fetch failed: {e}")
+        else:
+            print(f"    [3/4] Skipping FMP (100% complete)")
+            logger.info("Skipping FMP fetch - data already 100% complete")
         
-        # Alpha Vantage (Final Fallback)
+        # Alpha Vantage (Final Fallback) - Skip if already 100% complete
         av_income, av_balance, av_cashflow = [], [], []
-        if self.use_alphavantage:
+        if self.use_alphavantage and current_completeness < 1.0:
             print(f"    [4/4] Fetching from Alpha Vantage...")
             try:
                 from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
@@ -256,6 +265,9 @@ class StockDataLoader:
                 av_cashflow = av_fetcher.fetch_cash_flows()
             except Exception as e:
                 logger.error(f"Alpha Vantage fetch failed: {e}")
+        elif self.use_alphavantage:
+            print(f"    [4/4] Skipping Alpha Vantage (100% complete)")
+            logger.info("Skipping Alpha Vantage fetch - data already 100% complete")
         
         # =====================================================================
         # STEP 2: Intelligent field-level merging
