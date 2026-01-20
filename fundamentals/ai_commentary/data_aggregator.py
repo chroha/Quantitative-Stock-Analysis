@@ -297,6 +297,7 @@ class DataAggregator:
         }
         
         # === Financial Metrics ===
+        # === Financial Metrics ===
         if fin_data_path:
             fd = self._load_json(fin_data_path)
             if fd:
@@ -305,29 +306,28 @@ class DataAggregator:
                 lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
                 lines.append("|---|---|---|---|")
                 
-                # We flatten the categories to list them all
-                for category in ['profitability', 'growth', 'capital_allocation']:
-                    cat_data = metrics.get(category, {})
-                    keys = sorted(cat_data.keys())
-                    for k in keys:
-                        v = cat_data[k]
-                        if v is None: continue
-                        
-                        # Get names
-                        en_name, cn_name = fin_map.get(k, (k.replace('_', ' ').title(), '未知指标'))
-                        
-                        # Format value
-                        if isinstance(v, float):
-                            if 'margin' in k or 'roic' in k or 'roe' in k or 'cagr' in k:
-                                val_str = f"{v*100:.2f}%"
-                            elif abs(v) < 100:
-                                val_str = f"{v:.4f}"
-                            else:
-                                val_str = f"{v:.2f}"
+                # Iterate through our DEFINED map to ensure we show what's missing
+                # Combine all categories for lookup
+                all_metrics = {}
+                for cat in ['profitability', 'growth', 'capital_allocation']:
+                    all_metrics.update(metrics.get(cat, {}))
+                    
+                for key, (en_name, cn_name) in fin_map.items():
+                    val = all_metrics.get(key)
+                    
+                    if val is None:
+                        val_str = "N/A (Missing)"
+                    elif isinstance(val, float):
+                        if 'margin' in key or 'roic' in key or 'roe' in key or 'cagr' in key:
+                            val_str = f"{val*100:.2f}%"
+                        elif abs(val) < 100:
+                            val_str = f"{val:.4f}"
                         else:
-                            val_str = str(v)
-                            
-                        lines.append(f"| {en_name} | {cn_name} | {val_str} | `{k}` |")
+                            val_str = f"{val:.2f}"
+                    else:
+                        val_str = str(val)
+                        
+                    lines.append(f"| {en_name} | {cn_name} | {val_str} | `{key}` |")
                 lines.append("")
         
         # === Technical Indicators ===
@@ -358,32 +358,33 @@ class DataAggregator:
                     'trend_strength': ('Trend Strength', '趋势强度'),
                 }
                 
-                # Extract all indicators across categories
-                for cat_name, cat_data in cats.items():
-                    indicators = cat_data.get('indicators', {})
-                    for ind_name, ind_data in indicators.items():
-                        # Find the primary value
-                        value = None
-                        field_key = ind_name # Default field name
-                        
-                        # Try to find specific value keys
+                # Flatten technical indicators for lookup
+                all_tech = {}
+                for cat_data in cats.values():
+                    all_tech.update(cat_data.get('indicators', {}))
+                
+                # Iterate through EXPECTED technical indicators
+                for ind_key, (en_name, cn_name) in tech_map.items():
+                    ind_data = all_tech.get(ind_key, {})
+                    value = None
+                    field_key = ind_key
+                    
+                    # Try to find value
+                    if ind_data:
                         for key in ['value', 'rsi', 'macd', 'adx', 'atr', 'roc', 'obv', 
-                                    'current_price', 'position', 'bandwidth', 'volume_ratio', ind_name]:
+                                    'current_price', 'position', 'bandwidth', 'volume_ratio', ind_key]:
                             if key in ind_data and key not in ['score', 'max_score', 'explanation']:
                                 value = ind_data.get(key)
                                 if value is not None:
-                                    field_key = key # Found the specific data key
+                                    field_key = key
                                     break
+                    
+                    if value is None:
+                        val_str = "N/A (Missing)"
+                    else:
+                        val_str = f"{value:.2f}" if isinstance(value, float) else str(value)
                         
-                        # Get names
-                        en_name, cn_name = tech_map.get(ind_name, (ind_name.replace('_', ' ').title(), '-'))
-                        if en_name == ind_name.replace('_', ' ').title():
-                             # Try mapping the found key if the indicator name didn't match
-                             en_name, cn_name = tech_map.get(field_key, (en_name, cn_name))
-
-                        val_str = f"{value:.2f}" if isinstance(value, float) else str(value) if value else "N/A"
-                        
-                        lines.append(f"| {en_name} | {cn_name} | {val_str} | `{field_key}` |")
+                    lines.append(f"| {en_name} | {cn_name} | {val_str} | `{field_key}` |")
                 lines.append("")
 
         # === Valuation Models ===
@@ -409,8 +410,11 @@ class DataAggregator:
                 for key, en_name, cn_name in models:
                     model = vd.get('models', {}).get(key, {})
                     fv = model.get('fair_value')
+                    
                     if fv is not None:
-                        lines.append(f"| {en_name} | {cn_name} | ${fv:.2f} | `{key}` |")
+                         lines.append(f"| {en_name} | {cn_name} | ${fv:.2f} | `{key}` |")
+                    else:
+                         lines.append(f"| {en_name} | {cn_name} | N/A (Missing) | `{key}` |")
                 lines.append("")
         
         return "\n".join(lines)
