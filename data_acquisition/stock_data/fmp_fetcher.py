@@ -83,6 +83,7 @@ class FMPFetcher:
                 # Free tier limit - log once and skip remaining calls
                 if not self._free_tier_blocked:
                     self._free_tier_blocked = True
+                    print(f"          (FMP free tier - skipping)")
                     logger.warning(f"FMP free tier does not support {self.symbol} - skipping FMP data")
                 return None
             elif e.response.status_code == 403:
