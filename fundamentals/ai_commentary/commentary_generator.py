@@ -25,7 +25,7 @@ class CommentaryGenerator:
             logger.warning("Google AI Key not found. AI commentary will be disabled.")
             
         self.models_to_try = [
-            "gemini-2.5-pro",
+            "gemini-3-flash-preview",
             "gemini-2.5-flash",
             "gemini-2.5-flash-lite"
         ]
@@ -95,6 +95,7 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
     *   Separate the two reports with a horizontal rule (`---`).
     *   Do NOT use code blocks for the output.
     *   Be professional, concise, and data-driven.
+    *   **IMPORTANT:** Every "解读" / "Comment" cell in tables MUST contain at least 10 characters of meaningful text. Do NOT leave cells as "N/A" or blank unless the data value itself is truly missing. Even for 0-weight metrics, provide a brief interpretation.
 
 **Template (Part 1 - Chinese):**
 
@@ -127,7 +128,7 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | 指标 | 数值 | 得分 | 解读 |
 |------|------|------|----|
 | 回购收益率 | X% | X/{g(cap, 'buyback')} | [简评] |
-| 资本支出 | X | X/{g(cap, 'capex')} | [简评] |
+| 资本支出 | X% | X/{g(cap, 'capex')} | [简评] |
 | 股权激励 | X | X/{g(cap, 'sbc')} | [简评] |
 
 ## 二、技术面 (得分:X)
@@ -160,6 +161,8 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | PEG估值 | $X | X% | X% | [简评] |
 | DDM模型 | $X | X% | X% | [简评] |
 | DCF模型 | $X | X% | X% | [简评] |
+| 格雷厄姆估值 | $X | X% | X% | [简评] |
+| 彼得林奇估值 | $X | X% | X% | [简评] |
 | 分析师目标| $X | X% | X% | [简评] |
 
 ## 四、总结与建议
@@ -203,7 +206,7 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | Metric | Value | Score | Comment |
 |--------|-------|-------|---------|
 | Buyback Yield | X% | X/{g(cap, 'buyback')} | [Brief Comment] |
-| Capex | X | X/{g(cap, 'capex')} | [Brief Comment] |
+| Capex | X% | X/{g(cap, 'capex')} | [Brief Comment] |
 | SBC | X | X/{g(cap, 'sbc')} | [Brief Comment] |
 
 ## II. Technical Analysis (Score: X)
@@ -236,6 +239,8 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | PEG Val | $X | X% | X% | [Brief Comment] |
 | DDM Model | $X | X% | X% | [Brief Comment] |
 | DCF Model | $X | X% | X% | [Brief Comment] |
+| Graham | $X | X% | X% | [Brief Comment] |
+| Peter Lynch | $X | X% | X% | [Brief Comment] |
 | Analyst | $X | X% | X% | [Brief Comment] |
 
 ## IV. Conclusion

@@ -18,7 +18,10 @@ from .valuation_models.ps_valuation import PSValuationModel
 from .valuation_models.ev_valuation import EVValuationModel
 from .valuation_models.analyst_targets import AnalystTargetsModel
 from .valuation_models.dcf_model import DCFModel
+from .valuation_models.dcf_model import DCFModel
 from .valuation_models.ddm_model import DDMModel
+from .valuation_models.graham_model import GrahamNumberModel
+from .valuation_models.peter_lynch_model import PeterLynchModel
 
 logger = setup_logger('valuation_calculator')
 
@@ -60,6 +63,8 @@ class ValuationCalculator:
     
     def _initialize_models(self) -> Dict[str, BaseValuationModel]:
         """Initialize all valuation models."""
+        from .valuation_models.peg_model import PEGValuationModel
+        
         return {
             'pe': PEValuationModel(),
             'pb': PBValuationModel(),
@@ -68,6 +73,9 @@ class ValuationCalculator:
             'analyst': AnalystTargetsModel(),
             'dcf': DCFModel(),
             'ddm': DDMModel(),
+            'graham': GrahamNumberModel(),
+            'peter_lynch': PeterLynchModel(),
+            'peg': PEGValuationModel(),
         }
     
     def calculate_valuation(self, stock_data: StockData) -> dict:

@@ -29,6 +29,7 @@ class ProfitabilityMetrics:
     gross_margin: Optional[float] = None
     net_margin: Optional[float] = None
     operating_margin: Optional[float] = None
+    interest_coverage: Optional[float] = None
     
     # Metadata
     calculation_date: datetime = field(default_factory=datetime.now)
@@ -337,6 +338,52 @@ class ProfitabilityCalculator(CalculatorBase):
         
         return result
     
+    def calculate_interest_coverage(
+        self,
+        operating_income: Optional[float],
+        interest_expense: Optional[float]
+    ) -> CalculationResult:
+        """
+        Calculate Interest Coverage Ratio.
+        
+        Formula:
+            Interest Coverage = Operating Income / Interest Expense
+            
+        Args:
+            operating_income: Operating income (EBIT)
+            interest_expense: Interest expense
+            
+        Returns:
+            CalculationResult with interest coverage
+        """
+        result = CalculationResult(value=None)
+        
+        # Interest expense is often positive in DB but check if it's 0
+        if interest_expense == 0:
+             # If no interest expense, coverage is technically infinite, but we can return None or a high number.
+             # Or warnings.
+             result.add_warning(
+                 'interest_coverage',
+                 'calculation_error',
+                 'Interest expense is 0',
+                 'info'
+             )
+             return result
+
+        coverage = self.safe_divide(operating_income, interest_expense, 'interest_coverage', result)
+        
+        if coverage is not None:
+            # Check bounds (negative coverage is possible if loss making)
+            pass
+            
+        result.value = coverage
+        result.intermediate_values = {
+            'operating_income': operating_income,
+            'interest_expense': interest_expense
+        }
+        
+        return result
+    
     def calculate_all(self, stock_data) -> ProfitabilityMetrics:
         """
         Calculate all profitability metrics from stock data.
@@ -367,6 +414,7 @@ class ProfitabilityCalculator(CalculatorBase):
         # Extract tax fields for ROIC
         pretax_income = self.get_field_value(latest_income, 'std_pretax_income')
         income_tax_expense = self.get_field_value(latest_income, 'std_income_tax_expense')
+        interest_expense = self.get_field_value(latest_income, 'std_interest_expense')
         
         # Extract balance sheet values
         total_equity = self.get_field_value(latest_balance, 'std_shareholder_equity')
@@ -417,5 +465,10 @@ class ProfitabilityCalculator(CalculatorBase):
         operating_margin_result = self.calculate_operating_margin(operating_income, revenue)
         metrics.operating_margin = operating_margin_result.value
         metrics.warnings.extend(operating_margin_result.warnings)
+        
+        # Calculate Interest Coverage
+        int_cov_result = self.calculate_interest_coverage(operating_income, interest_expense)
+        metrics.interest_coverage = int_cov_result.value
+        metrics.warnings.extend(int_cov_result.warnings)
         
         return metrics

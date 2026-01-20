@@ -67,7 +67,15 @@ class CompanyScorer:
             }
         """
         if sector not in self.benchmarks['sectors']:
-            raise ValueError(f"Unknown sector: {sector}. Available: {list(self.benchmarks['sectors'].keys())}")
+            logger.warning(f"Unknown sector: {sector}. Available: {list(self.benchmarks['sectors'].keys())}")
+            # Return a valid but empty result structure to prevent crashes
+            return {
+                'company': company_name or 'Unknown',
+                'sector': sector,
+                'total_score': 0.0,
+                'category_scores': {},
+                'warnings': [f"Critical: Unknown sector '{sector}'. Cannot score against benchmarks."]
+            }
         
         sector_config = self.benchmarks['sectors'][sector]
         global_defaults = self.benchmarks['defaults']
@@ -143,7 +151,8 @@ class CompanyScorer:
             'roe': profitability.roe,
             'operating_margin': profitability.operating_margin,
             'gross_margin': profitability.gross_margin,
-            'net_margin': profitability.net_margin
+            'net_margin': profitability.net_margin,
+            'debt_coverage': profitability.interest_coverage  # Map interest_coverage to debt_coverage key
         }
         
         # Score each profitability metric
@@ -167,7 +176,16 @@ class CompanyScorer:
             metric_config = metrics_config.get(metric_name)
             
             if metric_config is None:
-                warnings.append(f"{metric_name}: not available in benchmarks (weight {weight} excluded)")
+                # Metric not in benchmarks - add as unscored (Visual only)
+                metric_details[metric_name] = {
+                    'value': company_value,
+                    'raw_score': 0,
+                    'weight': 0,
+                    'weighted_score': 0,
+                    'tier': 'N/A', 
+                    'interpretation': 'No Benchmark'
+                }
+                warnings.append(f"{metric_name}: not available in benchmarks (displayed only)")
                 continue
             
             active_weight += weight
@@ -401,6 +419,16 @@ class CompanyScorer:
                     'weighted_score': round(weighted_score, 2),
                     'tier': score_result['tier'],
                     'interpretation': score_result.get('interpretation')
+                }
+            else:
+                # Value exists but no benchmark
+                metric_details['debt_to_equity'] = {
+                    'value': debt_to_equity, 
+                    'raw_score': 0,
+                    'weight': 0, 
+                    'weighted_score': 0,
+                    'tier': 'N/A',
+                    'interpretation': 'No Benchmark'
                 }
         
         return {

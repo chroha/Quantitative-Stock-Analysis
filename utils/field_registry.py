@@ -105,6 +105,15 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
         fmp_names=['incomeBeforeTax'],
         av_names=['incomeBeforeTax'],
     ),
+    'std_interest_expense': FieldDefinition(
+        unified_name='std_interest_expense',
+        description='Interest expense',
+        important=True,
+        yahoo_names=['Interest Expense', 'Interest Expense Non Operating'],
+        edgar_tags=['InterestExpense', 'InterestExpenseDebt'],
+        fmp_names=['interestExpense'],
+        av_names=['interestExpense'],
+    ),
     'std_income_tax_expense': FieldDefinition(
         unified_name='std_income_tax_expense',
         description='Income tax expense',

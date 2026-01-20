@@ -29,6 +29,7 @@ from fundamentals.valuation.valuation_output import ValuationOutput
 from fundamentals.ai_commentary.data_aggregator import DataAggregator
 from fundamentals.ai_commentary.commentary_generator import CommentaryGenerator
 from utils.logger import setup_logger
+from utils.console_utils import symbol as ICON, print_step, print_separator
 
 logger = setup_logger('run_analysis')
 
@@ -75,8 +76,7 @@ def print_header(title):
     print("="*80)
 
 
-def print_step(step_num, total, title):
-    print(f"\n[{step_num}/{total}] {title}...")
+
 
 
 def format_financial_score_report(score_data):
@@ -307,7 +307,7 @@ def main():
         bench_path = bench_loader.get_output_path()
         
         if bench_path.exists():
-            print(f"  ✓ Industry Benchmark data available")
+            print(f"  {ICON.OK} Industry Benchmark data available")
             if len(sys.argv) <= 1:
                 choice = input("  Update industry benchmarks? (y/N): ").strip().lower()
                 if choice == 'y':
@@ -325,7 +325,7 @@ def main():
         
         stock_data = None
         if os.path.exists(stock_path):
-            print(f"  ✓ Found existing data for {symbol}")
+            print(f"  {ICON.OK} Found existing data for {symbol}")
             if len(sys.argv) <= 1:
                 choice = input("  Update stock data? (y/N): ").strip().lower()
                 if choice == 'y':
@@ -340,11 +340,29 @@ def main():
             stock_data = stock_loader.get_stock_data(symbol)
             stock_loader.save_stock_data(stock_data, output_dir)
             
-        if not stock_data:
-            print("[ERROR] Failed to load stock data.")
+        # Validate sufficiency of data
+        # Check for meaningful data (not just empty objects)
+        has_profile = False
+        if stock_data and stock_data.profile and stock_data.profile.std_company_name:
+             has_profile = bool(stock_data.profile.std_company_name.value)
+             
+        has_history = False
+        if stock_data and stock_data.price_history:
+             has_history = len(stock_data.price_history) > 0
+             
+        has_financials = False
+        if stock_data and stock_data.income_statements:
+             has_financials = len(stock_data.income_statements) > 0
+        
+        has_critical_data = stock_data and (has_profile or has_history or has_financials)
+
+        if not has_critical_data:
+            print(f"  {ICON.FAIL} No meaningful data found for {symbol}.")
+            print("  (Missing Company Name, Price History, and Financial Statements)")
+            print("  Stopping analysis to prevent errors.")
             return
         
-        print(f"  ✓ Data acquisition complete")
+        print(f"  {ICON.OK} Data acquisition complete")
 
         # ==============================================================================
         # STEP 2: Financial Data Calculation
@@ -354,7 +372,7 @@ def main():
         fin_data_path = fin_data_gen.generate(symbol, quiet=True)
         
         if not fin_data_path:
-            print("[ERROR] Financial metric calculation failed.")
+            print(f"  {ICON.FAIL} Financial metric calculation failed.")
             return
 
         # Print summary of calculated metrics
@@ -376,12 +394,12 @@ def main():
                 else:
                     buyback_str = f"Dilution {fmt(dilution)}"
 
-                print(f"  ✓ Profitability: ROIC {fmt(pm.get('roic'))} | ROE {fmt(pm.get('roe'))} | Net Margin {fmt(pm.get('net_margin'))}")
-                print(f"  ✓ Growth: Revenue {fmt(gm.get('revenue_cagr_5y'))} | Net Income {fmt(gm.get('net_income_cagr_5y'))} | FCF {fmt(gm.get('fcf_cagr_5y'))}")
-                print(f"  ✓ Capital: {buyback_str} | Capex {fmt(cm.get('capex_intensity_3y'))} | D/E {fmt(cm.get('debt_to_equity'), False)}")
+                print(f"  {ICON.OK} Profitability: ROIC {fmt(pm.get('roic'))} | ROE {fmt(pm.get('roe'))} | Net Margin {fmt(pm.get('net_margin'))}")
+                print(f"  {ICON.OK} Growth: Revenue {fmt(gm.get('revenue_cagr_5y'))} | Net Income {fmt(gm.get('net_income_cagr_5y'))} | FCF {fmt(gm.get('fcf_cagr_5y'))}")
+                print(f"  {ICON.OK} Capital: {buyback_str} | Capex {fmt(cm.get('capex_intensity_3y'))} | D/E {fmt(cm.get('debt_to_equity'), False)}")
         except Exception as e:
             # Fallback if any error reading metrics
-            print(f"  ✓ Financial data generated")
+            print(f"  {ICON.OK} Financial data generated")
         
         # Suppress any dynamically created calculator loggers
         suppress_dynamic_calculators()
@@ -394,18 +412,26 @@ def main():
         fin_score_path = fin_gen.generate(symbol, quiet=True)
         
         fin_score = None
-        if fin_score_path:
-            with open(fin_score_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                fin_score = data.get('score', {})
-            print(f"  ✓ Score: {fin_score.get('total_score', 0):.1f} / 100")
-            
-            # Buffer the detailed report
-            fin_report = format_financial_score_report(fin_score)
-            if fin_report:
-                reports.append(fin_report)
-        else:
-            print("  [WARN] Financial scoring failed or skipped.")
+        try:
+            if fin_score_path:
+                with open(fin_score_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    fin_score = data.get('score', {})
+                print(f"  {ICON.OK} Score: {fin_score.get('total_score', 0):.1f} / 100")
+                
+                # Warnings
+                if fin_score.get('warnings'):
+                    print(f"  {ICON.WARN} {len(fin_score['warnings'])} warnings generated")
+                
+                # Buffer the detailed report
+                fin_report = format_financial_score_report(fin_score)
+                if fin_report:
+                    reports.append(fin_report)
+            else:
+                print(f"  {ICON.WARN} Financial scoring failed or skipped.")
+        except Exception as e:
+            print(f"  {ICON.FAIL} Scoring failed: {e}")
+            print(f"  {ICON.WARN} Financial scoring failed or skipped.")
 
         # ==============================================================================
         # STEP 4: Technical Scoring
@@ -415,18 +441,39 @@ def main():
         tech_score_path = tech_gen.generate(symbol, quiet=True)
         
         tech_score = None
-        if tech_score_path:
-            with open(tech_score_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                tech_score = data.get('score', {})
-            print(f"  ✓ Score: {tech_score.get('total_score', 0)} / {tech_score.get('max_score', 100)}")
-            
-            # Buffer the detailed report
-            tech_report = format_technical_score_report(tech_score)
-            if tech_report:
-                reports.append(tech_report)
-        else:
-            print("  [WARN] Technical scoring failed or skipped.")
+        try:
+            if tech_score_path:
+                with open(tech_score_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    tech_score = data.get('score', {})
+                print(f"  {ICON.OK} Score: {tech_score.get('total_score', 0):.1f} / 100")
+                
+                # Extract details safely
+                try:
+                    cats = tech_score.get('categories', {})
+                    rsi_val = cats.get('momentum', {}).get('indicators', {}).get('rsi', {}).get('rsi')
+                    
+                    adx_data = cats.get('trend_strength', {}).get('indicators', {}).get('adx', {})
+                    adx_val = adx_data.get('adx', 0)
+                    p_di = adx_data.get('plus_di', 0)
+                    m_di = adx_data.get('minus_di', 0)
+                    trend_dir = "Up" if p_di > m_di else "Down"
+                    trend_str = f"{trend_dir} ({adx_val:.1f})"
+                    
+                    print(f"  {ICON.OK} Trend: {trend_str} | RSI: {rsi_val}")
+                except Exception:
+                    print(f"  {ICON.OK} Trend: N/A | RSI: N/A")
+
+                # Buffer the detailed report
+                tech_report = format_technical_score_report(tech_score)
+                if tech_report:
+                    reports.append(tech_report)
+            else:
+                print(f"  {ICON.WARN} Technical scoring failed or skipped.")
+                
+        except Exception as e:
+            print(f"  {ICON.FAIL} Technical scoring failed: {e}")
+            print(f"  {ICON.WARN} Technical scoring failed or skipped.")
 
         # ==============================================================================
         # STEP 5: Valuation
@@ -439,9 +486,9 @@ def main():
             fv = val_result.get('weighted_fair_value')
             diff = val_result.get('price_difference_pct')
             if fv and diff is not None:
-                print(f"  ✓ Fair Value: ${fv:.2f} ({'+' if diff >= 0 else ''}{diff:.1f}%)")
+                print(f"  {ICON.OK} Fair Value: ${fv:.2f} ({'+' if diff >= 0 else ''}{diff:.1f}%)")
             else:
-                print(f"  ✓ Valuation complete")
+                print(f"  {ICON.OK} Valuation complete")
             
             ValuationOutput.save_json(val_result, output_dir)
             
@@ -450,7 +497,7 @@ def main():
             if val_report:
                 reports.append(val_report)
         else:
-            print("  [WARN] Valuation failed.")
+            print(f"  {ICON.WARN} Valuation failed.")
 
         # ==============================================================================
         # DISPLAY BUFFERED REPORTS (before AI call)
@@ -472,7 +519,7 @@ def main():
         if len(sys.argv) <= 1:  # Only prompt in interactive mode
             ai_choice = input("  Generate AI commentary? (Y/n): ").strip().lower()
             if ai_choice == 'n':
-                print("  ✓ Skipped AI commentary generation.")
+                print(f"  {ICON.OK} Skipped AI commentary generation.")
                 print("\n" + "="*80)
                 print("  ANALYSIS COMPLETE")
                 print("="*80)
@@ -480,7 +527,7 @@ def main():
         
         # Check prerequisites
         if not (fin_score and tech_score and val_result):
-            print("  [WARN] Missing prerequisite scores. AI report might be incomplete.")
+            print(f"  {ICON.WARN} Missing prerequisite scores. AI report might be incomplete.")
 
         aggregator = DataAggregator(data_dir=output_dir)
         aggregated_data = aggregator.aggregate(symbol)
@@ -505,7 +552,7 @@ def main():
                 report_path = os.path.join(report_dir, report_file)
                 with open(report_path, 'w', encoding='utf-8') as f:
                     f.write(report)
-                print(f"\n✅ AI Report Generated Successfully!")
+                print(f"\n[OK] AI Report Generated Successfully!")
                 print(f"   Path: {report_path}")
             else:
                 print("  [ERROR] AI generation failed (API error or empty response).")

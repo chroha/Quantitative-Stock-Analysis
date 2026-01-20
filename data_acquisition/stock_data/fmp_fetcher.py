@@ -177,6 +177,8 @@ class FMPFetcher:
             List of IncomeStatement objects
         """
         from utils.unified_schema import IncomeStatement
+        from utils.schema_mapper import SchemaMapper
+        from utils.field_registry import DataSource as RegistryDataSource
         
         data = self._make_request("income-statement")
         
@@ -185,23 +187,19 @@ class FMPFetcher:
             return []
         
         statements = []
-        for item in data[:6]:  # Fetch up to 6 years for calculations (need 5 years + 1 for growth)
+        for item in data[:6]:  # Fetch up to 6 years
             try:
-                stmt = IncomeStatement(
-                    std_period=item.get('date'),
-                    std_revenue=FieldWithSource(value=float(item['revenue']), source='fmp') if item.get('revenue') else None,
-                    std_cost_of_revenue=FieldWithSource(value=float(item['costOfRevenue']), source='fmp') if item.get('costOfRevenue') else None,
-                    std_gross_profit=FieldWithSource(value=float(item['grossProfit']), source='fmp') if item.get('grossProfit') else None,
-                    std_operating_expenses=FieldWithSource(value=float(item['operatingExpenses']), source='fmp') if item.get('operatingExpenses') else None,
-                    std_operating_income=FieldWithSource(value=float(item['operatingIncome']), source='fmp') if item.get('operatingIncome') else None,
-                    std_pretax_income=FieldWithSource(value=float(item['incomeBeforeTax']), source='fmp') if item.get('incomeBeforeTax') else None,
-                    std_income_tax_expense=FieldWithSource(value=float(item['incomeTaxExpense']), source='fmp') if item.get('incomeTaxExpense') else None,
-                    std_net_income=FieldWithSource(value=float(item['netIncome']), source='fmp') if item.get('netIncome') else None,
-                    std_eps=FieldWithSource(value=float(item['eps']), source='fmp') if item.get('eps') else None,
-                    std_eps_diluted=FieldWithSource(value=float(item['epsdiluted']), source='fmp') if item.get('epsdiluted') else None,
-                    std_shares_outstanding=FieldWithSource(value=float(item['weightedAverageShsOut']), source='fmp') if item.get('weightedAverageShsOut') else None,
-                    std_ebitda=FieldWithSource(value=float(item['ebitda']), source='fmp') if item.get('ebitda') else None,
+                period_str = item.get('date')
+                if not period_str: continue
+                
+                # Map fields using SchemaMapper
+                mapped_fields = SchemaMapper.map_statement(
+                    item, 
+                    'income', 
+                    RegistryDataSource.FMP
                 )
+                
+                stmt = IncomeStatement(std_period=period_str, **mapped_fields)
                 statements.append(stmt)
             except (ValueError, KeyError) as e:
                 logger.warning(f"Failed to parse FMP income statement for period {item.get('date')}: {e}")
@@ -215,6 +213,8 @@ class FMPFetcher:
         Fetch balance sheets (Annual + Quarterly).
         """
         from utils.unified_schema import BalanceSheet
+        from utils.schema_mapper import SchemaMapper
+        from utils.field_registry import DataSource as RegistryDataSource
         
         # Helper to process raw data list
         def process_data(data_list):
@@ -222,18 +222,16 @@ class FMPFetcher:
             if not data_list: return stmts
             for item in data_list:
                 try:
-                    stmt = BalanceSheet(
-                        std_period=item.get('date'),
-                        std_total_assets=FieldWithSource(value=float(item['totalAssets']), source='fmp') if item.get('totalAssets') else None,
-                        std_current_assets=FieldWithSource(value=float(item['totalCurrentAssets']), source='fmp') if item.get('totalCurrentAssets') else None,
-                        std_cash=FieldWithSource(value=float(item['cashAndCashEquivalents']), source='fmp') if item.get('cashAndCashEquivalents') else None,
-                        std_accounts_receivable=FieldWithSource(value=float(item['netReceivables']), source='fmp') if item.get('netReceivables') else None,
-                        std_inventory=FieldWithSource(value=float(item['inventory']), source='fmp') if item.get('inventory') else None,
-                        std_total_liabilities=FieldWithSource(value=float(item['totalLiabilities']), source='fmp') if item.get('totalLiabilities') else None,
-                        std_current_liabilities=FieldWithSource(value=float(item['totalCurrentLiabilities']), source='fmp') if item.get('totalCurrentLiabilities') else None,
-                        std_total_debt=FieldWithSource(value=float(item['totalDebt']), source='fmp') if item.get('totalDebt') else None,
-                        std_shareholder_equity=FieldWithSource(value=float(item['totalStockholdersEquity']), source='fmp') if item.get('totalStockholdersEquity') else None,
+                    period_str = item.get('date')
+                    if not period_str: continue
+                    
+                    mapped_fields = SchemaMapper.map_statement(
+                        item, 
+                        'balance', 
+                        RegistryDataSource.FMP
                     )
+                    
+                    stmt = BalanceSheet(std_period=period_str, **mapped_fields)
                     stmts.append(stmt)
                 except (ValueError, KeyError) as e:
                     continue

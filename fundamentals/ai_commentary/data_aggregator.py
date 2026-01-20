@@ -371,6 +371,13 @@ class DataAggregator:
                         if value is None and 'current_price' in ind_data and key == 'current_price':
                              value = ind_data['current_price']
                              field_key = 'current_price'
+                        
+                    # Fallback 2: Check specifically for current_price in data_info
+                    if value is None and key == 'current_price':
+                         price = td.get('score', {}).get('data_info', {}).get('latest_price')
+                         if price is not None:
+                             value = price
+                             field_key = 'data_info.latest_price'
                     
                     val_str = format_val(value, defn.format)
                     lines.append(f"| {defn.en_name} | {defn.cn_name} | {val_str} | `{field_key}` |")

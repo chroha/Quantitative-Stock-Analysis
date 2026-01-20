@@ -29,43 +29,7 @@ from data_acquisition.stock_data.base_fetcher import BaseFetcher, DataSource, Fe
 logger = setup_logger('alphavantage_fetcher')
 
 
-# Field mappings from Alpha Vantage to unified schema
-AV_INCOME_MAPPING = {
-    'totalRevenue': 'std_revenue',
-    'costOfRevenue': 'std_cost_of_revenue',
-    'costofGoodsAndServicesSold': 'std_cost_of_revenue',  # Alternative name
-    'grossProfit': 'std_gross_profit',
-    'operatingExpenses': 'std_operating_expenses',
-    'operatingIncome': 'std_operating_income',
-    'incomeBeforeTax': 'std_pretax_income',
-    'incomeTaxExpense': 'std_income_tax_expense',
-    'netIncome': 'std_net_income',
-    'ebitda': 'std_ebitda',
-    'ebit': 'std_ebit',  # May need to add this to schema if needed
-}
 
-AV_BALANCE_MAPPING = {
-    'totalAssets': 'std_total_assets',
-    'totalCurrentAssets': 'std_current_assets',
-    'cashAndCashEquivalentsAtCarryingValue': 'std_cash',
-    'cashAndShortTermInvestments': 'std_cash',  # Alternative
-    'currentNetReceivables': 'std_accounts_receivable',
-    'inventory': 'std_inventory',
-    'totalLiabilities': 'std_total_liabilities',
-    'totalCurrentLiabilities': 'std_current_liabilities',
-    'shortTermDebt': 'std_total_debt',  # Will combine with longTermDebt
-    'longTermDebt': 'std_long_term_debt',
-    'totalShareholderEquity': 'std_shareholder_equity',
-}
-
-AV_CASHFLOW_MAPPING = {
-    'operatingCashflow': 'std_operating_cash_flow',
-    'cashflowFromInvestment': 'std_investing_cash_flow',
-    'cashflowFromFinancing': 'std_financing_cash_flow',
-    'capitalExpenditures': 'std_capex',
-    'dividendPayout': 'std_dividends_paid',
-    'dividendPayoutCommonStock': 'std_dividends_paid',  # Alternative
-}
 
 
 class AlphaVantageFetcher(BaseFetcher):
@@ -207,6 +171,9 @@ class AlphaVantageFetcher(BaseFetcher):
     
     def fetch_income_statements(self) -> List[IncomeStatement]:
         """Fetch annual income statements."""
+        from utils.schema_mapper import SchemaMapper
+        from utils.field_registry import DataSource as RegistryDataSource
+        
         data = self._make_request('INCOME_STATEMENT')
         
         if not data or 'annualReports' not in data:
@@ -218,22 +185,20 @@ class AlphaVantageFetcher(BaseFetcher):
         logger.info(f"Fetched {len(annual_reports)} income statements for {self.symbol} from Alpha Vantage")
         
         for report in annual_reports[:5]:  # Limit to 5 years
-            stmt = IncomeStatement(
-                std_period=self._parse_period(report.get('fiscalDateEnding')),
-                std_revenue=self._create_field_with_source(report.get('totalRevenue')),
-                std_cost_of_revenue=self._create_field_with_source(
-                    report.get('costOfRevenue') or report.get('costofGoodsAndServicesSold')
-                ),
-                std_gross_profit=self._create_field_with_source(report.get('grossProfit')),
-                std_operating_expenses=self._create_field_with_source(report.get('operatingExpenses')),
-                std_operating_income=self._create_field_with_source(report.get('operatingIncome')),
-                std_pretax_income=self._create_field_with_source(report.get('incomeBeforeTax')),
-                std_income_tax_expense=self._create_field_with_source(report.get('incomeTaxExpense')),
-                std_net_income=self._create_field_with_source(report.get('netIncome')),
-                std_ebitda=self._create_field_with_source(report.get('ebitda')),
-                # EPS not directly in income statement from AV, would need company overview
-            )
-            statements.append(stmt)
+            try:
+                mapped_fields = SchemaMapper.map_statement(
+                    report, 
+                    'income', 
+                    RegistryDataSource.ALPHAVANTAGE
+                )
+                
+                stmt = IncomeStatement(
+                    std_period=self._parse_period(report.get('fiscalDateEnding')),
+                    **mapped_fields
+                )
+                statements.append(stmt)
+            except (ValueError, KeyError) as e:
+                continue
         
         return statements
     
@@ -343,6 +308,9 @@ class AlphaVantageFetcher(BaseFetcher):
     
     def fetch_cash_flows(self) -> List[CashFlow]:
         """Fetch annual cash flow statements."""
+        from utils.schema_mapper import SchemaMapper
+        from utils.field_registry import DataSource as RegistryDataSource
+        
         data = self._make_request('CASH_FLOW')
         
         if not data or 'annualReports' not in data:
@@ -354,36 +322,36 @@ class AlphaVantageFetcher(BaseFetcher):
         logger.info(f"Fetched {len(annual_reports)} cash flow statements for {self.symbol} from Alpha Vantage")
         
         for report in annual_reports[:5]:  # Limit to 5 years
-            # Calculate free cash flow if not directly provided
-            operating_cf = report.get('operatingCashflow')
-            capex = report.get('capitalExpenditures')
-            
-            free_cash_flow = None
-            if operating_cf and capex:
-                try:
-                    # CAPEX is usually negative, so add it
-                    op_cf = float(operating_cf)
-                    cap = float(capex)
-                    # If capex is positive, subtract it; if negative, adding gives correct result
-                    if cap > 0:
-                        free_cash_flow = op_cf - cap
-                    else:
-                        free_cash_flow = op_cf + cap
-                except (ValueError, TypeError):
-                    pass
-            
-            stmt = CashFlow(
-                std_period=self._parse_period(report.get('fiscalDateEnding')),
-                std_operating_cash_flow=self._create_field_with_source(report.get('operatingCashflow')),
-                std_investing_cash_flow=self._create_field_with_source(report.get('cashflowFromInvestment')),
-                std_financing_cash_flow=self._create_field_with_source(report.get('cashflowFromFinancing')),
-                std_capex=self._create_field_with_source(report.get('capitalExpenditures')),
-                std_free_cash_flow=FieldWithSource(value=free_cash_flow, source='alphavantage') if free_cash_flow else None,
-                std_dividends_paid=self._create_field_with_source(
-                    report.get('dividendPayout') or report.get('dividendPayoutCommonStock')
-                ),
-            )
-            statements.append(stmt)
+            try:
+                mapped_fields = SchemaMapper.map_statement(
+                    report, 
+                    'cashflow', 
+                    RegistryDataSource.ALPHAVANTAGE
+                )
+                
+                # Manual Free Cash Flow Calculation
+                # FCF = OCF - Capex
+                ocf_val = report.get('operatingCashflow')
+                capex_val = report.get('capitalExpenditures')
+                
+                if ocf_val and capex_val:
+                    try:
+                        ocf = float(ocf_val)
+                        capex = float(capex_val)
+                        # Capex is usually negative. FCF is cash generated after spending on assets.
+                        # So FCF = OCF + Capex (if capex is negative)
+                        # To be safe: FCF = OCF - abs(Capex)
+                        fcf = ocf - abs(capex)
+                        mapped_fields['std_free_cash_flow'] = FieldWithSource(value=fcf, source='alphavantage')
+                    except: pass
+
+                stmt = CashFlow(
+                    std_period=self._parse_period(report.get('fiscalDateEnding')),
+                    **mapped_fields
+                )
+                statements.append(stmt)
+            except (ValueError, KeyError):
+                continue
         
         return statements
 

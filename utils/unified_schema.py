@@ -54,6 +54,7 @@ class IncomeStatement(BaseModel):
     std_operating_expenses: Optional[FieldWithSource] = Field(None, description="Operating expenses")
     std_operating_income: Optional[FieldWithSource] = Field(None, description="Operating income")
     std_pretax_income: Optional[FieldWithSource] = Field(None, description="Income before tax")
+    std_interest_expense: Optional[FieldWithSource] = Field(None, description="Interest expense")
     std_income_tax_expense: Optional[FieldWithSource] = Field(None, description="Income tax expense")
     std_net_income: Optional[FieldWithSource] = Field(None, description="Net income")
     std_eps: Optional[FieldWithSource] = Field(None, description="Earnings per share (basic)")
@@ -182,6 +183,13 @@ class CompanyProfile(BaseModel):
     std_website: Optional[TextFieldWithSource] = Field(None, description="Company website")
     std_ceo: Optional[TextFieldWithSource] = Field(None, description="CEO name")
     std_beta: Optional[FieldWithSource] = Field(None, description="Stock Beta (risk coefficient)")
+    
+    # Forward EPS and Valuation Fields
+    std_forward_eps: Optional[FieldWithSource] = Field(None, description="Forward EPS (analyst estimate)")
+    std_trailing_eps: Optional[FieldWithSource] = Field(None, description="Trailing Twelve Month EPS")
+    std_forward_pe: Optional[FieldWithSource] = Field(None, description="Forward P/E ratio")
+    std_peg_ratio: Optional[FieldWithSource] = Field(None, description="PEG Ratio (PE / EPS Growth)")
+    std_earnings_growth: Optional[FieldWithSource] = Field(None, description="Earnings growth rate (decimal)")
 
 
 class StockData(BaseModel):
@@ -223,6 +231,7 @@ YAHOO_FIELD_MAPPING = {
     'Operating Expense': 'std_operating_expenses',
     'Operating Income': 'std_operating_income',
     'Pretax Income': 'std_pretax_income',
+    'Interest Expense': 'std_interest_expense',
     'Tax Provision': 'std_income_tax_expense',
     'Net Income': 'std_net_income',
     'Basic EPS': 'std_eps',

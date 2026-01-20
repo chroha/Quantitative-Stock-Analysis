@@ -72,6 +72,7 @@ VALUATION_MODELS: Dict[str, MetricDefinition] = {
     'pb': MetricDefinition('pb', 'PB Valuation', '市净率估值', MetricFormat.CURRENCY, ''),
     'ps': MetricDefinition('ps', 'PS Valuation', '市销率估值', MetricFormat.CURRENCY, ''),
     'ev_ebitda': MetricDefinition('ev_ebitda', 'EV/EBITDA', '企业价值倍数', MetricFormat.CURRENCY, ''),
+    'peg': MetricDefinition('peg', 'PEG Valuation', 'PEG估值', MetricFormat.CURRENCY, ''),
     'ddm': MetricDefinition('ddm', 'DDM Model', '股息折现模型', MetricFormat.CURRENCY, ''),
     'dcf': MetricDefinition('dcf', 'DCF Model', '自由现金流折现', MetricFormat.CURRENCY, ''),
     'graham': MetricDefinition('graham', 'Graham Number', '格雷厄姆估值', MetricFormat.CURRENCY, ''),

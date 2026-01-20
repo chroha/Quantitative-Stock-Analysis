@@ -25,11 +25,11 @@ class FieldValidationResult:
 class OverallValidationResult:
     """Overall validation result for all statements."""
     symbol: str
-    is_complete: bool = True
+    is_complete: bool = False
     total_periods_validated: int = 0
     incomplete_periods: int = 0
     period_results: List[FieldValidationResult] = field(default_factory=list)
-    average_completeness: float = 1.0
+    average_completeness: float = 0.0
     expected_periods: int = 18  # Expected number of period validations (6 years * 3 statement types)
     
     def add_result(self, result: FieldValidationResult):

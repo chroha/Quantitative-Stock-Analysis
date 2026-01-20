@@ -20,43 +20,7 @@ class EdgarFetcher:
     BASE_URL = "https://data.sec.gov/api/xbrl/companyfacts"
     TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
     
-    # Standard mapping from US-GAAP tags to our internal schema fields
-    # Priority ordered list of tags to check for each field
-    # NOTE: This should mirror field_registry.py for EDGAR source mappings
-    TAG_MAPPING = {
-        # Income Statement
-        'std_revenue': ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet', 'SalesRevenueServicesNet', 'SalesRevenueGoodsNet'],
-        'std_cost_of_revenue': ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold', 'CostOfServices'],
-        'std_gross_profit': ['GrossProfit'],
-        'std_operating_expenses': ['OperatingExpenses'],
-        'std_operating_income': ['OperatingIncomeLoss'],
-        'std_pretax_income': ['IncomeLossFromContinuingOperationsBeforeIncomeTaxesExtraordinaryItemsNoncontrollingInterest', 'IncomeLossFromContinuingOperationsBeforeIncomeTaxes'],
-        'std_income_tax_expense': ['IncomeTaxExpenseBenefit'],
-        'std_net_income': ['NetIncomeLoss', 'ProfitLoss'],
-        'std_eps': ['EarningsPerShareBasic'],
-        'std_eps_diluted': ['EarningsPerShareDiluted'],
-        'std_shares_outstanding': ['WeightedAverageNumberOfSharesOutstandingBasic'],
-        
-        # Balance Sheet
-        'std_total_assets': ['Assets'],
-        'std_total_liabilities': ['Liabilities'],
-        'std_shareholder_equity': ['StockholdersEquity', 'StockholdersEquityIncludingPortionAttributableToNoncontrollingInterest'],
-        'std_total_debt': ['LongTermDebt', 'LongTermDebtNoncurrent', 'DebtInstrumentCarryingAmount'],
-        'std_current_assets': ['AssetsCurrent'],
-        'std_current_liabilities': ['LiabilitiesCurrent'],
-        'std_cash': ['CashAndCashEquivalentsAtCarryingValue'],
-        'std_accounts_receivable': ['AccountsReceivableNetCurrent', 'ReceivablesNetCurrent'],
-        'std_inventory': ['InventoryNet', 'InventoryFinishedGoodsNetOfReserves'],
-        
-        # Cash Flow
-        'std_operating_cash_flow': ['NetCashProvidedByUsedInOperatingActivities'],
-        'std_investing_cash_flow': ['NetCashProvidedByUsedInInvestingActivities'],
-        'std_financing_cash_flow': ['NetCashProvidedByUsedInFinancingActivities'],
-        'std_capex': ['PaymentsToAcquireProductiveAssets', 'PaymentsToAcquirePropertyPlantAndEquipment', 'CapitalExpendituresIncurredButNotYetPaid'],
-        'std_stock_based_compensation': ['ShareBasedCompensation', 'ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsVestedInPeriod'],
-        'std_depreciation_amortization': ['DepreciationDepletionAndAmortization', 'Depreciation', 'AmortizationOfIntangibleAssets'],
-        'std_dividends_paid': ['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'PaymentsOfDividendsMinorityInterest'],
-    }
+
 
     def __init__(self, user_agent: str = "Antigravity/1.0 (quantitative_analysis@example.com)"):
         self.headers = {
@@ -157,30 +121,37 @@ class EdgarFetcher:
         Generic parser for Income, Balance, CashFlow based on stmt_type.
         """
         from utils.unified_schema import IncomeStatement, BalanceSheet, CashFlow
+        from utils.field_registry import (
+            INCOME_FIELDS, BALANCE_FIELDS, CASHFLOW_FIELDS,
+            get_source_field_name, DataSource
+        )
         
         # Define fields based on type
         if stmt_type == 'balance':
             TargetClass = BalanceSheet
-            fields_needed = ['std_total_assets','std_total_liabilities','std_shareholder_equity','std_total_debt','std_current_assets','std_current_liabilities','std_cash','std_accounts_receivable','std_inventory']
+            fields_dict = BALANCE_FIELDS
             allowed_forms = ['10-K', '10-Q']
         elif stmt_type == 'income':
             TargetClass = IncomeStatement
-            fields_needed = ['std_revenue','std_net_income','std_eps','std_gross_profit', 'std_operating_income', 'std_cost_of_revenue', 'std_operating_expenses', 'std_eps_diluted', 'std_shares_outstanding', 'std_ebitda', 'std_depreciation_amortization', 'std_pretax_income', 'std_income_tax_expense']
-            allowed_forms = ['10-K'] # Keep income annual for consistency
+            fields_dict = INCOME_FIELDS
+            allowed_forms = ['10-K'] 
         else: # cashflow
             TargetClass = CashFlow
-            fields_needed = ['std_operating_cash_flow','std_investing_cash_flow','std_financing_cash_flow','std_capex', 'std_stock_based_compensation', 'std_free_cash_flow', 'std_dividends_paid']
-            allowed_forms = ['10-K'] # Keep cash flow annual
+            fields_dict = CASHFLOW_FIELDS
+            allowed_forms = ['10-K']
 
         raw_data_by_date = {}
 
-        # Iterate over all needed fields and their possible tags
-        for field in fields_needed:
-            # Skip calculated fields from extraction loop
-            if field in ['std_free_cash_flow', 'std_ebitda'] and field not in self.TAG_MAPPING:
+        # Iterate over all needed fields and their possible tags from Registry
+        for field in fields_dict.keys():
+            # Get tags from registry
+            tags = get_source_field_name(field, DataSource.SEC_EDGAR)
+            if not tags:
                  continue
-                 
-            tags = self.TAG_MAPPING.get(field, [])
+            
+            # Ensure tags is list
+            if isinstance(tags, str): tags = [tags]
+            
             found_tag = False
             for tag in tags:
                 if tag in gaap_facts:

@@ -73,6 +73,12 @@ class YahooFetcher:
                 std_description=TextFieldWithSource(value=info.get('longBusinessSummary', ''), source='yahoo') if info.get('longBusinessSummary') else None,
                 std_website=TextFieldWithSource(value=info.get('website', ''), source='yahoo') if info.get('website') else None,
                 std_beta=self._create_field_with_source(info.get('beta')),  # Stock-specific Beta
+                # Forward EPS and Valuation Fields
+                std_forward_eps=self._create_field_with_source(info.get('forwardEps')),
+                std_trailing_eps=self._create_field_with_source(info.get('trailingEps')),
+                std_forward_pe=self._create_field_with_source(info.get('forwardPE')),
+                std_peg_ratio=self._create_field_with_source(info.get('trailingPegRatio')),
+                std_earnings_growth=self._create_field_with_source(info.get('earningsGrowth')),
             )
         
         except Exception as e:
@@ -165,54 +171,31 @@ class YahooFetcher:
             return []
         
         statements = []
+        from utils.schema_mapper import SchemaMapper
+        from utils.field_registry import DataSource as RegistryDataSource
         
         # Iterate through each column (period)
         for col in df.columns:
             period_str = col.strftime('%Y-%m-%d') if isinstance(col, pd.Timestamp) else str(col)
             
+            # Map raw series using SchemaMapper
+            mapped_fields = SchemaMapper.map_statement(
+                df[col], 
+                statement_type, 
+                RegistryDataSource.YAHOO
+            )
+            
+            # Create statement object
             if statement_type == 'income':
-                stmt = IncomeStatement(
-                    std_period=period_str,
-                    std_revenue=self._create_field_with_source(df.loc['Total Revenue', col]) if 'Total Revenue' in df.index else None,
-                    std_cost_of_revenue=self._create_field_with_source(df.loc['Cost Of Revenue', col]) if 'Cost Of Revenue' in df.index else None,
-                    std_gross_profit=self._create_field_with_source(df.loc['Gross Profit', col]) if 'Gross Profit' in df.index else None,
-                    std_operating_expenses=self._create_field_with_source(df.loc['Operating Expense', col]) if 'Operating Expense' in df.index else None,
-                    std_operating_income=self._create_field_with_source(df.loc['Operating Income', col]) if 'Operating Income' in df.index else None,
-                    std_pretax_income=self._create_field_with_source(df.loc['Pretax Income', col]) if 'Pretax Income' in df.index else None,
-                    std_income_tax_expense=self._create_field_with_source(df.loc['Tax Provision', col]) if 'Tax Provision' in df.index else None,
-                    std_net_income=self._create_field_with_source(df.loc['Net Income', col]) if 'Net Income' in df.index else None,
-                    std_eps=self._create_field_with_source(df.loc['Basic EPS', col]) if 'Basic EPS' in df.index else None,
-                    std_eps_diluted=self._create_field_with_source(df.loc['Diluted EPS', col]) if 'Diluted EPS' in df.index else None,
-                    std_shares_outstanding=self._create_field_with_source(df.loc['Basic Average Shares', col]) if 'Basic Average Shares' in df.index else None,
-                    std_ebitda=self._create_field_with_source(df.loc['EBITDA', col]) if 'EBITDA' in df.index else None,
-                )
-                statements.append(stmt)
-            
+                stmt = IncomeStatement(std_period=period_str, **mapped_fields)
             elif statement_type == 'balance':
-                stmt = BalanceSheet(
-                    std_period=period_str,
-                    std_total_assets=self._create_field_with_source(df.loc['Total Assets', col]) if 'Total Assets' in df.index else None,
-                    std_current_assets=self._create_field_with_source(df.loc['Current Assets', col]) if 'Current Assets' in df.index else None,
-                    std_cash=self._create_field_with_source(df.loc['Cash And Cash Equivalents', col]) if 'Cash And Cash Equivalents' in df.index else None,
-                    std_total_liabilities=self._create_field_with_source(df.loc['Total Liabilities Net Minority Interest', col]) if 'Total Liabilities Net Minority Interest' in df.index else None,
-                    std_current_liabilities=self._create_field_with_source(df.loc['Current Liabilities', col]) if 'Current Liabilities' in df.index else None,
-                    std_total_debt=self._create_field_with_source(df.loc['Total Debt', col]) if 'Total Debt' in df.index else None,
-                    std_shareholder_equity=self._create_field_with_source(df.loc['Stockholders Equity', col]) if 'Stockholders Equity' in df.index else None,
-                )
-                statements.append(stmt)
-            
+                stmt = BalanceSheet(std_period=period_str, **mapped_fields)
             elif statement_type == 'cashflow':
-                stmt = CashFlow(
-                    std_period=period_str,
-                    std_operating_cash_flow=self._create_field_with_source(df.loc['Operating Cash Flow', col]) if 'Operating Cash Flow' in df.index else None,
-                    std_investing_cash_flow=self._create_field_with_source(df.loc['Investing Cash Flow', col]) if 'Investing Cash Flow' in df.index else None,
-                    std_financing_cash_flow=self._create_field_with_source(df.loc['Financing Cash Flow', col]) if 'Financing Cash Flow' in df.index else None,
-                    std_capex=self._create_field_with_source(df.loc['Capital Expenditure', col]) if 'Capital Expenditure' in df.index else None,
-                    std_free_cash_flow=self._create_field_with_source(df.loc['Free Cash Flow', col]) if 'Free Cash Flow' in df.index else None,
-                    std_stock_based_compensation=self._create_field_with_source(df.loc['Stock Based Compensation', col]) if 'Stock Based Compensation' in df.index else None,
-                    std_dividends_paid=self._create_field_with_source(df.loc['Cash Dividends Paid', col]) if 'Cash Dividends Paid' in df.index else (self._create_field_with_source(df.loc['Dividends Paid', col]) if 'Dividends Paid' in df.index else None),
-                )
-                statements.append(stmt)
+                stmt = CashFlow(std_period=period_str, **mapped_fields)
+            else:
+                continue
+                
+            statements.append(stmt)
         
         logger.info(f"Parsed {len(statements)} {statement_type} statements")
         return statements
