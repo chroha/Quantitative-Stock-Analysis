@@ -259,12 +259,7 @@ class DataAggregator:
     def get_raw_data_appendix(self, symbol: str) -> str:
         """
         Generate a markdown appendix with all raw data for reference.
-        
-        Args:
-            symbol: Stock ticker symbol
-            
-        Returns:
-            Markdown formatted string with all raw data tables
+        Format: English Name | Chinese Name | Value | Field ID
         """
         symbol = symbol.upper()
         lines = []
@@ -276,47 +271,63 @@ class DataAggregator:
         val_path = self._find_latest_file(f"valuation_{symbol}_*.json")
         
         lines.append("\n---\n")
-        lines.append("## 📊 附录：原始数据 (Raw Data Appendix)\n")
+        lines.append("## 📊 原始数据附表 (Raw Data Appendix)\n")
+        lines.append("> 方便查阅每个指标的原始值和程序字段名。\n")
+        
+        # Definitions for mapping
+        # key: (English Name, Chinese Name)
+        fin_map = {
+            # Profitability
+            'roic': ('ROIC', '投资资本回报率'),
+            'roe': ('ROE', '股本回报率'),
+            'net_margin': ('Net Profit Margin', '净利率'),
+            'operating_margin': ('Operating Margin', '营业利润率'),
+            'gross_margin': ('Gross Margin', '毛利率'),
+            # Growth
+            'revenue_cagr_5y': ('Revenue CAGR (5Y)', '5年营收复合增长'),
+            'net_income_cagr_5y': ('Net Income CAGR (5Y)', '5年净利复合增长'),
+            'fcf_cagr_5y': ('FCF CAGR (5Y)', '5年自由现金流增长'),
+            # Capital
+            'quality_of_earnings': ('Quality of Earnings', '盈利质量(OCF/NI)'),
+            'fcf_to_debt': ('FCF to Debt', '自由现金流/债务'),
+            'dept_coverage': ('Debt Coverage', '债务覆盖率'),
+            'share_dilution_cagr_5y': ('Share Dilution CAGR', '股份稀释率(负为回购)'),
+            'capex_intensity_3y': ('Capex Intensity', '资本支出强度'),
+            'debt_to_equity': ('Debt to Equity', '债务股本比')
+        }
         
         # === Financial Metrics ===
         if fin_data_path:
             fd = self._load_json(fin_data_path)
             if fd:
                 metrics = fd.get('metrics', {})
+                lines.append("### 1. 财务指标 (Financial Metrics)\n")
+                lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
+                lines.append("|---|---|---|---|")
                 
-                lines.append("### 财务指标 (Financial Metrics)\n")
-                
-                # Profitability
-                prof = metrics.get('profitability', {})
-                lines.append("**盈利能力 (Profitability)**\n")
-                lines.append("| 指标 | 值 |")
-                lines.append("|------|-----|")
-                for k, v in prof.items():
-                    if v is not None:
-                        display = f"{v*100:.2f}%" if isinstance(v, float) and abs(v) < 10 else f"{v:.2f}"
-                        lines.append(f"| {k} | {display} |")
-                lines.append("")
-                
-                # Growth
-                growth = metrics.get('growth', {})
-                lines.append("**成长性 (Growth)**\n")
-                lines.append("| 指标 | 值 |")
-                lines.append("|------|-----|")
-                for k, v in growth.items():
-                    if v is not None:
-                        display = f"{v*100:.2f}%" if isinstance(v, float) and abs(v) < 10 else f"{v:.2f}"
-                        lines.append(f"| {k} | {display} |")
-                lines.append("")
-                
-                # Capital
-                capital = metrics.get('capital_allocation', {})
-                lines.append("**资本配置 (Capital Allocation)**\n")
-                lines.append("| 指标 | 值 |")
-                lines.append("|------|-----|")
-                for k, v in capital.items():
-                    if v is not None:
-                        display = f"{v*100:.2f}%" if isinstance(v, float) and abs(v) < 10 else f"{v:.2f}"
-                        lines.append(f"| {k} | {display} |")
+                # We flatten the categories to list them all
+                for category in ['profitability', 'growth', 'capital_allocation']:
+                    cat_data = metrics.get(category, {})
+                    keys = sorted(cat_data.keys())
+                    for k in keys:
+                        v = cat_data[k]
+                        if v is None: continue
+                        
+                        # Get names
+                        en_name, cn_name = fin_map.get(k, (k.replace('_', ' ').title(), '未知指标'))
+                        
+                        # Format value
+                        if isinstance(v, float):
+                            if 'margin' in k or 'roic' in k or 'roe' in k or 'cagr' in k:
+                                val_str = f"{v*100:.2f}%"
+                            elif abs(v) < 100:
+                                val_str = f"{v:.4f}"
+                            else:
+                                val_str = f"{v:.2f}"
+                        else:
+                            val_str = str(v)
+                            
+                        lines.append(f"| {en_name} | {cn_name} | {val_str} | `{k}` |")
                 lines.append("")
         
         # === Technical Indicators ===
@@ -326,98 +337,80 @@ class DataAggregator:
                 score = td.get('score', {})
                 cats = score.get('categories', {})
                 
-                lines.append("### 技术指标 (Technical Indicators)\n")
+                lines.append("### 2. 技术指标 (Technical Indicators)\n")
+                lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
+                lines.append("|---|---|---|---|")
                 
+                tech_map = {
+                    'rsi': ('RSI', '相对强弱指数'),
+                    'macd': ('MACD', '指数平滑异同移动平均'),
+                    'adx': ('ADX', '平均趋向指数'),
+                    'atr': ('ATR', '平均真实波幅'),
+                    'obv': ('OBV', '能量潮'),
+                    'roc': ('ROC', '变动率'),
+                    'williams_r': ('Williams %R', '威廉指标'),
+                    'stoch_k': ('Stoch K', '随机指标K'),
+                    'current_price': ('Current Price', '当前价格'),
+                    'position_52w': ('52W Position', '52周位置(%)'),
+                    'bollinger_bandwidth': ('BB Bandwidth', '布林带带宽'),
+                    'bollinger_b_percent': ('BB %B', '布林带%B'),
+                    'volume_ratio': ('Volume Ratio', '量比'),
+                    'trend_strength': ('Trend Strength', '趋势强度'),
+                }
+                
+                # Extract all indicators across categories
                 for cat_name, cat_data in cats.items():
-                    cat_display = cat_name.replace('_', ' ').title()
-                    lines.append(f"**{cat_display}**\n")
-                    lines.append("| 指标 | 值 | 得分 |")
-                    lines.append("|------|-----|------|")
-                    
                     indicators = cat_data.get('indicators', {})
                     for ind_name, ind_data in indicators.items():
                         # Find the primary value
                         value = None
+                        field_key = ind_name # Default field name
+                        
+                        # Try to find specific value keys
                         for key in ['value', 'rsi', 'macd', 'adx', 'atr', 'roc', 'obv', 
                                     'current_price', 'position', 'bandwidth', 'volume_ratio', ind_name]:
                             if key in ind_data and key not in ['score', 'max_score', 'explanation']:
                                 value = ind_data.get(key)
                                 if value is not None:
+                                    field_key = key # Found the specific data key
                                     break
                         
+                        # Get names
+                        en_name, cn_name = tech_map.get(ind_name, (ind_name.replace('_', ' ').title(), '-'))
+                        if en_name == ind_name.replace('_', ' ').title():
+                             # Try mapping the found key if the indicator name didn't match
+                             en_name, cn_name = tech_map.get(field_key, (en_name, cn_name))
+
                         val_str = f"{value:.2f}" if isinstance(value, float) else str(value) if value else "N/A"
-                        score_val = ind_data.get('score', 0)
-                        max_score = ind_data.get('max_score', 0)
-                        lines.append(f"| {ind_name} | {val_str} | {score_val}/{max_score} |")
-                    lines.append("")
-        
+                        
+                        lines.append(f"| {en_name} | {cn_name} | {val_str} | `{field_key}` |")
+                lines.append("")
+
         # === Valuation Models ===
         if val_path:
             vd = self._load_json(val_path)
             if vd:
-                lines.append("### 估值模型 (Valuation Models)\n")
-                lines.append("| 模型 | 公允价值 | 当前价格 | 空间 |")
-                lines.append("|------|----------|----------|------|")
-                
-                current = vd.get('current_price', 0)
-                
-                def fmt_val(key):
-                    model = vd.get('models', {}).get(key, {})
-                    fv = model.get('fair_value')
-                    if fv is None:
-                        return None, None
-                    upside = ((fv - current) / current * 100) if current else 0
-                    return fv, upside
+                lines.append("### 3. 估值模型 (Valuation Models)\n")
+                lines.append("| English Name | 中文名称 | Fair Value (公允价) | Field ID (字段) |")
+                lines.append("|---|---|---|---|")
                 
                 models = [
-                    ('PE', 'pe_valuation'),
-                    ('PB', 'pb_valuation'),
-                    ('PS', 'ps_valuation'),
-                    ('EV/EBITDA', 'ev_ebitda'),
-                    ('DDM', 'ddm'),
-                    ('DCF', 'dcf'),
-                    ('Graham', 'graham'),
-                    ('Peter Lynch', 'peter_lynch'),
-                    ('Analyst', 'analyst'),
+                    ('pe_valuation', 'PE Valuation', '市盈率估值'),
+                    ('pb_valuation', 'PB Valuation', '市净率估值'),
+                    ('ps_valuation', 'PS Valuation', '市销率估值'),
+                    ('ev_ebitda', 'EV/EBITDA', '企业价值倍数'),
+                    ('ddm', 'DDM Model', '股息折现模型'),
+                    ('dcf', 'DCF Model', '自由现金流折现'),
+                    ('graham', 'Graham Number', '格雷厄姆估值'),
+                    ('peter_lynch', 'Peter Lynch Fair Value', '彼得林奇估值'),
+                    ('analyst', 'Analyst Target', '分析师目标价'),
                 ]
                 
-                for display_name, key in models:
-                    fv, upside = fmt_val(key)
+                for key, en_name, cn_name in models:
+                    model = vd.get('models', {}).get(key, {})
+                    fv = model.get('fair_value')
                     if fv is not None:
-                        upside_str = f"{upside:+.1f}%"
-                        lines.append(f"| {display_name} | ${fv:.2f} | ${current:.2f} | {upside_str} |")
+                        lines.append(f"| {en_name} | {cn_name} | ${fv:.2f} | `{key}` |")
                 lines.append("")
-        
-        # === Financial Score Breakdown ===
-        if fin_path:
-            fd = self._load_json(fin_path)
-            if fd:
-                score = fd.get('score', {})
-                total = score.get('total_score', 0)
-                cats = score.get('category_scores', {})
-                
-                lines.append("### 财务评分明细 (Financial Score Breakdown)\n")
-                lines.append(f"**总分: {total:.1f} / 100**\n")
-                
-                for cat_name, cat_data in cats.items():
-                    cat_display = cat_name.replace('_', ' ').title()
-                    cat_score = cat_data.get('score', 0)
-                    cat_max = cat_data.get('max', 0)
-                    lines.append(f"**{cat_display}: {cat_score:.1f}/{cat_max}**\n")
-                    
-                    metrics = cat_data.get('metrics', {})
-                    if metrics:
-                        lines.append("| 指标 | 值 | 得分 |")
-                        lines.append("|------|-----|------|")
-                        for m_name, m_data in metrics.items():
-                            val = m_data.get('value')
-                            if val is not None:
-                                val_str = f"{val*100:.1f}%" if isinstance(val, float) and abs(val) < 10 else f"{val:.2f}"
-                            else:
-                                val_str = "N/A"
-                            weighted = m_data.get('weighted_score', 0)
-                            weight = m_data.get('weight', 0)
-                            lines.append(f"| {m_name} | {val_str} | {weighted}/{weight} |")
-                        lines.append("")
         
         return "\n".join(lines)
