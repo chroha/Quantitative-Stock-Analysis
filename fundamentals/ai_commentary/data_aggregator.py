@@ -265,9 +265,8 @@ class DataAggregator:
         lines = []
         
         # Find data files
-        fin_path = self._find_latest_file(f"financial_score_{symbol}_*.json")
-        fin_data_path = self._find_latest_file(f"financial_data_{symbol}_*.json")
-        tech_path = self._find_latest_file(f"technical_score_{symbol}_*.json")
+        fin_score_path = self._find_latest_file(f"financial_score_{symbol}_*.json")
+        tech_score_path = self._find_latest_file(f"technical_score_{symbol}_*.json")
         val_path = self._find_latest_file(f"valuation_{symbol}_*.json")
         
         lines.append("\n---\n")
@@ -275,7 +274,6 @@ class DataAggregator:
         lines.append("> 方便查阅每个指标的原始值和程序字段名。\n")
         
         # Definitions for mapping
-        # key: (English Name, Chinese Name)
         fin_map = {
             # Profitability
             'roic': ('ROIC', '投资资本回报率'),
@@ -288,32 +286,33 @@ class DataAggregator:
             'net_income_cagr_5y': ('Net Income CAGR (5Y)', '5年净利复合增长'),
             'fcf_cagr_5y': ('FCF CAGR (5Y)', '5年自由现金流增长'),
             # Capital
-            'quality_of_earnings': ('Quality of Earnings', '盈利质量(OCF/NI)'),
-            'fcf_to_debt': ('FCF to Debt', '自由现金流/债务'),
-            'dept_coverage': ('Debt Coverage', '债务覆盖率'),
+            'earnings_quality_3y': ('Quality of Earnings', '盈利质量(OCF/NI)'),
+            'fcf_to_debt_ratio': ('FCF to Debt', '自由现金流/债务'),
+            'debt_coverage': ('Debt Coverage', '债务覆盖率'),
             'share_dilution_cagr_5y': ('Share Dilution CAGR', '股份稀释率(负为回购)'),
             'capex_intensity_3y': ('Capex Intensity', '资本支出强度'),
             'debt_to_equity': ('Debt to Equity', '债务股本比')
         }
         
-        # === Financial Metrics ===
-        # === Financial Metrics ===
-        if fin_data_path:
-            fd = self._load_json(fin_data_path)
+        # === Financial Metrics (Source: Financial Score) ===
+        if fin_score_path:
+            fd = self._load_json(fin_score_path)
             if fd:
-                metrics = fd.get('metrics', {})
+                cat_scores = fd.get('score', {}).get('category_scores', {})
                 lines.append("### 1. 财务指标 (Financial Metrics)\n")
                 lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
                 lines.append("|---|---|---|---|")
                 
-                # Iterate through our DEFINED map to ensure we show what's missing
-                # Combine all categories for lookup
+                # Flatten metrics from all categories in the Score file
                 all_metrics = {}
-                for cat in ['profitability', 'growth', 'capital_allocation']:
-                    all_metrics.update(metrics.get(cat, {}))
+                for cat in cat_scores.values():
+                    # Each category has 'metrics' dict
+                    all_metrics.update(cat.get('metrics', {}))
                     
                 for key, (en_name, cn_name) in fin_map.items():
-                    val = all_metrics.get(key)
+                    # In score file, value is inside 'value' key
+                    m_data = all_metrics.get(key, {})
+                    val = m_data.get('value')
                     
                     if val is None:
                         val_str = "N/A (Missing)"
@@ -330,12 +329,11 @@ class DataAggregator:
                     lines.append(f"| {en_name} | {cn_name} | {val_str} | `{key}` |")
                 lines.append("")
         
-        # === Technical Indicators ===
-        if tech_path:
-            td = self._load_json(tech_path)
+        # === Technical Indicators (Source: Technical Score) ===
+        if tech_score_path:
+            td = self._load_json(tech_score_path)
             if td:
-                score = td.get('score', {})
-                cats = score.get('categories', {})
+                cats = td.get('score', {}).get('categories', {})
                 
                 lines.append("### 2. 技术指标 (Technical Indicators)\n")
                 lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
@@ -348,12 +346,9 @@ class DataAggregator:
                     'atr': ('ATR', '平均真实波幅'),
                     'obv': ('OBV', '能量潮'),
                     'roc': ('ROC', '变动率'),
-                    'williams_r': ('Williams %R', '威廉指标'),
-                    'stoch_k': ('Stoch K', '随机指标K'),
                     'current_price': ('Current Price', '当前价格'),
-                    'position_52w': ('52W Position', '52周位置(%)'),
-                    'bollinger_bandwidth': ('BB Bandwidth', '布林带带宽'),
-                    'bollinger_b_percent': ('BB %B', '布林带%B'),
+                    'price_position': ('52W Position', '52周位置(%)'),
+                    'bollinger': ('Bollinger/Bandwidth', '布林带/带宽'),
                     'volume_ratio': ('Volume Ratio', '量比'),
                     'trend_strength': ('Trend Strength', '趋势强度'),
                 }
@@ -363,21 +358,23 @@ class DataAggregator:
                 for cat_data in cats.values():
                     all_tech.update(cat_data.get('indicators', {}))
                 
-                # Iterate through EXPECTED technical indicators
                 for ind_key, (en_name, cn_name) in tech_map.items():
                     ind_data = all_tech.get(ind_key, {})
                     value = None
                     field_key = ind_key
                     
-                    # Try to find value
+                    # Try to find value using specific logic per indicator type if needed
+                    # Common value keys in technical_score indicators
                     if ind_data:
-                        for key in ['value', 'rsi', 'macd', 'adx', 'atr', 'roc', 'obv', 
-                                    'current_price', 'position', 'bandwidth', 'volume_ratio', ind_key]:
-                            if key in ind_data and key not in ['score', 'max_score', 'explanation']:
-                                value = ind_data.get(key)
-                                if value is not None:
-                                    field_key = key
-                                    break
+                        # Priority keys for value
+                        for k in ['value', 'current_price', 'adx', 'rsi', 'position', 'bandwidth', 'volume_ratio']:
+                             if k in ind_data:
+                                 value = ind_data[k]
+                                 field_key = k
+                                 break
+                        # Fallback
+                        if value is None and 'value' in ind_data:
+                             value = ind_data['value']
                     
                     if value is None:
                         val_str = "N/A (Missing)"
@@ -387,7 +384,7 @@ class DataAggregator:
                     lines.append(f"| {en_name} | {cn_name} | {val_str} | `{field_key}` |")
                 lines.append("")
 
-        # === Valuation Models ===
+        # === Valuation Models (Source: Valuation Result) ===
         if val_path:
             vd = self._load_json(val_path)
             if vd:
@@ -395,10 +392,13 @@ class DataAggregator:
                 lines.append("| English Name | 中文名称 | Fair Value (公允价) | Field ID (字段) |")
                 lines.append("|---|---|---|---|")
                 
+                # Correct structure: method_results -> key
+                method_results = vd.get('method_results', {})
+                
                 models = [
-                    ('pe_valuation', 'PE Valuation', '市盈率估值'),
-                    ('pb_valuation', 'PB Valuation', '市净率估值'),
-                    ('ps_valuation', 'PS Valuation', '市销率估值'),
+                    ('pe', 'PE Valuation', '市盈率估值'),
+                    ('pb', 'PB Valuation', '市净率估值'),
+                    ('ps', 'PS Valuation', '市销率估值'),
                     ('ev_ebitda', 'EV/EBITDA', '企业价值倍数'),
                     ('ddm', 'DDM Model', '股息折现模型'),
                     ('dcf', 'DCF Model', '自由现金流折现'),
@@ -408,7 +408,7 @@ class DataAggregator:
                 ]
                 
                 for key, en_name, cn_name in models:
-                    model = vd.get('models', {}).get(key, {})
+                    model = method_results.get(key, {})
                     fv = model.get('fair_value')
                     
                     if fv is not None:
