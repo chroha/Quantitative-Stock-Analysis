@@ -255,3 +255,169 @@ class DataAggregator:
             "graham": fmt('graham'),
             "lynch": fmt('peter_lynch')
         }
+    
+    def get_raw_data_appendix(self, symbol: str) -> str:
+        """
+        Generate a markdown appendix with all raw data for reference.
+        
+        Args:
+            symbol: Stock ticker symbol
+            
+        Returns:
+            Markdown formatted string with all raw data tables
+        """
+        symbol = symbol.upper()
+        lines = []
+        
+        # Find data files
+        fin_path = self._find_latest_file(f"financial_score_{symbol}_*.json")
+        fin_data_path = self._find_latest_file(f"financial_data_{symbol}_*.json")
+        tech_path = self._find_latest_file(f"technical_score_{symbol}_*.json")
+        val_path = self._find_latest_file(f"valuation_{symbol}_*.json")
+        
+        lines.append("\n---\n")
+        lines.append("## 📊 附录：原始数据 (Raw Data Appendix)\n")
+        
+        # === Financial Metrics ===
+        if fin_data_path:
+            fd = self._load_json(fin_data_path)
+            if fd:
+                metrics = fd.get('metrics', {})
+                
+                lines.append("### 财务指标 (Financial Metrics)\n")
+                
+                # Profitability
+                prof = metrics.get('profitability', {})
+                lines.append("**盈利能力 (Profitability)**\n")
+                lines.append("| 指标 | 值 |")
+                lines.append("|------|-----|")
+                for k, v in prof.items():
+                    if v is not None:
+                        display = f"{v*100:.2f}%" if isinstance(v, float) and abs(v) < 10 else f"{v:.2f}"
+                        lines.append(f"| {k} | {display} |")
+                lines.append("")
+                
+                # Growth
+                growth = metrics.get('growth', {})
+                lines.append("**成长性 (Growth)**\n")
+                lines.append("| 指标 | 值 |")
+                lines.append("|------|-----|")
+                for k, v in growth.items():
+                    if v is not None:
+                        display = f"{v*100:.2f}%" if isinstance(v, float) and abs(v) < 10 else f"{v:.2f}"
+                        lines.append(f"| {k} | {display} |")
+                lines.append("")
+                
+                # Capital
+                capital = metrics.get('capital_allocation', {})
+                lines.append("**资本配置 (Capital Allocation)**\n")
+                lines.append("| 指标 | 值 |")
+                lines.append("|------|-----|")
+                for k, v in capital.items():
+                    if v is not None:
+                        display = f"{v*100:.2f}%" if isinstance(v, float) and abs(v) < 10 else f"{v:.2f}"
+                        lines.append(f"| {k} | {display} |")
+                lines.append("")
+        
+        # === Technical Indicators ===
+        if tech_path:
+            td = self._load_json(tech_path)
+            if td:
+                score = td.get('score', {})
+                cats = score.get('categories', {})
+                
+                lines.append("### 技术指标 (Technical Indicators)\n")
+                
+                for cat_name, cat_data in cats.items():
+                    cat_display = cat_name.replace('_', ' ').title()
+                    lines.append(f"**{cat_display}**\n")
+                    lines.append("| 指标 | 值 | 得分 |")
+                    lines.append("|------|-----|------|")
+                    
+                    indicators = cat_data.get('indicators', {})
+                    for ind_name, ind_data in indicators.items():
+                        # Find the primary value
+                        value = None
+                        for key in ['value', 'rsi', 'macd', 'adx', 'atr', 'roc', 'obv', 
+                                    'current_price', 'position', 'bandwidth', 'volume_ratio', ind_name]:
+                            if key in ind_data and key not in ['score', 'max_score', 'explanation']:
+                                value = ind_data.get(key)
+                                if value is not None:
+                                    break
+                        
+                        val_str = f"{value:.2f}" if isinstance(value, float) else str(value) if value else "N/A"
+                        score_val = ind_data.get('score', 0)
+                        max_score = ind_data.get('max_score', 0)
+                        lines.append(f"| {ind_name} | {val_str} | {score_val}/{max_score} |")
+                    lines.append("")
+        
+        # === Valuation Models ===
+        if val_path:
+            vd = self._load_json(val_path)
+            if vd:
+                lines.append("### 估值模型 (Valuation Models)\n")
+                lines.append("| 模型 | 公允价值 | 当前价格 | 空间 |")
+                lines.append("|------|----------|----------|------|")
+                
+                current = vd.get('current_price', 0)
+                
+                def fmt_val(key):
+                    model = vd.get('models', {}).get(key, {})
+                    fv = model.get('fair_value')
+                    if fv is None:
+                        return None, None
+                    upside = ((fv - current) / current * 100) if current else 0
+                    return fv, upside
+                
+                models = [
+                    ('PE', 'pe_valuation'),
+                    ('PB', 'pb_valuation'),
+                    ('PS', 'ps_valuation'),
+                    ('EV/EBITDA', 'ev_ebitda'),
+                    ('DDM', 'ddm'),
+                    ('DCF', 'dcf'),
+                    ('Graham', 'graham'),
+                    ('Peter Lynch', 'peter_lynch'),
+                    ('Analyst', 'analyst'),
+                ]
+                
+                for display_name, key in models:
+                    fv, upside = fmt_val(key)
+                    if fv is not None:
+                        upside_str = f"{upside:+.1f}%"
+                        lines.append(f"| {display_name} | ${fv:.2f} | ${current:.2f} | {upside_str} |")
+                lines.append("")
+        
+        # === Financial Score Breakdown ===
+        if fin_path:
+            fd = self._load_json(fin_path)
+            if fd:
+                score = fd.get('score', {})
+                total = score.get('total_score', 0)
+                cats = score.get('category_scores', {})
+                
+                lines.append("### 财务评分明细 (Financial Score Breakdown)\n")
+                lines.append(f"**总分: {total:.1f} / 100**\n")
+                
+                for cat_name, cat_data in cats.items():
+                    cat_display = cat_name.replace('_', ' ').title()
+                    cat_score = cat_data.get('score', 0)
+                    cat_max = cat_data.get('max', 0)
+                    lines.append(f"**{cat_display}: {cat_score:.1f}/{cat_max}**\n")
+                    
+                    metrics = cat_data.get('metrics', {})
+                    if metrics:
+                        lines.append("| 指标 | 值 | 得分 |")
+                        lines.append("|------|-----|------|")
+                        for m_name, m_data in metrics.items():
+                            val = m_data.get('value')
+                            if val is not None:
+                                val_str = f"{val*100:.1f}%" if isinstance(val, float) and abs(val) < 10 else f"{val:.2f}"
+                            else:
+                                val_str = "N/A"
+                            weighted = m_data.get('weighted_score', 0)
+                            weight = m_data.get('weight', 0)
+                            lines.append(f"| {m_name} | {val_str} | {weighted}/{weight} |")
+                        lines.append("")
+        
+        return "\n".join(lines)

@@ -67,6 +67,12 @@ def main():
         if not report:
             print(f"[ERROR] Failed to generate report. Check API key and logs.")
             return
+        
+        # Step 2.5: Generate raw data appendix
+        print(f"   Generating data appendix...")
+        appendix = aggregator.get_raw_data_appendix(symbol)
+        if appendix:
+            report = report + appendix
             
         # Step 3: Save Report
         date_str = aggregated_data['stock_info']['date']
