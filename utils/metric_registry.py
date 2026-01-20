@@ -53,12 +53,12 @@ TECHNICAL_INDICATORS: Dict[str, MetricDefinition] = {
     'rsi': MetricDefinition('rsi', 'RSI', '相对强弱指数', MetricFormat.DECIMAL, ''),
     'macd': MetricDefinition('macd', 'MACD', '指数平滑异同移动平均', MetricFormat.DECIMAL, ''),
     'adx': MetricDefinition('adx', 'ADX', '平均趋向指数', MetricFormat.DECIMAL, ''),
-    'atr': MetricDefinition('atr', 'ATR', '平均真实波幅', MetricFormat.DECIMAL, ''), # Sometimes treated as percent of price
+    'atr': MetricDefinition('atr', 'ATR', '平均真实波幅', MetricFormat.DECIMAL, ''), 
     'obv': MetricDefinition('obv', 'OBV', '能量潮', MetricFormat.DECIMAL, ''),
-    'roc': MetricDefinition('roc', 'ROC', '变动率', MetricFormat.PERCENT, ''), # Formatted as percent
+    'roc': MetricDefinition('roc', 'ROC', '变动率(%)', MetricFormat.DECIMAL, ''),
     
     'current_price': MetricDefinition('current_price', 'Current Price', '当前价格', MetricFormat.CURRENCY, ''),
-    'price_position': MetricDefinition('price_position', '52W Position', '52周位置(%)', MetricFormat.PERCENT, 'Position within 52 week range'),
+    'price_position': MetricDefinition('price_position', '52W Position', '52周位置(%)', MetricFormat.DECIMAL, 'Position within 52 week range'),
     'bollinger': MetricDefinition('bollinger', 'Bollinger/Bandwidth', '布林带/带宽', MetricFormat.DECIMAL, ''),
     'volume_ratio': MetricDefinition('volume_ratio', 'Volume Ratio', '量比', MetricFormat.DECIMAL, ''),
     'trend_strength': MetricDefinition('trend_strength', 'Trend Strength', '趋势强度', MetricFormat.DECIMAL, ''),

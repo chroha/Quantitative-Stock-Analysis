@@ -327,21 +327,50 @@ class DataAggregator:
                 all_tech = {}
                 for cat_data in cats.values():
                     all_tech.update(cat_data.get('indicators', {}))
-                
+
+                # Tech Key Mapping (Registry -> JSON Indicator)
+                tech_key_map = {
+                    'volume_ratio': 'volume_strength',
+                }
+
                 for key, defn in TECHNICAL_INDICATORS.items():
-                    ind_data = all_tech.get(key, {})
+                    # Special case: Trend Strength is a Category Score
+                    if key == 'trend_strength':
+                         cat = cats.get('trend_strength', {})
+                         # Use earned_points as value
+                         val_str = format_val(cat.get('earned_points'), defn.format)
+                         lines.append(f"| {defn.en_name} | {defn.cn_name} | {val_str} | `trend_strength` |")
+                         continue
+
+                    # Determine JSON key
+                    json_ind_key = tech_key_map.get(key, key)
+                    ind_data = all_tech.get(json_ind_key, {})
+                    
                     value = None
                     field_key = key
                     
                     if ind_data:
-                        # Priority keys for value
-                        for k in ['value', 'current_price', 'adx', 'rsi', 'position', 'bandwidth', 'volume_ratio']:
+                        # Priority keys for value lookup
+                        priorities = [key, 'value']
+                        
+                        # Specific overrides
+                        if key == 'price_position': priorities = ['position', 'percentage', 'value']
+                        elif key == 'bollinger': priorities = ['bandwidth', 'pct_b', 'value']
+                        elif key == 'volume_ratio': priorities = ['volume_ratio', 'value']
+                        elif key == 'macd': priorities = ['macd', 'value']
+                        elif key == 'obv': priorities = ['obv', 'value']
+                        elif key == 'atr': priorities = ['atr_pct', 'atr', 'value']
+                        
+                        for k in priorities:
                              if k in ind_data:
                                  value = ind_data[k]
                                  field_key = k
                                  break
-                        if value is None and 'value' in ind_data:
-                             value = ind_data['value']
+                        
+                        # Fallback (rare)
+                        if value is None and 'current_price' in ind_data and key == 'current_price':
+                             value = ind_data['current_price']
+                             field_key = 'current_price'
                     
                     val_str = format_val(value, defn.format)
                     lines.append(f"| {defn.en_name} | {defn.cn_name} | {val_str} | `{field_key}` |")
