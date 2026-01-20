@@ -86,6 +86,55 @@ class StockDataLoader:
     def get_validation_report(self) -> Optional[OverallValidationResult]:
         """Get the validation result from the last fetch."""
         return self.validation_result
+    
+    def _quick_merge(self, yahoo_data, edgar_data, fmp_data, av_income, av_balance, av_cashflow, merger, symbol) -> StockData:
+        """
+        Perform a quick merge for incremental status display.
+        
+        Args:
+            yahoo_data: Yahoo data (StockData or None)
+            edgar_data: EDGAR data dict
+            fmp_data: FMP data dict
+            av_income/av_balance/av_cashflow: Alpha Vantage statement lists
+            merger: IntelligentMerger instance
+            symbol: Stock symbol
+            
+        Returns:
+            Temporarily merged StockData for validation
+        """
+        merged_income = merger.merge_statements(
+            yahoo_stmts=yahoo_data.income_statements if yahoo_data else [],
+            edgar_stmts=edgar_data.get('income_statements', []) if edgar_data else [],
+            fmp_stmts=fmp_data.get('income_statements', []) if fmp_data else [],
+            av_stmts=av_income,
+            statement_class=IncomeStatement
+        )
+        
+        merged_balance = merger.merge_statements(
+            yahoo_stmts=yahoo_data.balance_sheets if yahoo_data else [],
+            edgar_stmts=edgar_data.get('balance_sheets', []) if edgar_data else [],
+            fmp_stmts=fmp_data.get('balance_sheets', []) if fmp_data else [],
+            av_stmts=av_balance,
+            statement_class=BalanceSheet
+        )
+        
+        merged_cashflow = merger.merge_statements(
+            yahoo_stmts=yahoo_data.cash_flows if yahoo_data else [],
+            edgar_stmts=edgar_data.get('cash_flows', []) if edgar_data else [],
+            fmp_stmts=fmp_data.get('cash_flows', []) if fmp_data else [],
+            av_stmts=av_cashflow,
+            statement_class=CashFlow
+        )
+        
+        return StockData(
+            symbol=symbol,
+            profile=yahoo_data.profile if yahoo_data else None,
+            price_history=yahoo_data.price_history if yahoo_data else [],
+            income_statements=merged_income,
+            balance_sheets=merged_balance,
+            cash_flows=merged_cashflow,
+            analyst_targets=yahoo_data.analyst_targets if yahoo_data else None
+        )
 
     def save_stock_data(self, data: StockData, output_dir: str = "generated_data") -> str:
         """
@@ -153,8 +202,9 @@ class StockDataLoader:
         logger.info(f"Starting intelligent data acquisition for: {symbol}")
         
         # =====================================================================
-        # STEP 1: Collect raw data from all sources
+        # STEP 1: Collect raw data from all sources with incremental status
         # =====================================================================
+        merger = IntelligentMerger(symbol)
         
         # Yahoo Finance (Primary)
         print(f"    Fetching from Yahoo Finance...")
@@ -175,6 +225,10 @@ class StockDataLoader:
         try:
             edgar_fetcher = EdgarFetcher()
             edgar_data = edgar_fetcher.fetch_all_financials(symbol)
+            # Show incremental completeness after EDGAR
+            if any(len(v) > 0 for v in edgar_data.values()):
+                temp_merged = self._quick_merge(yahoo_data, edgar_data, None, [], [], [], merger, symbol)
+                self._log_status(temp_merged)
         except Exception as e:
             logger.error(f"EDGAR fetch failed: {e}")
         
@@ -184,6 +238,9 @@ class StockDataLoader:
         try:
             fmp_fetcher = FMPFetcher(symbol)
             fmp_data = fmp_fetcher.fetch_all()
+            # Show incremental completeness after FMP
+            temp_merged = self._quick_merge(yahoo_data, edgar_data, fmp_data, [], [], [], merger, symbol)
+            self._log_status(temp_merged)
         except Exception as e:
             logger.error(f"FMP fetch failed: {e}")
         
