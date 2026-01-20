@@ -81,15 +81,12 @@ class AlphaVantageFetcher(BaseFetcher):
     MIN_REQUEST_INTERVAL = 12.1  # ~5 requests per minute = 12 seconds between requests
     
     def __init__(self, symbol: str):
-        super().__init__(symbol)
+        from utils.field_registry import DataSource as RegistryDataSource
+        super().__init__(symbol, RegistryDataSource.ALPHAVANTAGE)
         self.api_key = settings.ALPHAVANTAGE_API_KEY
         
         if not self.api_key:
             logger.warning("Alpha Vantage API key not configured")
-    
-    @property
-    def source(self) -> DataSource:
-        return DataSource.ALPHAVANTAGE
     
     def _rate_limit(self):
         """Enforce rate limiting between API calls."""
