@@ -1,14 +1,13 @@
 """
-Data merger - combines data from multiple sources with intelligent prioritization.
+Data merger - utility functions for combining data from multiple sources.
 Priority: Yahoo > FMP > Alpha Vantage > Manual
 [INTERNAL PROCESS MODULE] - This module is used by StockDataLoader, do not call directly.
 """
 
-from typing import Optional, Tuple, List, Any
+from typing import Optional
 from utils.logger import setup_logger
 from utils.unified_schema import (
-    StockData, CompanyProfile, AnalystTargets, FieldWithSource, TextFieldWithSource,
-    IncomeStatement, BalanceSheet, CashFlow
+    CompanyProfile, FieldWithSource, TextFieldWithSource
 )
 
 logger = setup_logger('data_merger')
@@ -24,365 +23,12 @@ SECTOR_NORMALIZATION_MAP = {
     # Add more mappings as encountered
 }
 
-class ValidationReport:
-    """Container for validation results."""
-    
-    def __init__(self, symbol: str):
-        self.symbol = symbol
-        self.missing_fields = []
-        self.warnings = []
-        self.errors = []
-        self.is_valid = True
-    
-    def add_missing(self, field_name: str, category: str):
-        """Add a missing field."""
-        self.missing_fields.append({
-            'field': field_name,
-            'category': category
-        })
-    
-    def add_warning(self, message: str):
-        """Add a warning."""
-        self.warnings.append(message)
-        logger.warning(message)
-    
-    def add_error(self, message: str):
-        """Add an error."""
-        self.errors.append(message)
-        self.is_valid = False
-        logger.error(message)
-
-
-class DataValidator:
-    """Validates stock data completeness and consistency."""
-    
-    @staticmethod
-    def _check_field(field: Optional[FieldWithSource], field_name: str, 
-                     report: ValidationReport, category: str, required: bool = False):
-        """
-        Check if a field has data.
-        """
-        if not field or field.value is None:
-            if required:
-                report.add_error(f"Required field missing: {field_name}")
-            else:
-                report.add_missing(field_name, category)
-    
-    @staticmethod
-    def validate(stock_data: StockData) -> ValidationReport:
-        """
-        Validate stock data for completeness and consistency.
-        """
-        logger.info(f"Starting validation for {stock_data.symbol}")
-        report = ValidationReport(stock_data.symbol)
-        
-        # Validate profile
-        if stock_data.profile:
-            profile = stock_data.profile
-            DataValidator._check_field(profile.std_company_name, 'Company Name', report, 'Profile', required=True)
-            DataValidator._check_field(profile.std_industry, 'Industry', report, 'Profile')
-            DataValidator._check_field(profile.std_sector, 'Sector', report, 'Profile')
-            DataValidator._check_field(profile.std_market_cap, 'Market Cap', report, 'Profile')
-        else:
-            report.add_error("Company profile is completely missing")
-        
-        # Validate price history
-        if not stock_data.price_history or len(stock_data.price_history) == 0:
-            report.add_error("No price history data available")
-        else:
-            logger.info(f"Price history: {len(stock_data.price_history)} days")
-        
-        # Validate income statements
-        if not stock_data.income_statements or len(stock_data.income_statements) == 0:
-            report.add_warning("No income statement data available")
-        else:
-            logger.info(f"Income statements: {len(stock_data.income_statements)} periods")
-            # Check key fields in most recent statement
-            latest = stock_data.income_statements[0]
-            DataValidator._check_field(latest.std_revenue, 'Revenue', report, 'Income Statement', required=True)
-            DataValidator._check_field(latest.std_net_income, 'Net Income', report, 'Income Statement', required=True)
-            DataValidator._check_field(latest.std_eps, 'EPS', report, 'Income Statement')
-        
-        # Validate balance sheets
-        if not stock_data.balance_sheets or len(stock_data.balance_sheets) == 0:
-            report.add_warning("No balance sheet data available")
-        else:
-            logger.info(f"Balance sheets: {len(stock_data.balance_sheets)} periods")
-            latest = stock_data.balance_sheets[0]
-            DataValidator._check_field(latest.std_total_assets, 'Total Assets', report, 'Balance Sheet', required=True)
-            DataValidator._check_field(latest.std_total_liabilities, 'Total Liabilities', report, 'Balance Sheet')
-            DataValidator._check_field(latest.std_shareholder_equity, 'Shareholder Equity', report, 'Balance Sheet')
-            
-            # Check balance sheet equation: Assets = Liabilities + Equity
-            if (latest.std_total_assets and latest.std_total_assets.value and 
-                latest.std_total_liabilities and latest.std_total_liabilities.value and
-                latest.std_shareholder_equity and latest.std_shareholder_equity.value):
-                
-                assets = latest.std_total_assets.value
-                liabilities = latest.std_total_liabilities.value
-                equity = latest.std_shareholder_equity.value
-                
-                expected = liabilities + equity
-                diff_pct = abs(assets - expected) / assets * 100 if assets else 0
-                
-                if diff_pct > 1.0:  # Allow 1% tolerance
-                    report.add_warning(
-                        f"Balance sheet equation mismatch: Assets={assets:.2f}, "
-                        f"Liabilities+Equity={expected:.2f} (diff: {diff_pct:.2f}%)"
-                    )
-        
-        # Validate cash flows
-        if not stock_data.cash_flows or len(stock_data.cash_flows) == 0:
-            report.add_warning("No cash flow data available")
-        else:
-            logger.info(f"Cash flows: {len(stock_data.cash_flows)} periods")
-            latest = stock_data.cash_flows[0]
-            DataValidator._check_field(latest.std_operating_cash_flow, 'Operating Cash Flow', report, 'Cash Flow')
-            DataValidator._check_field(latest.std_free_cash_flow, 'Free Cash Flow', report, 'Cash Flow')
-        
-        # Validate analyst targets
-        if stock_data.analyst_targets:
-            targets = stock_data.analyst_targets
-            DataValidator._check_field(targets.std_price_target_avg, 'Avg Price Target', report, 'Analyst Targets')
-        else:
-            report.add_missing('Analyst Price Targets', 'Analyst Targets')
-        
-        logger.info(f"Validation completed: {len(report.missing_fields)} missing, "
-                   f"{len(report.warnings)} warnings, {len(report.errors)} errors")
-        
-        return report
-
 
 class DataMerger:
     """
-    智能合并多源数据并进行验证。
-    Intelligently merges data from multiple sources and validates it.
+    智能合并多源数据的工具类。
+    Utility class for intelligently merging data from multiple sources.
     """
-    
-    #_validator = DataValidator() # Removed instance, using static methods
-
-    
-    @staticmethod
-    def check_data_sufficiency(yahoo_data: StockData) -> Tuple[bool, list[str]]:
-        """
-        Check if Yahoo data is sufficient or if FMP data is needed.
-        
-        Args:
-            yahoo_data: Yahoo data object
-            
-        Returns:
-            Tuple[bool, list]: (is_sufficient, missing_reasons)
-            True if sufficient (NO FMP needed), False if FMP needed.
-            NOTE: The previous logic returned 'need_fmp', so be careful with boolean flip.
-            Let's return (need_fmp, reasons) to match previous logic flow.
-        """
-        reasons = []
-        
-        # 检查分析师目标价 / Check for Analyst Targets
-        if not yahoo_data.analyst_targets:
-            reasons.append("Missing Analyst Targets")
-
-        # 检查公司资料 / Check for Company Profile
-        if yahoo_data.profile:
-            if not yahoo_data.profile.std_company_name or not yahoo_data.profile.std_company_name.value:
-                reasons.append("Missing Company Name")
-            if not yahoo_data.profile.std_industry or not yahoo_data.profile.std_industry.value:
-                reasons.append("Missing Industry")
-            if not yahoo_data.profile.std_sector or not yahoo_data.profile.std_sector.value:
-                reasons.append("Missing Sector")
-        else:
-            reasons.append("Missing Entire Profile")
-            
-        # 检查财务数据深度 / Check Financials Depth (Optional but good)
-        if len(yahoo_data.income_statements) < 5:
-             reasons.append(f"Insufficient Financial History ({len(yahoo_data.income_statements)} < 5 years)")
-            
-        need_fmp = len(reasons) > 0
-        return need_fmp, reasons
-
-    @staticmethod
-    def merge_and_validate(
-        yahoo_data: StockData,
-        secondary_data: dict,
-        manual_data: Optional[dict] = None
-    ) -> StockData:
-        """
-        Merges data and validates it. Main processing entry point.
-        
-        Args:
-            yahoo_data: Primary data from Yahoo Finance
-            secondary_data: Supplementary data dict from any source (EDGAR, FMP, Alpha Vantage)
-                           Expected keys: 'income_statements', 'balance_sheets', 'cash_flows', 'profile', 'analyst_targets'
-            manual_data: Optional manual override data
-        """
-        # 1. 执行合并 / Execute Merge
-        merged_data = DataMerger._merge_logic(yahoo_data, secondary_data, manual_data)
-        
-        # 2. Execute Validation
-        logger.info("Validating merged data...")
-        # report = DataMerger._validator.validate(merged_data)
-        report = DataValidator.validate(merged_data)
-        
-        # Log validation results
-        if report.is_valid:
-            logger.info("Data validation passed")
-        else:
-            logger.warning(f"Data validation found issues: {len(report.errors)} Errors, {len(report.warnings)} Warnings")
-        
-        if report.missing_fields:
-            logger.debug(f"Missing fields: {report.missing_fields}")
-            
-        return merged_data
-
-    @staticmethod
-    def _merge_logic(
-        yahoo_data: StockData,
-        secondary_data: dict,
-        manual_data: Optional[dict] = None
-    ) -> StockData:
-        """
-        Internal merge logic.
-        Priority: Yahoo > Secondary (EDGAR/FMP) > Manual
-        Strategy:
-        1. Base on Yahoo data (usually verified).
-        2. Backfill older years from secondary source.
-        3. Fill missing fields in Yahoo periods from secondary source.
-        """
-        from datetime import datetime, timedelta
-
-        logger.info(f"Merging data for {yahoo_data.symbol} from all sources")
-        
-        # Merge profile
-        merged_profile = DataMerger.merge_profile(
-            yahoo_data.profile,
-            secondary_data.get('profile')
-        )
-        
-        # Merge analyst targets: Priority Yahoo > FMP
-        analyst_targets = None
-        if yahoo_data.analyst_targets:
-            analyst_targets = yahoo_data.analyst_targets
-            logger.info("Using analyst targets from Yahoo Finance")
-        elif secondary_data.get('analyst_targets'):
-            analyst_targets = secondary_data.get('analyst_targets')
-            logger.info("Using analyst targets from FMP (Yahoo unavailable)")
-        else:
-            logger.warning("No analyst targets available from any source")
-        
-        # Merge financial statements
-        def combine_statement_lists(yahoo_stmts, fmp_stmts):
-            """
-            Combine statement lists with priority: Yahoo > FMP.
-            Aligns dates (fuzzy match within 15 days) to ensure correct merging.
-            Backfills older years from FMP.
-            Fills missing fields in Yahoo periods using FMP data.
-            """
-            if not yahoo_stmts: yahoo_stmts = []
-            if not fmp_stmts: fmp_stmts = []
-            
-            # --- pre-process: Align FMP dates to Yahoo dates ---
-            # Yahoo is the source of truth for "Period Date". 
-            # If FMP has a date close to Yahoo's (within 15 days), we assume it's the same period
-            # and temporarily rename the FMP period to match Yahoo's strict string for the dict merge.
-            
-            # Create a list of (date_obj, date_str) for Yahoo to allow date math
-            y_dates = []
-            for s in yahoo_stmts:
-                if s.std_period:
-                    try:
-                        dt = datetime.strptime(s.std_period, "%Y-%m-%d")
-                        y_dates.append((dt, s.std_period))
-                    except ValueError:
-                        pass # specific format issues?
-            
-            # We will modify fmp_stmts mostly in-memory (or copy/modify the objects?)
-            # Since these are Pydantic models, we can just update the field.
-            # But we should be careful not to persist this if we needed the original FMP data elsewhere.
-            # Here it's fine.
-            
-            for f_stmt in fmp_stmts:
-                if not f_stmt.std_period: continue
-                try:
-                    f_dt = datetime.strptime(f_stmt.std_period, "%Y-%m-%d")
-                    
-                    # Find closest Yahoo date
-                    best_match = None
-                    min_diff = timedelta(days=999)
-                    
-                    for y_dt, y_str in y_dates:
-                        diff = abs(f_dt - y_dt)
-                        if diff < min_diff:
-                            min_diff = diff
-                            best_match = y_str
-                    
-                    # If match within 15 days, align!
-                    if min_diff <= timedelta(days=15) and best_match:
-                        # logger.debug(f"Aligning FMP date {f_stmt.std_period} to Yahoo {best_match} (diff {min_diff.days} days)")
-                        f_stmt.std_period = best_match
-                        
-                except ValueError:
-                    pass
-
-            # --- standard merge logic (now that dates are aligned) ---
-            
-            # Map by date string
-            y_map = {s.std_period: s for s in yahoo_stmts if s.std_period}
-            f_map = {s.std_period: s for s in fmp_stmts if s.std_period}
-            
-            # Get all unique periods
-            all_periods = sorted(set(y_map.keys()) | set(f_map.keys()), reverse=True)
-            
-            combined = []
-            for period in all_periods:
-                if period in y_map:
-                    # Primary: Yahoo
-                    stmt = y_map[period]
-                    source_label = "Yahoo"
-                    
-                    # Check if we can fill missing fields from FMP
-                    if period in f_map:
-                        fmp_stmt = f_map[period]
-                        filled_count = DataMerger._fill_missing_fields_in_stmt(stmt, fmp_stmt)
-                        if filled_count > 0:
-                            source_label += f" + FMP fill({filled_count})"
-                    
-                    combined.append(stmt)
-                    # logger.debug(f"  Period {period}: {source_label}")
-                    
-                elif period in f_map:
-                    # Backfill: FMP (only if Yahoo doesn't have it)
-                    # Use FMP statement directly
-                    stmt = f_map[period]
-                    combined.append(stmt)
-                    # logger.debug(f"  Period {period}: FMP (Backfill)")
-            
-            # Limit to most recent 6 periods
-            final_list = combined[:6]
-            logger.info(f"  Merged {len(final_list)} periods (Yahoo: {len(y_map)}, FMP: {len(f_map)})")
-            return final_list
-
-        logger.info("Merging Income Statements...")
-        income_statements = combine_statement_lists(yahoo_data.income_statements, secondary_data.get('income_statements'))
-        
-        logger.info("Merging Balance Sheets...")
-        balance_sheets = combine_statement_lists(yahoo_data.balance_sheets, secondary_data.get('balance_sheets'))
-        
-        logger.info("Merging Cash Flows...")
-        cash_flows = combine_statement_lists(yahoo_data.cash_flows, secondary_data.get('cash_flows'))
-        
-        # Create merged stock data
-        merged = StockData(
-            symbol=yahoo_data.symbol,
-            profile=merged_profile,
-            price_history=yahoo_data.price_history,
-            income_statements=income_statements,
-            balance_sheets=balance_sheets,
-            cash_flows=cash_flows,
-            analyst_targets=analyst_targets
-        )
-        
-        logger.info("Data merge completed successfully")
-        return merged
 
     @staticmethod
     def _fill_missing_fields_in_stmt(target_stmt, source_stmt) -> int:
@@ -392,8 +38,6 @@ class DataMerger:
         """
         filled_count = 0
         
-        # Iterate over all attributes of the unified schema object
-        # We assume both are instances of IncomeStatement, BalanceSheet, or CashFlow (Pydantic models)
         if not target_stmt or not source_stmt:
             return 0
             
@@ -417,7 +61,6 @@ class DataMerger:
             # If empty, try to fill from source
             if is_empty and source_val is not None:
                 if isinstance(source_val, FieldWithSource) and source_val.value is not None:
-                    # Assign it!
                     setattr(target_stmt, field_name, source_val)
                     filled_count += 1
         
@@ -474,7 +117,6 @@ class DataMerger:
         
         if len(profiles) == 1:
             profile = profiles[0]
-            # Normalize sector before returning
             profile.std_sector = DataMerger.normalize_sector(profile.std_sector)
             return profile
         
@@ -490,7 +132,6 @@ class DataMerger:
             fmp_profile.std_sector if fmp_profile else None,
             av_profile.std_sector if av_profile else None
         )
-        # Apply sector normalization
         merged_sector = DataMerger.normalize_sector(merged_sector)
         
         merged = CompanyProfile(
@@ -532,4 +173,3 @@ class DataMerger:
         )
         
         return merged
-
