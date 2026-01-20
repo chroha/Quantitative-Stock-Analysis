@@ -185,6 +185,77 @@ class IntelligentMerger:
             log_merge_summary(self.symbol, f"{statement_class.__name__}[{period}]", field_sources)
         
         return merged_statements
+
+    def merge_profiles(self, base_profile: Optional[CompanyProfile], supplementary_profile: Optional[CompanyProfile]) -> CompanyProfile:
+        """
+        Merge two CompanyProfile objects using field priority.
+        Used for merging FMP/AV updates into the base Yahoo profile.
+        
+        Args:
+            base_profile: The primary profile (e.g. from Yahoo)
+            supplementary_profile: The secondary profile (e.g. from FMP)
+            
+        Returns:
+            Merged CompanyProfile
+        """
+        from utils.unified_schema import CompanyProfile
+        
+        if not base_profile and not supplementary_profile:
+            return CompanyProfile(std_symbol=self.symbol)
+        
+        if not base_profile:
+            return supplementary_profile
+            
+        if not supplementary_profile:
+            return base_profile
+            
+        merged_kwargs = {}
+        field_sources = {}
+        
+        # Iterate over all fields in CompanyProfile
+        for field_name in CompanyProfile.model_fields.keys():
+            # Get values from both
+            val1 = getattr(base_profile, field_name, None)
+            val2 = getattr(supplementary_profile, field_name, None)
+            
+            # Map valid values to sources
+            # Assuming val.source is available if it's a FieldWithSource
+            # If val is just a string/float (unlikely in our schema), we can't easily track source unless wrapper is used
+            # But our Schema uses FieldWithSource everywhere except symbol basically.
+            
+            values_map = {}
+            if val1: values_map[val1.source if hasattr(val1, 'source') and val1.source else DataSource.YAHOO] = val1
+            if val2: values_map[val2.source if hasattr(val2, 'source') and val2.source else DataSource.FMP] = val2
+            
+            # If standard field without source wrapper (like std_symbol just str), priority is harder.
+            # Usually base wins for simple types.
+            if not hasattr(val1, 'source') and not hasattr(val2, 'source'):
+                merged_kwargs[field_name] = val1 if val1 else val2
+                continue
+
+            # Merge using priority
+            # Note: We simplified logic here. merge_field requires Dict[DataSource, FieldWithSource]
+            # But values_map keys are strings 'yahoo', 'fmp' etc. We need Enums.
+            
+            converted_map = {}
+            for k, v in values_map.items():
+                # Convert string source to Enum if needed
+                try:
+                    enum_source = DataSource(k)
+                    converted_map[enum_source] = v
+                except ValueError:
+                    pass # Skip invalid sources
+            
+            merged_value, winning_source = merge_field(converted_map, field_name)
+            merged_kwargs[field_name] = merged_value
+            
+            if winning_source:
+                field_sources[field_name] = winning_source
+
+        # Log summary
+        log_merge_summary(self.symbol, "CompanyProfile", field_sources)
+        
+        return CompanyProfile(**merged_kwargs)
     
     def get_merge_statistics(self) -> Dict[str, int]:
         """Get statistics about which sources provided data."""

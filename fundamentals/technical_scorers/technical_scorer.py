@@ -121,6 +121,16 @@ class TechnicalScorer:
         latest_price = self.df['close'].iloc[-1]
         latest_date = self.df['date'].iloc[-1]
         
+        # Calculate extra data for appendix
+        latest_volume = self.df['volume'].iloc[-1]
+        avg_volume_20 = self.df['volume'].rolling(20).mean().iloc[-1]
+        
+        # 52 Week Stats (approx 252 trading days)
+        lookback_window = min(len(self.df), 252)
+        recent_data = self.df.iloc[-lookback_window:]
+        high_52w = recent_data['high'].max()
+        low_52w = recent_data['low'].min()
+        
         return {
             'error': False,
             'total_score': round(total_score, 2),
@@ -133,7 +143,11 @@ class TechnicalScorer:
                     'start': self.df['date'].iloc[0].isoformat(),
                     'end': latest_date.isoformat()
                 },
-                'latest_price': round(latest_price, 2)
+                'latest_price': round(latest_price, 2),
+                'latest_volume': int(latest_volume) if not pd.isna(latest_volume) else None,
+                'avg_volume': int(avg_volume_20) if not pd.isna(avg_volume_20) else None,
+                'high_52w': round(high_52w, 2),
+                'low_52w': round(low_52w, 2)
             }
         }
     

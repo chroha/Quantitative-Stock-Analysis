@@ -28,6 +28,7 @@ class GrowthMetrics:
     
     calculation_date: datetime = field(default_factory=datetime.now)
     warnings: list[MetricWarning] = field(default_factory=list)
+    fcf_latest: Optional[float] = None  # Added for appendix display
 
 
 class GrowthCalculator(CalculatorBase):
@@ -338,6 +339,12 @@ class GrowthCalculator(CalculatorBase):
         if len(ocfs) >= 2 and len(capexs) >= 2:
             fcf_cagr = self.calculate_fcf_cagr(ocfs, capexs)
             metrics.fcf_cagr_5y = fcf_cagr.value
+            if fcf_cagr.intermediate_values.get('fcf_values'):
+                # Store latest FCF for appendix
+                fcf_values = fcf_cagr.intermediate_values.get('fcf_values')
+                # fcf_values are oldest to newest, so -1 is latest
+                if fcf_values:
+                    metrics.fcf_latest = fcf_values[-1]
             metrics.warnings.extend(fcf_cagr.warnings)
         
         # Calculate Earnings Quality (most recent 3 years)
@@ -357,6 +364,10 @@ class GrowthCalculator(CalculatorBase):
             
             fcf = self.get_field_value(latest_cf, 'std_free_cash_flow')
             total_debt = self.get_field_value(latest_bs, 'std_total_debt')
+            
+            # Fallback calculate FCF if std_free_cash_flow is missing
+            if fcf is None and metrics.fcf_latest is not None:
+                fcf = metrics.fcf_latest
             
             fcf_debt_result = self.calculate_fcf_to_debt_ratio(fcf, total_debt)
             metrics.fcf_to_debt_ratio = fcf_debt_result.value

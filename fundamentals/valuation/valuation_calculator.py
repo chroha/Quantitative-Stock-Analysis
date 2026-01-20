@@ -133,11 +133,21 @@ class ValuationCalculator:
                 weight = weights.get(method_name, 0.0)
                 
                 # Calculate fair value for this method
-                fair_value = model.calculate_fair_value(
-                    stock_data, 
-                    self.benchmark_data, 
-                    sector
-                )
+                fair_value = None
+                failure_reason = 'Unable to calculate'
+                
+                try:
+                    fair_value = model.calculate_fair_value(
+                        stock_data, 
+                        self.benchmark_data, 
+                        sector
+                    )
+                except ValueError as e:
+                    failure_reason = str(e)
+                    logger.warning(f"  {model.get_model_display_name()}: {failure_reason}")
+                except Exception as e:
+                    failure_reason = f"Error: {str(e)}"
+                    logger.error(f"  {model.get_model_display_name()} failed with error: {e}")
                 
                 if fair_value is not None and fair_value > 0:
                     upside_pct = ((fair_value - current_price) / current_price) * 100
@@ -165,9 +175,10 @@ class ValuationCalculator:
                         'weight': weight,
                         'upside_pct': None,
                         'status': 'failed',
-                        'reason': 'Unable to calculate'
+                        'reason': failure_reason
                     }
-                    logger.warning(f"  {model.get_model_display_name()}: Unable to calculate")
+                    if not fair_value: # Don't log again if we already logged exception
+                         logger.warning(f"  {model.get_model_display_name()}: {failure_reason}")
             
             # Check if we have enough methods
             if total_weight == 0 or len(method_results) < 2:

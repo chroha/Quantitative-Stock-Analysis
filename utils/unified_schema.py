@@ -7,7 +7,7 @@ Defines standardized field names and data models using Pydantic for type safety.
 """
 
 from datetime import datetime
-from typing import Optional, Literal
+from typing import Optional, Literal, Dict, Any
 from pydantic import BaseModel, Field
 
 
@@ -93,6 +93,7 @@ class CashFlow(BaseModel):
     std_free_cash_flow: Optional[FieldWithSource] = Field(None, description="Free cash flow")
     std_stock_based_compensation: Optional[FieldWithSource] = Field(None, description="Stock-based compensation expense")
     std_dividends_paid: Optional[FieldWithSource] = Field(None, description="Dividends paid (cash)")
+    std_repurchase_of_stock: Optional[FieldWithSource] = Field(None, description="Stock repurchase (buyback) amount")
 
 
 class AnalystTargets(BaseModel):
@@ -173,7 +174,17 @@ class SectorBenchmark(BaseModel):
 
 
 class CompanyProfile(BaseModel):
-    """Company profile information."""
+    """
+    Company profile information.
+    
+    CRITICAL: This schema defines the allowed fields for company profile data.
+    If you add new fields to YahooFetcher (or other fetchers), you MUST add them here.
+    Otherwise, Pydantic will silently drop the extra fields during validation.
+    
+    关键提示: 此架构定义了公司概况数据的允许字段。
+    如果您在 YahooFetcher (或其他获取器) 中添加了新字段，必须同步添加到这里。
+    否则，Pydantic 在验证过程中会静默丢弃这些额外字段。
+    """
     std_symbol: Optional[str] = Field(None, description="Stock ticker symbol")
     std_company_name: Optional[TextFieldWithSource] = Field(None, description="Company name")
     std_industry: Optional[TextFieldWithSource] = Field(None, description="Industry")
@@ -190,6 +201,14 @@ class CompanyProfile(BaseModel):
     std_forward_pe: Optional[FieldWithSource] = Field(None, description="Forward P/E ratio")
     std_peg_ratio: Optional[FieldWithSource] = Field(None, description="PEG Ratio (PE / EPS Growth)")
     std_earnings_growth: Optional[FieldWithSource] = Field(None, description="Earnings growth rate (decimal)")
+    
+    # Missing Valuation Fields Added 2026-01-20
+    std_pe_ratio: Optional[FieldWithSource] = Field(None, description="Trailing P/E Ratio")
+    std_pb_ratio: Optional[FieldWithSource] = Field(None, description="Price to Book Ratio")
+    std_ps_ratio: Optional[FieldWithSource] = Field(None, description="Price to Sales Ratio")
+    std_eps: Optional[FieldWithSource] = Field(None, description="Earnings Per Share (Basis)")
+    std_book_value_per_share: Optional[FieldWithSource] = Field(None, description="Book Value Per Share")
+    std_dividend_yield: Optional[FieldWithSource] = Field(None, description="Dividend Yield")
 
 
 class StockData(BaseModel):
@@ -211,6 +230,9 @@ class StockData(BaseModel):
     cash_flows: list[CashFlow] = Field(default_factory=list, description="Cash flow statements")
     analyst_targets: Optional[AnalystTargets] = None
     sector_benchmark: Optional[SectorBenchmark] = Field(None, description="Sector benchmark data for comparison")
+    
+    # Metadata for processing flags (e.g. source tracking)
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Auxiliary processing metadata")
 
 
 # Field mapping dictionaries
@@ -257,6 +279,8 @@ YAHOO_FIELD_MAPPING = {
     'Capital Expenditure': 'std_capex',
     'Free Cash Flow': 'std_free_cash_flow',
     'Stock Based Compensation': 'std_stock_based_compensation',
+    'Repurchase Of Capital Stock': 'std_repurchase_of_stock',
+    'Common Stock Repurchased': 'std_repurchase_of_stock', # Alternative name
 }
 
 # FMP field names -> Unified schema names
@@ -287,4 +311,5 @@ FMP_FIELD_MAPPING = {
     
     # Cash flow (FMP has this field)
     'stockBasedCompensation': 'std_stock_based_compensation',
+    'commonStockRepurchased': 'std_repurchase_of_stock',
 }

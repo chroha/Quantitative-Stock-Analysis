@@ -32,7 +32,7 @@ class PeterLynchModel(BaseValuationModel):
             eps = eps_field.value
             
             if eps is None or eps <= 0:
-                return None
+                raise ValueError(f"EPS is non-positive ({eps}), model inapplicable")
                 
             # Growth Rate - prioritization:
             # 1. Analyst Growth Estimates (not currently in StockData schema fully formatted, usually in analysis)
@@ -46,7 +46,7 @@ class PeterLynchModel(BaseValuationModel):
             growth_rate = self._calculate_ni_cagr(stock_data)
             
             if growth_rate is None:
-                return None
+                raise ValueError("Insufficient historical data to calculate growth rate")
                 
             # Convert decimal to percentage for multiplier (e.g. 0.15 -> 15)
             growth_multiplier = growth_rate * 100
@@ -55,8 +55,8 @@ class PeterLynchModel(BaseValuationModel):
             # Also Min: Growth < 5% -> maybe not a Lynch stock, but let's calculate anyway.
             if growth_multiplier > 25:
                 growth_multiplier = 25
-            if growth_multiplier < 0:
-                return None
+            if growth_multiplier <= 0:
+                raise ValueError(f"Growth rate is non-positive ({growth_multiplier:.1f}%), model inapplicable")
                 
             # Basic Lynch: Fair P/E = Growth Rate
             fair_value = eps * growth_multiplier

@@ -12,6 +12,7 @@ class MetricFormat(Enum):
     DECIMAL = 'decimal'
     PERCENT = 'percent'
     CURRENCY = 'currency'
+    CURRENCY_LARGE = 'currency_large'
     STRING = 'string'
 
 class MetricDefinition(NamedTuple):

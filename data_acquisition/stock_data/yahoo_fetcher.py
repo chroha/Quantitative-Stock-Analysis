@@ -57,6 +57,11 @@ class YahooFetcher:
         
         Returns:
             CompanyProfile object or None if fetch fails
+            
+        NOTE: If you add new fields here, you MUST update CompanyProfile in utils/unified_schema.py.
+        Otherwise, the data will be dropped during the save process.
+        注意: 如果在此处添加新字段，必须同步更新 utils/unified_schema.py 中的 CompanyProfile 定义。
+        否则，数据将在保存过程中被丢弃。
         """
         try:
             self.ticker = yf.Ticker(self.symbol)
@@ -73,7 +78,16 @@ class YahooFetcher:
                 std_description=TextFieldWithSource(value=info.get('longBusinessSummary', ''), source='yahoo') if info.get('longBusinessSummary') else None,
                 std_website=TextFieldWithSource(value=info.get('website', ''), source='yahoo') if info.get('website') else None,
                 std_beta=self._create_field_with_source(info.get('beta')),  # Stock-specific Beta
-                # Forward EPS and Valuation Fields
+                # Valuation Ratios
+                std_pe_ratio=self._create_field_with_source(info.get('trailingPE')),
+                std_pb_ratio=self._create_field_with_source(info.get('priceToBook')),
+                std_ps_ratio=self._create_field_with_source(info.get('priceToSalesTrailing12Months')),
+                # EPS and Book Value
+                std_eps=self._create_field_with_source(info.get('trailingEps')),
+                std_book_value_per_share=self._create_field_with_source(info.get('bookValue')),
+                # Dividend
+                std_dividend_yield=self._create_field_with_source(info.get('dividendYield')),
+                # Forward EPS and Growth Fields
                 std_forward_eps=self._create_field_with_source(info.get('forwardEps')),
                 std_trailing_eps=self._create_field_with_source(info.get('trailingEps')),
                 std_forward_pe=self._create_field_with_source(info.get('forwardPE')),

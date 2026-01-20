@@ -139,7 +139,14 @@ class AlphaVantageFetcher(BaseFetcher):
         return date_str
     
     def fetch_profile(self) -> Optional[CompanyProfile]:
-        """Fetch company overview/profile."""
+        """
+        Fetch company overview/profile.
+        
+        NOTE: If you add new fields here, you MUST update CompanyProfile in utils/unified_schema.py.
+        Otherwise, the data will be dropped during the save process.
+        注意: 如果在此处添加新字段，必须同步更新 utils/unified_schema.py 中的 CompanyProfile 定义。
+        否则，数据将在保存过程中被丢弃。
+        """
         data = self._make_request('OVERVIEW')
         
         if not data or 'Symbol' not in data:
@@ -149,25 +156,31 @@ class AlphaVantageFetcher(BaseFetcher):
         
         return CompanyProfile(
             std_symbol=self.symbol,
-            std_company_name=TextFieldWithSource(
-                value=data.get('Name'), 
-                source='alphavantage'
-            ),
-            std_sector=TextFieldWithSource(
-                value=data.get('Sector'),
-                source='alphavantage'
-            ),
-            std_industry=TextFieldWithSource(
-                value=data.get('Industry'),
-                source='alphavantage'
-            ),
-            std_description=TextFieldWithSource(
-                value=data.get('Description'),
-                source='alphavantage'
-            ),
+            std_company_name=TextFieldWithSource(value=data.get('Name'), source='alphavantage'),
+            std_industry=TextFieldWithSource(value=data.get('Industry'), source='alphavantage'),
+            std_sector=TextFieldWithSource(value=data.get('Sector'), source='alphavantage'),
             std_market_cap=self._create_field_with_source(data.get('MarketCapitalization')),
+            std_description=TextFieldWithSource(value=data.get('Description'), source='alphavantage'),
+            std_website=None, # Not provided in OVERVIEW
             std_beta=self._create_field_with_source(data.get('Beta')),
+            
+            # Valuation Ratios (New Mappings 2026-01-20)
+            std_pe_ratio=self._create_field_with_source(data.get('PERatio') or data.get('TrailingPE')),
+            std_pb_ratio=self._create_field_with_source(data.get('PriceToBookRatio')),
+            std_ps_ratio=self._create_field_with_source(data.get('PriceToSalesRatioTTM')),
+            std_eps=self._create_field_with_source(data.get('EPS')),
+            std_book_value_per_share=self._create_field_with_source(data.get('BookValue')),
+            std_dividend_yield=self._create_field_with_source(data.get('DividendYield')),
+            
+            # Existing mappings
+            std_forward_eps=self._create_field_with_source(data.get('ForwardEPS') or data.get('EPS')), # Fallback to EPS if forward missing
+            std_trailing_eps=self._create_field_with_source(data.get('EPS')),
+            std_forward_pe=self._create_field_with_source(data.get('ForwardPE')),
+            std_peg_ratio=self._create_field_with_source(data.get('PEGRatio')),
+            std_earnings_growth=self._create_field_with_source(data.get('QuarterlyEarningsGrowthYOY'))
         )
+
+
     
     def fetch_income_statements(self) -> List[IncomeStatement]:
         """Fetch annual income statements."""

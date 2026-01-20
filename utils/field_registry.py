@@ -21,7 +21,6 @@ class DataSource(Enum):
     SEC_EDGAR = 'sec_edgar'
     FMP = 'fmp'
     ALPHAVANTAGE = 'alphavantage'
-    MANUAL = 'manual'
 
 
 @dataclass
@@ -324,6 +323,15 @@ CASHFLOW_FIELDS: Dict[str, FieldDefinition] = {
         edgar_tags=['PaymentsOfDividends', 'PaymentsOfDividendsCommonStock', 'PaymentsOfDividendsMinorityInterest'],
         fmp_names=['dividendsPaid'],
         av_names=['dividendPayout', 'dividendPayoutCommonStock'],
+    ),
+    'std_repurchase_of_stock': FieldDefinition(
+        unified_name='std_repurchase_of_stock',
+        description='Stock repurchase (buyback) amount',
+        important=True,
+        yahoo_names=['Repurchase Of Capital Stock', 'Common Stock Repurchased'],
+        edgar_tags=['PaymentsForRepurchaseOfCommonStock', 'PaymentsForRepurchaseOfEquity', 'PaymentsForRepurchaseOfStock'],
+        fmp_names=['commonStockRepurchased', 'stockRepurchased'],
+        av_names=['paymentsForRepurchaseOfCommonStock', 'paymentsForRepurchaseOfEquity', 'paymentsForRepurchaseOfStock'],
     ),
 }
 

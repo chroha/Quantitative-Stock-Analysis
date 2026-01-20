@@ -143,6 +143,7 @@ class FinancialScorerGenerator:
             
             # 5. Score
             logger.info(f"Scoring {symbol} in sector {sector}...")
+            
             score_result = scorer.score_company(
                 profitability=prof_metrics,
                 growth=growth_metrics,

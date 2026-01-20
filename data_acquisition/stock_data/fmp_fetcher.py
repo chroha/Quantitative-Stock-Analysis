@@ -137,6 +137,11 @@ class FMPFetcher:
         """
         Fetch company profile from /stable/profile endpoint.
         
+        NOTE: If you add new fields here, you MUST update CompanyProfile in utils/unified_schema.py.
+        Otherwise, the data will be dropped during the save process.
+        注意: 如果在此处添加新字段，必须同步更新 utils/unified_schema.py 中的 CompanyProfile 定义。
+        否则，数据将在保存过程中被丢弃。
+        
         Returns:
             CompanyProfile object or None if fetch fails
         """
@@ -150,15 +155,31 @@ class FMPFetcher:
         
         try:
             profile = CompanyProfile(
-                std_symbol=self.symbol,
-                std_company_name=TextFieldWithSource(value=profile_data.get('companyName', ''), source='fmp') if profile_data.get('companyName') else None,
-                std_industry=TextFieldWithSource(value=profile_data.get('industry', ''), source='fmp') if profile_data.get('industry') else None,
-                std_sector=TextFieldWithSource(value=profile_data.get('sector', ''), source='fmp') if profile_data.get('sector') else None,
-                std_market_cap=FieldWithSource(value=float(profile_data['marketCap']), source='fmp') if profile_data.get('marketCap') else None,
-                std_description=TextFieldWithSource(value=profile_data.get('description', ''), source='fmp') if profile_data.get('description') else None,
-                std_website=TextFieldWithSource(value=profile_data.get('website', ''), source='fmp') if profile_data.get('website') else None,
-                std_ceo=TextFieldWithSource(value=profile_data.get('ceo', ''), source='fmp') if profile_data.get('ceo') else None,
-                std_beta=FieldWithSource(value=float(profile_data['beta']), source='fmp') if profile_data.get('beta') else None,  # Stock-specific Beta from FMP
+                std_symbol=profile_data.get('symbol'),
+                std_company_name=TextFieldWithSource(value=profile_data.get('companyName'), source='fmp'),
+                std_industry=TextFieldWithSource(value=profile_data.get('industry'), source='fmp'),
+                std_sector=TextFieldWithSource(value=profile_data.get('sector'), source='fmp'),
+                std_market_cap=FieldWithSource(value=float(profile_data.get('mktCap')), source='fmp') if profile_data.get('mktCap') else None,
+                std_description=TextFieldWithSource(value=profile_data.get('description'), source='fmp'),
+                std_website=TextFieldWithSource(value=profile_data.get('website'), source='fmp'),
+                std_ceo=TextFieldWithSource(value=profile_data.get('ceo'), source='fmp'),
+                std_beta=FieldWithSource(value=float(profile_data.get('beta')), source='fmp') if profile_data.get('beta') else None,
+                
+                # Valuation Ratios - FMP Profile endpoint is limited, setting to None or mapping if available
+                # Note: FMP often puts these in 'key-metrics' endpoint, not profile.
+                std_pe_ratio=None, 
+                std_pb_ratio=None,
+                std_ps_ratio=None,
+                std_eps=None, 
+                std_book_value_per_share=None,
+                std_dividend_yield=None, # profile has 'lastDiv' (amount) but not yield %
+                
+                # Forward/Trailing EPS - Not in FMP profile
+                std_forward_eps=None,
+                std_trailing_eps=None,
+                std_forward_pe=None,
+                std_peg_ratio=None,
+                std_earnings_growth=None
             )
             
             logger.info(f"Fetched company profile for {self.symbol} from FMP")
@@ -285,6 +306,7 @@ class FMPFetcher:
                     std_free_cash_flow=FieldWithSource(value=float(item['freeCashFlow']), source='fmp') if item.get('freeCashFlow') else None,
                     std_stock_based_compensation=FieldWithSource(value=float(item['stockBasedCompensation']), source='fmp') if item.get('stockBasedCompensation') else None,
                     std_dividends_paid=FieldWithSource(value=float(item['dividendsPaid']), source='fmp') if item.get('dividendsPaid') else None,
+                    std_repurchase_of_stock=FieldWithSource(value=float(item['commonStockRepurchased']), source='fmp') if item.get('commonStockRepurchased') else None,
                 )
                 statements.append(stmt)
             except (ValueError, KeyError) as e:

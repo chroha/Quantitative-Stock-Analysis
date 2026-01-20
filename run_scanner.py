@@ -19,165 +19,26 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-# ==============================================================================
-# LOGGING MONKEY PATCH
-# Must be applied BEFORE importing modules that setup loggers
-# ==============================================================================
-import utils.logger
+# IMPORTANT: Set logging mode BEFORE importing modules that create loggers
+from utils import LoggingContext, set_logging_mode
+set_logging_mode(LoggingContext.SILENT)
 
-# Save original function
-_original_setup_logger = utils.logger.setup_logger
-
-def _silent_setup_logger(name: str, level: int = logging.INFO, log_file: Optional[str] = None) -> logging.Logger:
-    """
-    Monkey-patched logger setup to silence noisy modules during scanning.
-    Intercepts logger creation and forces CRITICAL level for sub-modules.
-    """
-    # Whitelist: Loggers we WANT to see (or handle manually)
-    whitelist = ['run_scanner']
-    
-    # Check if this logger is in whitelist
-    if name not in whitelist:
-        # Force silence for everything else (Fetchers, Calculators, Validators, etc.)
-        level = logging.CRITICAL
-        
-    return _original_setup_logger(name, level, log_file)
-
-# Apply patch
-utils.logger.setup_logger = _silent_setup_logger
-
+# Now import modules (their loggers will respect SILENT mode)
 from data_acquisition import StockDataLoader
 from fundamentals.financial_scorers.financial_scorers_output import FinancialScorerGenerator
 from fundamentals.technical_scorers.technical_scorers_output import TechnicalScorerGenerator
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
+from utils import setup_logger
+from utils.report_utils import (
+    format_financial_score_report,
+    format_technical_score_report
+)
 
-# Setup scanner logger (this will pass the filter as it's whitelisted)
-logger = utils.logger.setup_logger('run_scanner')
-
-
-# ==============================================================================
-# REPORT FORMATTERS (Copied from run_analysis.py for consistency)
-# ==============================================================================
-
-def format_financial_score_report(score_data):
-    """Format financial score as a clean report string."""
-    if not score_data:
-        return None
-    
-    lines = []
-    lines.append("-" * 70)
-    lines.append("FINANCIAL SCORE REPORT")
-    lines.append("-" * 70)
-    
-    # Check for data warnings
-    if 'data_warnings' in score_data:
-        for w in score_data['data_warnings']:
-             lines.append(f"[NOTE] {w} - Score reliability reduced.")
-        lines.append("-" * 70)
-
-    lines.append(f"Total Score: {score_data.get('total_score', 0):.1f} / 100")
-    lines.append("")
-    
-    cats = score_data.get('category_scores', {})
-    for cat_name, cat_data in cats.items():
-        name = cat_name.replace('_', ' ').title()
-        score = cat_data.get('score', 0)
-        
-        # Calculate actual max score based on active weights
-        actual_max = 0
-        if 'metrics' in cat_data:
-            for metric, details in cat_data['metrics'].items():
-                if not details.get('disabled', False):
-                    actual_max += details.get('weight', 0)
-        
-        # Use actual max if calculated, otherwise use the stored max
-        display_max = actual_max if actual_max > 0 else cat_data.get('max', 0)
-        
-        # Cap displayed score to max (handle sector weight overrides)
-        display_score = min(score, display_max) if display_max > 0 else score
-        
-        lines.append(f"  {name:<20} : {display_score:>5.1f} / {display_max}")
-        
-        # Metrics detail
-        if 'metrics' in cat_data:
-            for metric, details in cat_data['metrics'].items():
-                val = details.get('value')
-                
-                # Format value
-                if isinstance(val, float):
-                    if abs(val) < 1:
-                        val_str = f"{val:.2%}"
-                    else:
-                        val_str = f"{val:.2f}"
-                else:
-                    val_str = str(val) if val is not None else "N/A"
-                
-                # Check if disabled
-                if details.get('disabled', False):
-                    note = details.get('note', 'Not used for this sector')
-                    lines.append(f"      - {metric:<24}: {val_str:>10} ({note})")
-                    continue
-                
-                weighted = details.get('weighted_score', 0)
-                weight = details.get('weight', 0)
-                lines.append(f"      - {metric:<24}: {val_str:>10} (Score: {weighted} / {weight})")
-    
-    lines.append("-" * 70)
-    return "\n".join(lines)
+# Setup scanner logger
+logger = setup_logger('run_scanner')
 
 
-def format_technical_score_report(score_data):
-    """Format technical score as a clean report string."""
-    if not score_data:
-        return None
-    
-    lines = []
-    lines.append("-" * 70)
-    lines.append("TECHNICAL SCORE REPORT")
-    lines.append("-" * 70)
-    total = score_data.get('total_score', 0)
-    max_score = score_data.get('max_score', 100)
-    lines.append(f"Total Score: {total} / {max_score}")
-    lines.append("")
-    
-    cats = score_data.get('categories', {})
-    for cat_name, cat_data in cats.items():
-        name = cat_name.replace('_', ' ').title()
-        earned = cat_data.get('earned_points', 0)
-        max_pts = cat_data.get('max_points', 0)
-        lines.append(f"  {name:<20} : {earned:>5} / {max_pts}")
-        
-        # Indicators detail
-        if 'indicators' in cat_data:
-            for ind, details in cat_data['indicators'].items():
-                score = details.get('score', 0)
-                max_ind = details.get('max_score', 0)
-                signal = details.get('explanation', details.get('signal', ''))
-                
-                # Find the primary value - try common key patterns
-                val = None
-                for key in [ind, 'value', 'rsi', 'macd', 'adx', 'atr', 'roc', 'obv', 
-                           'current_price', 'position', 'bandwidth', 'volume_ratio']:
-                    if key in details and key != 'score' and key != 'max_score':
-                        candidate = details.get(key)
-                        if isinstance(candidate, (int, float)) and val is None:
-                            val = candidate
-                            break
-                
-                if isinstance(val, float):
-                    val_str = f"{val:.2f}"
-                elif val is not None:
-                    val_str = str(val)
-                else:
-                    val_str = f"{score}/{max_ind}"
-                
-                # Truncate long signals
-                if len(signal) > 50:
-                    signal = signal[:47] + "..."
-                lines.append(f"      - {ind:<20}: {val_str:>10} ({signal})")
-    
-    lines.append("-" * 70)
-    return "\n".join(lines)
+
 
 # ==============================================================================
 # SCANNER LOGIC
@@ -212,7 +73,11 @@ def analyze_stock(symbol, output_dir, force_update=True):
             print(f"[ERROR] Failed to load data for {symbol}")
             return None
 
-        print(f"  ✓ Data acquisition complete")
+        # Check API usage for rate limiting logic
+        paid_api_used = stock_data.metadata.get('paid_api_used', False) if stock_data.metadata else False
+        report_data['paid_api_used'] = paid_api_used
+
+        print(f"  [OK] Data acquisition complete")
 
         # STEP 2: Financial Metric Calculation
         print(f"\n[2/4] Calculating Fundamental Metrics...")
@@ -220,7 +85,7 @@ def analyze_stock(symbol, output_dir, force_update=True):
         fin_data_path = fin_data_gen.generate(symbol, quiet=True)
         
         if not fin_data_path:
-            print("[ERROR] Failed metrics calculation")
+            print("[ERROR] Failed metrics calculation (returns None)")
             return None
 
         # Print detailed metrics summary like run_analysis.py
@@ -237,57 +102,67 @@ def analyze_stock(symbol, output_dir, force_update=True):
                 
                 # Special handling for buyback (negative dilution)
                 dilution = cm.get('share_dilution_cagr_5y')
-                if dilution is not None and dilution < 0:
-                    buyback_str = f"Buyback {abs(dilution)*100:.1f}%"
-                else:
-                    buyback_str = f"Dilution {fmt(dilution)}"
-
-                print(f"  ✓ Profitability: ROIC {fmt(pm.get('roic'))} | ROE {fmt(pm.get('roe'))} | Net Margin {fmt(pm.get('net_margin'))}")
-                print(f"  ✓ Growth: Revenue {fmt(gm.get('revenue_cagr_5y'))} | Net Income {fmt(gm.get('net_income_cagr_5y'))} | FCF {fmt(gm.get('fcf_cagr_5y'))}")
-                print(f"  ✓ Capital: {buyback_str} | Capex {fmt(cm.get('capex_intensity_3y'))} | D/E {fmt(cm.get('debt_to_equity'), False)}")
+                
+                print(f"  - ROIC: {fmt(pm.get('roic'))}")
+                print(f"  - Rev Growth: {fmt(gm.get('revenue_cagr_5y'))}")
+                print(f"  - FCF Growth: {fmt(gm.get('fcf_cagr_5y'))}")
+                print(f"  - Dilution: {fmt(dilution)}")
+                
         except Exception:
-            print("  ✓ Financial metrics generated")
+            pass
 
         # STEP 3: Financial Scoring
-        print(f"\n[3/4] Financial Scoring...")
-        fin_gen = FinancialScorerGenerator(data_dir=output_dir)
-        fin_score_path = fin_gen.generate(symbol, quiet=True)
+        print(f"\n[3/4] Calculating Financial Score...")
+        # Silence logger for scorer
+        scorer = FinancialScorerGenerator(data_dir=output_dir)
+        fin_score_path = scorer.generate(symbol, quiet=True)
         
         fin_score_val = 0
         if fin_score_path:
              with open(fin_score_path, 'r', encoding='utf-8') as f:
-                 data = json.load(f)
-                 fin_score_val = data.get('score', {}).get('total_score', 0)
-                 # Buffer detailed report
-                 fin_report_text = format_financial_score_report(data.get('score', {}))
-                 if fin_report_text:
-                     full_report_lines.append(fin_report_text)
-                 
-                 # Print warning if exists
-                 warnings = data.get('score', {}).get('data_warnings', [])
-                 if warnings:
-                     print(f"  [!] {warnings[0]}")
-             print(f"  ✓ Score: {fin_score_val:.1f} / 100")
+                 sd_file = json.load(f)
+                 sd = sd_file.get('score', {})
+                 fin_score_val = sd.get('total_score', 0)
+                 print(f"  [OK] Score: {fin_score_val} / 100")
         else:
              print("  [WARN] Financial scoring failed")
-
+             sd = {}
+             
         # STEP 4: Technical Scoring
-        print(f"\n[4/4] Technical Scoring...")
-        tech_gen = TechnicalScorerGenerator(data_dir=output_dir)
-        tech_score_path = tech_gen.generate(symbol, quiet=True)
+        print(f"\n[4/4] Calculating Technical Score...")
+        tech_scorer = TechnicalScorerGenerator(data_dir=output_dir)
+        tech_score_path = tech_scorer.generate(symbol, quiet=True)
         
         tech_score_val = 0
         if tech_score_path:
              with open(tech_score_path, 'r', encoding='utf-8') as f:
-                 data = json.load(f)
-                 tech_score_val = data.get('score', {}).get('total_score', 0)
-                 max_s = data.get('score', {}).get('max_score', 100)
-                 # Buffer detailed report
-                 full_report_lines.append("")
-                 tech_report_text = format_technical_score_report(data.get('score', {}))
-                 if tech_report_text:
-                     full_report_lines.append(tech_report_text)
-             print(f"  ✓ Score: {tech_score_val} / {max_s}")
+                 td = json.load(f)
+                 tech_score_val = td.get('score', {}).get('total_score', 0)
+                 
+                 # Append summary reports to consolidate text
+                 fin_report = format_financial_score_report(sd)
+                 tech_report = format_technical_score_report(td.get('score', {}))
+                 
+                 # Strip ANSI codes for file output
+                 # ... existing logic ok ...
+                 # Actually format_x_report returns strings with ANSI codes? 
+                 # Let's assume report_utils handles separate raw text or strip it.
+                 # For now, just append what we get.
+                 
+                 # Simple helpers to strip ANSI if needed, or assume report_utils returns clean text?
+                 # Inspecting report_utils previously showed it returns colored text.
+                 # The file might contain ANSI codes which is annoying but readable in `cat`.
+                 # Ideally we strip them.
+                 import re
+                 ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                 
+                 fin_report_text = ansi_escape.sub('', fin_report)
+                 tech_report_text = ansi_escape.sub('', tech_report)
+                 
+                 full_report_lines.append(fin_report_text)
+                 full_report_lines.append("-" * 40)
+                 full_report_lines.append(tech_report_text)
+             print(f"  [OK] Score: {tech_score_val} / 100")
         else:
              print("  [WARN] Technical scoring failed")
 
@@ -301,7 +176,9 @@ def analyze_stock(symbol, output_dir, force_update=True):
         return report_data
             
     except Exception as e:
-        logger.error(f"Error scanning {symbol}: {e}")
+        import traceback
+        print(f"[ERROR] Exception scanning {symbol}: {e}")
+        # traceback.print_exc() # detailed trace if needed
         return None
 
 def main():
@@ -356,9 +233,16 @@ def main():
         
         # Add delay between stocks to avoid API rate limits (skip for last stock)
         if len(symbols) > 1 and i < len(symbols) - 1:
-            import time
-            print(f"\n  ⏳ Waiting {INTER_STOCK_DELAY}s to avoid API rate limits...")
-            time.sleep(INTER_STOCK_DELAY)
+            paid_api_used = True # Default safe
+            if res and 'paid_api_used' in res:
+                paid_api_used = res['paid_api_used']
+            
+            if paid_api_used:
+                import time
+                print(f"\n  [WAIT] Waiting {INTER_STOCK_DELAY}s to avoid API rate limits...")
+                time.sleep(INTER_STOCK_DELAY)
+            else:
+                print("\n  [FAST] Free data sources used, skipping delay.")
             
     print("\n" + "="*70)
     print("SCAN COMPLETE")

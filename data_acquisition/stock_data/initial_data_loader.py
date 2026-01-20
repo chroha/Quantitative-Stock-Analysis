@@ -45,6 +45,7 @@ class StockDataLoader:
             use_alphavantage: Whether to use Alpha Vantage as third-tier fallback
         """
         self.use_alphavantage = use_alphavantage
+        self.use_fmp = True # Default enabled
         self.validator = FieldValidator()
         self.validation_result: Optional[OverallValidationResult] = None
     
@@ -187,161 +188,278 @@ class StockDataLoader:
 
     def get_stock_data(self, symbol: str) -> StockData:
         """
-        Fetch complete data for a stock using intelligent field-level merging.
+        Fetch comprehensive stock data using Field-Level Waterfall Strategy.
+        (Renamed from fetch_stock_data to maintain Interface Compatibility)
         
-        This method collects raw data from all sources (Yahoo, EDGAR, FMP, Alpha Vantage)
-        then uses IntelligentMerger for field-level priority merging based on field_registry.
+        Strategy:
+        1. Phase 1 (Free): Fetch Yahoo (Base) and Edgar (Financials). Merge.
+        2. Phase 2 (Gap Analysis): Check for missing critical fields (PE, MarketCap, etc.).
+        3. Phase 2 (FMP Paid): Call specific FMP endpoints ONLY if fields are missing.
+        4. Phase 3 (AV Paid): Fetch Alpha Vantage if gaps remain.
+        5. Final Merge & Validate.
         
         Args:
             symbol: Stock ticker symbol (e.g., 'AAPL')
             
         Returns:
-            StockData: Unified StockData object with intelligently merged fields
+            Unified StockData object with intelligently merged fields
         """
         symbol = symbol.upper().strip()
-        logger.info(f"Starting intelligent data acquisition for: {symbol}")
+        logger.info(f"Starting Field-Level Waterfall fetch for {symbol}")
+        print(f"\nFetching data for {symbol}...")
         
-        # =====================================================================
-        # STEP 1: Collect raw data from all sources with incremental status
-        # =====================================================================
+        # Track if we used paid APIs (FMP/AlphaVantage)
+        paid_api_used = False
+        
+        # --- Phase 1: Free Tier (Yahoo + Edgar) ---
+        print("-> [Phase 1] Fetching Free Sources (Yahoo + Edgar)...")
+        
+        # 1.1 Yahoo Finance (Primary Free Source)
+        yahoo_fetcher = YahooFetcher(symbol)
+        yahoo_data = yahoo_fetcher.fetch_all()
+        
+        # Yahoo fetch_all returns StockData. 
+        # CAUTION: YahooFetcher.fetch_all() might return None if completely failed?
+        # Checking implementation: usually returns StockData object even if partial.
+        # But let's be safe.
+        if not yahoo_data:
+             logger.warning(f"Yahoo fetch failed for {symbol}")
+             yahoo_data = StockData(symbol=symbol)
+             
+        if yahoo_data.profile and yahoo_data.profile.std_sector:
+             yahoo_data.profile.std_sector = DataMerger.normalize_sector(yahoo_data.profile.std_sector)
+            
+        # 1.2 SEC EDGAR (Official Financials)
+        print("   Fetching from SEC EDGAR...")
+        edgar_fetcher = EdgarFetcher()
+        edgar_data = edgar_fetcher.fetch_all_financials(symbol)
+        
+        # 1.3 Initial Merge (Free Tier)
         merger = IntelligentMerger(symbol)
         
-        # Yahoo Finance (Primary)
-        print(f"    Fetching from Yahoo Finance...")
-        yahoo_data = None
-        try:
-            yahoo_fetcher = YahooFetcher(symbol)
-            yahoo_data = yahoo_fetcher.fetch_all()
-            if yahoo_data.profile and yahoo_data.profile.std_sector:
-                yahoo_data.profile.std_sector = DataMerger.normalize_sector(yahoo_data.profile.std_sector)
-            # Show Yahoo completeness
-            self._log_status(yahoo_data)
-        except Exception as e:
-            logger.error(f"Yahoo fetch failed: {e}")
+        # We need to act on a 'current_data' object.
+        current_data = yahoo_data
         
-        # EDGAR (Official Source)
-        print(f"    [2/4] Fetching from SEC EDGAR...")
-        edgar_data = {'income_statements': [], 'balance_sheets': [], 'cash_flows': []}
-        current_completeness = 0.0
-        try:
-            edgar_fetcher = EdgarFetcher()
-            edgar_data = edgar_fetcher.fetch_all_financials(symbol)
-            # Show incremental completeness after EDGAR
-            if any(len(v) > 0 for v in edgar_data.values()):
-                temp_merged = self._quick_merge(yahoo_data, edgar_data, None, [], [], [], merger, symbol)
-                validation = self._validate_data(temp_merged, "EDGAR")
-                self._log_status(temp_merged)
-                current_completeness = validation.average_completeness
-        except Exception as e:
-            logger.error(f"EDGAR fetch failed: {e}")
+        # Merge Edgar Statements using quick_merge helper or direct?
+        # Since we are refactoring, let's use the explicit logic I designed.
+        # But IntelligentMerger needs lists.
         
-        # FMP (Supplementary) - Skip if already 100% complete
-        fmp_data = {'income_statements': [], 'balance_sheets': [], 'cash_flows': [], 'profile': None, 'analyst_targets': None}
-        if current_completeness < 1.0:
-            print(f"    [3/4] Fetching from FMP...")
-            try:
-                fmp_fetcher = FMPFetcher(symbol)
-                fmp_data = fmp_fetcher.fetch_all()
-                
-                # Only show completeness if FMP wasn't blocked by free tier
-                if not fmp_fetcher._free_tier_blocked:
-                    temp_merged = self._quick_merge(yahoo_data, edgar_data, fmp_data, [], [], [], merger, symbol)
-                    validation = self._validate_data(temp_merged, "FMP")
-                    self._log_status(temp_merged)
-                    current_completeness = validation.average_completeness
-            except Exception as e:
-                logger.error(f"FMP fetch failed: {e}")
-        else:
-            print(f"    [3/4] Skipping FMP (100% complete)")
-            logger.info("Skipping FMP fetch - data already 100% complete")
-        
-        # Alpha Vantage (Final Fallback) - Skip if already 100% complete
-        av_income, av_balance, av_cashflow = [], [], []
-        if self.use_alphavantage and current_completeness < 1.0:
-            print(f"    [4/4] Fetching from Alpha Vantage...")
-            try:
-                from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
-                av_fetcher = AlphaVantageFetcher(symbol)
-                av_income = av_fetcher.fetch_income_statements()
-                av_balance = av_fetcher.fetch_balance_sheets()
-                av_cashflow = av_fetcher.fetch_cash_flows()
-                
-                # Log what was fetched
-                av_count = len(av_income) + len(av_balance) + len(av_cashflow)
-                if av_count > 0:
-                    logger.info(f"Alpha Vantage fetched: Income({len(av_income)}), Balance({len(av_balance)}), CashFlow({len(av_cashflow)})")
-                else:
-                    logger.warning("Alpha Vantage returned no data")
-            except Exception as e:
-                logger.error(f"Alpha Vantage fetch failed: {e}")
-        elif self.use_alphavantage:
-            print(f"    [4/4] Skipping Alpha Vantage (100% complete)")
-            logger.info("Skipping Alpha Vantage fetch - data already 100% complete")
-        
-        # =====================================================================
-        # STEP 2: Intelligent field-level merging
-        # =====================================================================
-        merger = IntelligentMerger(symbol)
-        
-        # Merge income statements
-        merged_income = merger.merge_statements(
-            yahoo_stmts=yahoo_data.income_statements if yahoo_data else [],
+        current_data.income_statements = merger.merge_statements(
+            yahoo_stmts=current_data.income_statements,
             edgar_stmts=edgar_data.get('income_statements', []),
-            fmp_stmts=fmp_data.get('income_statements', []),
-            av_stmts=av_income,
-            statement_class=IncomeStatement
+            fmp_stmts=[], av_stmts=[], statement_class=IncomeStatement
         )
         
-        # Merge balance sheets
-        merged_balance = merger.merge_statements(
-            yahoo_stmts=yahoo_data.balance_sheets if yahoo_data else [],
+        current_data.balance_sheets = merger.merge_statements(
+            yahoo_stmts=current_data.balance_sheets,
             edgar_stmts=edgar_data.get('balance_sheets', []),
-            fmp_stmts=fmp_data.get('balance_sheets', []),
-            av_stmts=av_balance,
-            statement_class=BalanceSheet
+            fmp_stmts=[], av_stmts=[], statement_class=BalanceSheet
         )
         
-        # Merge cash flows
-        merged_cashflow = merger.merge_statements(
-            yahoo_stmts=yahoo_data.cash_flows if yahoo_data else [],
+        current_data.cash_flows = merger.merge_statements(
+            yahoo_stmts=current_data.cash_flows,
             edgar_stmts=edgar_data.get('cash_flows', []),
-            fmp_stmts=fmp_data.get('cash_flows', []),
-            av_stmts=av_cashflow,
-            statement_class=CashFlow
+            fmp_stmts=[], av_stmts=[], statement_class=CashFlow
         )
         
-        # Merge profile (Yahoo > FMP > AV)
-        merged_profile = yahoo_data.profile if yahoo_data else None
-        if fmp_data.get('profile') and not merged_profile:
-            merged_profile = fmp_data['profile']
+        self._log_status(current_data, prefix="-> [Phase 1 Result]")
         
-        # Merge analyst targets (Yahoo > FMP)
-        analyst_targets = yahoo_data.analyst_targets if yahoo_data else None
-        if fmp_data.get('analyst_targets') and not analyst_targets:
-            analyst_targets = fmp_data['analyst_targets']
-        
-        # =====================================================================
-        # STEP 3: Create final merged StockData
-        # =====================================================================
-        merged_data = StockData(
-            symbol=symbol,
-            profile=merged_profile,
-            price_history=yahoo_data.price_history if yahoo_data else [],
-            income_statements=merged_income,
-            balance_sheets=merged_balance,
-            cash_flows=merged_cashflow,
-            analyst_targets=analyst_targets
+        # --- Phase 2: Gap Analysis & FMP (Paid/Granular) ---
+        # Check what's missing after free tier
+        profile = current_data.profile
+        if not profile:
+             profile = CompanyProfile()
+             current_data.profile = profile
+             
+        # Define Critical Fields for Valuation/Scoring
+        missing_valuation = (
+            profile.std_pe_ratio is None or 
+            profile.std_pb_ratio is None or
+            profile.std_ps_ratio is None
+        )
+        missing_basic = (
+            profile.std_market_cap is None or
+            profile.std_sector is None
+        )
+        missing_estimates = (
+            current_data.analyst_targets is None or
+            not any([current_data.analyst_targets.std_price_target_high, current_data.analyst_targets.std_price_target_avg])
+        )
+        missing_growth = (
+            profile.std_earnings_growth is None
         )
         
-        # Validate and log
-        validation = self._validate_data(merged_data, "IntelligentMerge")
-        self._log_status(merged_data)
-        self.validation_result = validation
+        # Decide if we need FMP
+        fmp_needed = missing_valuation or missing_basic or missing_estimates or missing_growth
         
-        # Log merge statistics
-        stats = merger.get_merge_statistics()
-        if stats:
-            stats_str = ", ".join(f"{k}:{v}" for k, v in stats.items())
-            logger.info(f"Merge statistics: {stats_str}")
+        fmp_updates = []
+        if self.use_fmp and fmp_needed:
+            print("-> [Phase 2] Critical gaps detected. Calling FMP (Granular)...")
+            try:
+                from data_acquisition.stock_data.fmp_fetcher import FMPFetcher
+                fmp_fetcher = FMPFetcher(symbol)
+                
+                # Rule 1: Valuation Ratios
+                if missing_valuation:
+                    print("   - Missing Valuation -> Calling FMP Ratios")
+                    ratios = fmp_fetcher.fetch_ratios()
+                    if ratios: 
+                        fmp_updates.append(ratios)
+                        paid_api_used = True
+                    
+                # Rule 2: Basic Info
+                if missing_basic:
+                    print("   - Missing Basic Info -> Calling FMP Profile")
+                    # Note: We fetch full profile only if basic info missing.
+                    base_profile = fmp_fetcher.fetch_profile()
+                    if base_profile:
+                        fmp_updates.append(base_profile)
+                        paid_api_used = True
+                
+                # Rule 3: Missing Financials (for ROIC/Scoring)
+                # Check directly if we have the necessary statement lines
+                has_income = current_data.income_statements and len(current_data.income_statements) > 0
+                has_balance = current_data.balance_sheets and len(current_data.balance_sheets) > 0
+                
+                missing_profitability_inputs = True
+                if has_income and has_balance:
+                    latest_inc = current_data.income_statements[0]
+                    # Check for Tax and Operating Income (vital for ROIC)
+                    has_tax = latest_inc.std_income_tax_expense is not None
+                    has_op_inc = latest_inc.std_operating_income is not None
+                    
+                    latest_bal = current_data.balance_sheets[0]
+                    # Check for Equity and Debt (vital for ROIC)
+                    has_equity = latest_bal.std_shareholder_equity is not None
+                    has_debt = latest_bal.std_total_debt is not None
+                    
+                    if has_tax and has_op_inc and has_equity and has_debt:
+                        missing_profitability_inputs = False
+                        
+                if missing_profitability_inputs:
+                     print("   - Missing Financials (Tax/Equity/Debt) -> Calling FMP Statements")
+                     inc_stmts = fmp_fetcher.fetch_income_statements()
+                     bal_stmts = fmp_fetcher.fetch_balance_sheets()
+                     
+                     if inc_stmts:
+                         fmp_updates.append(inc_stmts)
+                     if bal_stmts:
+                         fmp_updates.append(bal_stmts)
+                     
+                     if inc_stmts or bal_stmts:
+                         paid_api_used = True
+                    
+                if profile.std_market_cap is None or profile.std_book_value_per_share is None:
+                     print("   - Missing Key Metrics -> Calling FMP Key Metrics")
+                     metrics = fmp_fetcher.fetch_key_metrics()
+                     if metrics: 
+                        fmp_updates.append(metrics)
+                        paid_api_used = True
+                
+                # Rule 3: Forward Estimates
+                if missing_estimates:
+                    print("   - Missing Estimates -> Calling FMP Estimates")
+                    estimates = fmp_fetcher.fetch_analyst_estimates()
+                    if estimates: 
+                        fmp_updates.append(estimates)
+                        paid_api_used = True
+    
+                # Rule 4: Growth
+                if missing_growth:
+                    print("   - Missing Growth -> Calling FMP Growth")
+                    growth = fmp_fetcher.fetch_financial_growth()
+                    if growth: 
+                        fmp_updates.append(growth)
+                        paid_api_used = True
+                    
+            except Exception as e:
+                logger.error(f"FMP fetch error: {e}")
+        else:
+             print("-> [Phase 2] No critical gaps detected. Skipping FMP to save API quota.")
         
-        return merged_data
+        # Merge FMP Updates
+        if fmp_updates:
+            for update in fmp_updates:
+                 current_data.profile = merger.merge_profiles(current_data.profile, update)
+            print(f"   (Merged {len(fmp_updates)} FMP datasets)")
+
+        # --- Phase 3: Alpha Vantage (Paid/Fallback) ---
+        profile = current_data.profile # Update ref
+        still_missing_critical = (
+            profile.std_pe_ratio is None or
+            profile.std_eps is None or
+            profile.std_market_cap is None
+        )
+        
+        if self.use_alphavantage:
+            # Check for critical gaps (Overview)
+            if still_missing_critical:
+                print("-> [Phase 3] Critical gaps remain. Calling Alpha Vantage (Overview)...")
+                try:
+                    from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
+                    av_fetcher = AlphaVantageFetcher(symbol)
+                    av_profile = av_fetcher.fetch_profile()
+                    
+                    if av_profile:
+                        current_data.profile = merger.merge_profiles(current_data.profile, av_profile)
+                        print("   (Merged Alpha Vantage Overview)")
+                        paid_api_used = True
+                    else:
+                        print("   (Alpha Vantage fetch failed)")
+                except Exception as e:
+                    logger.error(f"Alpha Vantage fetch error: {e}")
+            
+            # Check for missing financials (Statements) if FMP didn't fill them
+            # Re-check inputs after FMP phase
+            has_income_av = current_data.income_statements and len(current_data.income_statements) > 0
+            has_balance_av = current_data.balance_sheets and len(current_data.balance_sheets) > 0
+            
+            p3_missing_financials = True
+            if has_income_av and has_balance_av:
+                try:
+                    l_inc = current_data.income_statements[0]
+                    l_bal = current_data.balance_sheets[0]
+                    if (l_inc.std_income_tax_expense is not None and 
+                        l_inc.std_operating_income is not None and 
+                        l_bal.std_shareholder_equity is not None and 
+                        l_bal.std_total_debt is not None):
+                        p3_missing_financials = False
+                except:
+                    pass
+            
+            if p3_missing_financials:
+                print("-> [Phase 3] Missing Financials (Tax/Equity/Debt). Calling Alpha Vantage Statements...")
+                try:
+                    from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
+                    # Reuse fetcher if available, else init
+                    if 'av_fetcher' not in locals():
+                         av_fetcher = AlphaVantageFetcher(symbol)
+                    
+                    av_inc = av_fetcher.fetch_income_statements()
+                    av_bal = av_fetcher.fetch_balance_sheets()
+                    
+                    if av_inc:
+                        current_data.income_statements = merger.merge_statements(
+                            current_data.income_statements, av_inc, 'std_period'
+                        )
+                    if av_bal:
+                         current_data.balance_sheets = merger.merge_statements(
+                            current_data.balance_sheets, av_bal, 'std_period'
+                        )
+                    
+                    if av_inc or av_bal:
+                        print(f"   (Merged AV Statements: Inc={len(av_inc)}, Bal={len(av_bal)})")
+                        paid_api_used = True
+                        
+                except Exception as e:
+                    logger.error(f"Alpha Vantage statements fetch error: {e}")
+        
+        # --- Final Validation ---
+        self._log_status(current_data, prefix="-> [Final Status]")
+        self.validation_result = self._validate_data(current_data, "Final")
+        
+        # Populate Source Metadata
+        current_data.metadata = current_data.metadata or {}
+        current_data.metadata['paid_api_used'] = paid_api_used
+        
+        return current_data

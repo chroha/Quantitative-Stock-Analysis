@@ -20,6 +20,11 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
+# IMPORTANT: Set logging mode BEFORE importing modules that create loggers
+from utils import LoggingContext, set_logging_mode
+set_logging_mode(LoggingContext.ORCHESTRATED)
+
+# Now import modules (their loggers will respect ORCHESTRATED mode)
 from data_acquisition import StockDataLoader, BenchmarkDataLoader
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
 from fundamentals.financial_scorers.financial_scorers_output import FinancialScorerGenerator
@@ -30,44 +35,13 @@ from fundamentals.ai_commentary.data_aggregator import DataAggregator
 from fundamentals.ai_commentary.commentary_generator import CommentaryGenerator
 from utils.logger import setup_logger
 from utils.console_utils import symbol as ICON, print_step, print_separator
+from utils.report_utils import (
+    format_financial_score_report,
+    format_technical_score_report,
+    format_valuation_report
+)
 
 logger = setup_logger('run_analysis')
-
-
-def suppress_sub_module_logs():
-    """
-    Suppress all logs from sub-modules during run_analysis.py execution.
-    Only show ERROR and above for cleaner console output.
-    Sub-modules will still log to file if configured.
-    """
-    noisy_loggers = [
-        # Data acquisition
-        'data_loader', 'yahoo_fetcher', 'fmp_fetcher', 'data_merger',
-        'alphavantage_fetcher', 'field_validator',
-        # Benchmark
-        'benchmark_loader', 'benchmark_calculator',
-        # Financial data & scoring  
-        'financial_data_output', 'financial_scorers_output', 
-        'technical_scorers_output', 'valuation_calculator', 'valuation_output',
-        'calculator_base', 'company_scorer', 'metric_scorer',
-        # Valuation modules
-        'pe_valuation', 'pb_valuation', 'ps_valuation', 'ev_valuation',
-        'analyst_targets', 'dcf_model', 'ddm_model', 'damodaran_fetcher',
-        # Calculator modules
-        'profitability', 'growth', 'capital_allocation',
-    ]
-    for name in noisy_loggers:
-        logging.getLogger(name).setLevel(logging.ERROR)
-    
-    # Also suppress dynamic loggers like ProfitabilityCalculator_AAPL
-    suppress_dynamic_calculators()
-
-
-def suppress_dynamic_calculators():
-    """Suppress dynamically created calculator loggers (e.g., ProfitabilityCalculator_V)."""
-    for logger_name in list(logging.Logger.manager.loggerDict.keys()):
-        if 'Calculator_' in logger_name or 'Scorer_' in logger_name:
-            logging.getLogger(logger_name).setLevel(logging.ERROR)
 
 
 def print_header(title):
@@ -79,203 +53,12 @@ def print_header(title):
 
 
 
-def format_financial_score_report(score_data):
-    """Format financial score as a clean report string."""
-    if not score_data:
-        return None
-    
-    lines = []
-    lines.append("-" * 70)
-    lines.append("FINANCIAL SCORE REPORT")
-    lines.append("-" * 70)
-    
-    # Check for data warnings
-    if 'data_warnings' in score_data:
-        for w in score_data['data_warnings']:
-             lines.append(f"[NOTE] {w} - Score reliability reduced.")
-        lines.append("-" * 70)
-        
-    lines.append(f"Total Score: {score_data.get('total_score', 0):.1f} / 100")
-    lines.append("")
-    
-    cats = score_data.get('category_scores', {})
-    for cat_name, cat_data in cats.items():
-        name = cat_name.replace('_', ' ').title()
-        score = cat_data.get('score', 0)
-        
-        # Calculate actual max score based on active weights
-        actual_max = 0
-        if 'metrics' in cat_data:
-            for metric, details in cat_data['metrics'].items():
-                if not details.get('disabled', False):
-                    actual_max += details.get('weight', 0)
-        
-        # Use actual max if calculated, otherwise use the stored max
-        display_max = actual_max if actual_max > 0 else cat_data.get('max', 0)
-        
-        # Cap displayed score to max (handle sector weight overrides)
-        display_score = min(score, display_max) if display_max > 0 else score
-        
-        lines.append(f"  {name:<20} : {display_score:>5.1f} / {display_max}")
-        
-        # Metrics detail
-        if 'metrics' in cat_data:
-            for metric, details in cat_data['metrics'].items():
-                val = details.get('value')
-                
-                # Format value
-                if isinstance(val, float):
-                    if abs(val) < 1:
-                        val_str = f"{val:.2%}"
-                    else:
-                        val_str = f"{val:.2f}"
-                else:
-                    val_str = str(val) if val is not None else "N/A"
-                
-                # Check if disabled
-                if details.get('disabled', False):
-                    note = details.get('note', 'Not used for this sector')
-                    lines.append(f"      - {metric:<24}: {val_str:>10} ({note})")
-                    continue
-                
-                weighted = details.get('weighted_score', 0)
-                weight = details.get('weight', 0)
-                lines.append(f"      - {metric:<24}: {val_str:>10} (Score: {weighted} / {weight})")
-    
-    lines.append("-" * 70)
-    return "\n".join(lines)
 
 
-def format_technical_score_report(score_data):
-    """Format technical score as a clean report string."""
-    if not score_data:
-        return None
-    
-    lines = []
-    lines.append("-" * 70)
-    lines.append("TECHNICAL SCORE REPORT")
-    lines.append("-" * 70)
-    total = score_data.get('total_score', 0)
-    max_score = score_data.get('max_score', 100)
-    lines.append(f"Total Score: {total} / {max_score}")
-    lines.append("")
-    
-    cats = score_data.get('categories', {})
-    for cat_name, cat_data in cats.items():
-        name = cat_name.replace('_', ' ').title()
-        earned = cat_data.get('earned_points', 0)
-        max_pts = cat_data.get('max_points', 0)
-        lines.append(f"  {name:<20} : {earned:>5} / {max_pts}")
-        
-        # Indicators detail
-        if 'indicators' in cat_data:
-            for ind, details in cat_data['indicators'].items():
-                score = details.get('score', 0)
-                max_ind = details.get('max_score', 0)
-                signal = details.get('explanation', details.get('signal', ''))
-                
-                # Find the primary value - try common key patterns
-                val = None
-                for key in [ind, 'value', 'rsi', 'macd', 'adx', 'atr', 'roc', 'obv', 
-                           'current_price', 'position', 'bandwidth', 'volume_ratio']:
-                    if key in details and key != 'score' and key != 'max_score':
-                        candidate = details.get(key)
-                        if isinstance(candidate, (int, float)) and val is None:
-                            val = candidate
-                            break
-                
-                if isinstance(val, float):
-                    val_str = f"{val:.2f}"
-                elif val is not None:
-                    val_str = str(val)
-                else:
-                    val_str = f"{score}/{max_ind}"
-                
-                # Truncate long signals
-                if len(signal) > 50:
-                    signal = signal[:47] + "..."
-                lines.append(f"      - {ind:<20}: {val_str:>10} ({signal})")
-    
-    lines.append("-" * 70)
-    return "\n".join(lines)
-
-
-def format_valuation_report(val_result):
-    """Format valuation result as a clean report string."""
-    if not val_result:
-        return None
-    
-    ticker = val_result.get('ticker', '?')
-    sector = val_result.get('sector', 'Unknown')
-    current_price = val_result.get('current_price')
-    weighted_fv = val_result.get('weighted_fair_value')
-    price_diff = val_result.get('price_difference_pct')
-    methods = val_result.get('method_results', {})
-    confidence = val_result.get('confidence', {})
-    
-    lines = []
-    lines.append("-" * 70)
-    lines.append(f"VALUATION REPORT - {ticker} ({sector})")
-    lines.append("-" * 70)
-    
-    if current_price:
-        lines.append(f"Current Price: ${current_price:.2f}")
-    
-    if methods:
-        lines.append("")
-        lines.append("Valuation Methods:")
-        sorted_methods = sorted(methods.items(), key=lambda x: x[1].get('weight', 0), reverse=True)
-        for method_name, result in sorted_methods:
-            model_name = result['model_name']
-            fair_value = result.get('fair_value')
-            weight = result.get('weight', 0)
-            upside = result.get('upside_pct')
-            status = result.get('status', 'success')
-            
-            # Handle failed models
-            if status == 'failed' or fair_value is None:
-                reason = result.get('reason', 'Unable to calculate')
-                lines.append(f"  {model_name:20s}      N/A   (Weight: {weight*100:>3.0f}%)  [{reason}]")
-                continue
-            
-            upside_str = f"{'+'if upside >= 0 else ''}{upside:.1f}%"
-            if weight > 0:
-                lines.append(f"  {model_name:20s} ${fair_value:>8.2f}  (Weight: {weight*100:>3.0f}%)  [{upside_str:>7s}]")
-            else:
-                lines.append(f"  {model_name:20s} ${fair_value:>8.2f}  (Weight:   0%)  [Not used]")
-    
-    if weighted_fv:
-        lines.append("")
-        lines.append(f"Weighted Fair Value: ${weighted_fv:.2f}")
-    
-    if price_diff is not None:
-        diff_str = f"{'+'if price_diff >= 0 else ''}{price_diff:.1f}%"
-        if price_diff > 20:
-            assessment = "Significantly Undervalued"
-        elif price_diff > 10:
-            assessment = "Undervalued"
-        elif price_diff > -10:
-            assessment = "Fairly Valued"
-        elif price_diff > -20:
-            assessment = "Overvalued"
-        else:
-            assessment = "Significantly Overvalued"
-        lines.append(f"Price Difference: {diff_str} ({assessment})")
-    
-    if confidence:
-        methods_used = confidence.get('methods_used', 0)
-        methods_total = confidence.get('methods_available', 0)
-        lines.append(f"Confidence: {methods_used}/{methods_total} methods available")
-    
-    lines.append("-" * 70)
-    return "\n".join(lines)
 
 
 def main():
     print_header("QUANTITATIVE STOCK ANALYSIS SYSTEM V3.0")
-    
-    # Suppress sub-module logs for clean output
-    suppress_sub_module_logs()
     
     # --- Input ---
     if len(sys.argv) > 1:
@@ -400,9 +183,6 @@ def main():
         except Exception as e:
             # Fallback if any error reading metrics
             print(f"  {ICON.OK} Financial data generated")
-        
-        # Suppress any dynamically created calculator loggers
-        suppress_dynamic_calculators()
 
         # ==============================================================================
         # STEP 3: Financial Scoring
@@ -540,7 +320,10 @@ def main():
             print(f"   Generating data appendix...")
             appendix = aggregator.get_raw_data_appendix(symbol)
             if appendix:
-                report = report + appendix
+                if report:
+                    report = report + appendix
+                else:
+                    report = f"# AI Analysis - {symbol} (Generation Failed)\n\n> [!WARNING]\n> AI commentary could not be generated due to API availability issues.\n\n" + appendix
             
             if report:
                 report_file = f"ai_analysis_{symbol}_{current_date}.md"

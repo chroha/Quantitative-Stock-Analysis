@@ -73,6 +73,7 @@ class ProfitabilityCalculator(CalculatorBase):
         result = CalculationResult(value=None)
         
         # Calculate effective tax rate
+        # Calculate effective tax rate with fallback
         effective_tax_rate = self.safe_divide(
             income_tax_expense,
             pretax_income,
@@ -80,7 +81,10 @@ class ProfitabilityCalculator(CalculatorBase):
             result
         )
         
-        if effective_tax_rate is not None:
+        # Fallback for tax rate
+        if effective_tax_rate is None:
+             result.add_warning('ROIC', 'data_missing', 'Missing effective tax rate', 'warning')
+        else:
             # Check bounds
             self.check_bounds(
                 effective_tax_rate,
@@ -90,22 +94,17 @@ class ProfitabilityCalculator(CalculatorBase):
                 result=result
             )
             
-            # Calculate NOPAT
-            nopat = operating_income * (1 - effective_tax_rate) if operating_income else None
-        else:
-            nopat = None
-            result.add_warning(
-                'ROIC',
-                'calculation_error',
-                'Cannot calculate NOPAT without effective tax rate',
-                'error'
-            )
+        # Calculate NOPAT
+        nopat = operating_income * (1 - effective_tax_rate) if operating_income else None
         
-        # Calculate Invested Capital
-        if all(v is not None for v in [total_equity, total_debt, cash]):
-            invested_capital = total_equity + total_debt - cash
-            
-            if invested_capital <= 0:
+        # Calculate Invested Capital (Lenient)
+        # If cash is missing, assume 0. If debt missing, assume 0. Equity is critical.
+        if total_equity is not None:
+             debt_val = total_debt if total_debt is not None else 0
+             cash_val = cash if cash is not None else 0
+             invested_capital = total_equity + debt_val - cash_val
+             
+             if invested_capital <= 0:
                 result.add_warning(
                     'ROIC',
                     'out_of_bounds',
@@ -119,7 +118,7 @@ class ProfitabilityCalculator(CalculatorBase):
             result.add_warning(
                 'ROIC',
                 'data_missing',
-                'Missing data for invested capital calculation',
+                'Missing total equity for invested capital metrics',
                 'error'
             )
         

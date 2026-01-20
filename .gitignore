@@ -8,10 +8,9 @@ __pycache__/
 *.log
 *.csv
 *.json
+*.txt
 .idea/
 .vscode/
 *.swp
 *.swo
 
-generated_data/
-generated_reports/
