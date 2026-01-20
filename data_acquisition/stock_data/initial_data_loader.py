@@ -54,9 +54,14 @@ class StockDataLoader:
         hist_years = len(data.income_statements)
         print(f"          {prefix} Completeness: {valid.average_completeness:.1%} | History: {hist_years} years")
 
-    def get_stock_data(self, symbol: str) -> StockData:
+    def get_stock_data_legacy(self, symbol: str) -> StockData:
         """
-        Fetch complete data for a stock with cascading fallback and field validation.
+        [LEGACY/V1] Fetch complete data for a stock with cascading fallback.
+        
+        DEPRECATED: This method uses incremental merging. Use get_stock_data() instead
+        which provides intelligent field-level priority merging.
+        
+        This method is preserved for debugging and comparison with the new V2 method.
 
         Args:
             symbol: Stock ticker symbol (e.g., 'AAPL')
@@ -438,12 +443,16 @@ class StockDataLoader:
             logger.error(f"Failed to load data from {file_path}: {e}")
             raise
 
-    def get_stock_data_v2(self, symbol: str) -> StockData:
+    def get_stock_data(self, symbol: str) -> StockData:
         """
         Fetch complete data for a stock using intelligent field-level merging.
         
-        This version collects all raw data from each source first, then uses
-        IntelligentMerger for field-level priority merging based on field_registry.
+        This is the default data acquisition method. It collects raw data from all 
+        sources first, then uses IntelligentMerger for field-level priority merging 
+        based on field_registry.
+        
+        For debugging or comparison, use get_stock_data_legacy() which uses the 
+        older incremental merge approach.
         
         Args:
             symbol: Stock ticker symbol (e.g., 'AAPL')
@@ -452,7 +461,7 @@ class StockDataLoader:
             StockData: Unified StockData object with intelligently merged fields
         """
         symbol = symbol.upper().strip()
-        logger.info(f"[V2] Starting intelligent data acquisition for: {symbol}")
+        logger.info(f"Starting intelligent data acquisition for: {symbol}")
         
         # =====================================================================
         # STEP 1: Collect raw data from all sources
