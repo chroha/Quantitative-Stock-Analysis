@@ -342,6 +342,10 @@ def main():
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         
+    # Rate limiting delay for batch scanning (to avoid API rate limits)
+    # Alpha Vantage free tier: 5 requests/minute, so we need ~12s between stocks
+    INTER_STOCK_DELAY = 12  # seconds between stocks
+    
     results = []
     
     for i, symbol in enumerate(symbols):
@@ -349,6 +353,12 @@ def main():
         res = analyze_stock(symbol, output_dir)
         if res:
             results.append(res)
+        
+        # Add delay between stocks to avoid API rate limits (skip for last stock)
+        if len(symbols) > 1 and i < len(symbols) - 1:
+            import time
+            print(f"\n  ⏳ Waiting {INTER_STOCK_DELAY}s to avoid API rate limits...")
+            time.sleep(INTER_STOCK_DELAY)
             
     print("\n" + "="*70)
     print("SCAN COMPLETE")
