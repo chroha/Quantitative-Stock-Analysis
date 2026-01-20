@@ -76,9 +76,11 @@ class AlphaVantageFetcher(BaseFetcher):
     
     BASE_URL = "https://www.alphavantage.co/query"
     
-    # Rate limiting
+    # Rate limiting - Alpha Vantage free tier: 5 requests/minute, 500/day
+    # For single stock (3 requests), 1.5s interval is safe and fast
+    # For batch processing, caller should add delays between stocks
     _last_request_time = 0
-    MIN_REQUEST_INTERVAL = 12.1  # ~5 requests per minute = 12 seconds between requests
+    MIN_REQUEST_INTERVAL = 1.5  # 1.5 seconds between requests (conservative for 3-call batches)
     
     def __init__(self, symbol: str):
         from utils.field_registry import DataSource as RegistryDataSource
