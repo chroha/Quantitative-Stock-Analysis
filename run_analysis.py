@@ -489,6 +489,12 @@ def main():
             generator = CommentaryGenerator()
             report = generator.generate_report(aggregated_data)
             
+            # Append raw data appendix (Same logic as run_commentary.py)
+            print(f"   Generating data appendix...")
+            appendix = aggregator.get_raw_data_appendix(symbol)
+            if appendix:
+                report = report + appendix
+            
             if report:
                 report_file = f"ai_analysis_{symbol}_{current_date}.md"
                 # Save to generated_reports
