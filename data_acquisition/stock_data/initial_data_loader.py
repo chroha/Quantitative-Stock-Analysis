@@ -281,7 +281,6 @@ class StockDataLoader:
         # =====================================================================
         # STEP 2: Intelligent field-level merging
         # =====================================================================
-        print(f"    Merging data with field-level priority...")
         merger = IntelligentMerger(symbol)
         
         # Merge income statements
