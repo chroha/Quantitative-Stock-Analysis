@@ -263,6 +263,13 @@ class StockDataLoader:
                 av_income = av_fetcher.fetch_income_statements()
                 av_balance = av_fetcher.fetch_balance_sheets()
                 av_cashflow = av_fetcher.fetch_cash_flows()
+                
+                # Log what was fetched
+                av_count = len(av_income) + len(av_balance) + len(av_cashflow)
+                if av_count > 0:
+                    logger.info(f"Alpha Vantage fetched: Income({len(av_income)}), Balance({len(av_balance)}), CashFlow({len(av_cashflow)})")
+                else:
+                    logger.warning("Alpha Vantage returned no data")
             except Exception as e:
                 logger.error(f"Alpha Vantage fetch failed: {e}")
         elif self.use_alphavantage:

@@ -37,6 +37,7 @@ class FMPFetcher:
         """
         self.symbol = symbol.upper()
         self.api_key = settings.FMP_API_KEY
+        self._free_tier_blocked = False  # Track if free tier limit hit
         logger.info(f"Initializing FMP fetcher for {self.symbol} (API key: {settings.get_masked_fmp_key()})")
     
     def _make_request(self, endpoint: str, extra_params: dict = None) -> Optional[dict]:
@@ -50,6 +51,10 @@ class FMPFetcher:
         Returns:
             JSON response or None if request fails
         """
+        # Skip if already blocked by free tier
+        if self._free_tier_blocked:
+            return None
+            
         url = f"{self.BASE_URL}/{endpoint}"
         params = {
             'symbol': self.symbol,
@@ -74,7 +79,13 @@ class FMPFetcher:
             return data
         
         except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 403:
+            if e.response.status_code == 402:
+                # Free tier limit - log once and skip remaining calls
+                if not self._free_tier_blocked:
+                    self._free_tier_blocked = True
+                    logger.warning(f"FMP free tier does not support {self.symbol} - skipping FMP data")
+                return None
+            elif e.response.status_code == 403:
                 logger.warning(f"FMP 403 Forbidden for {endpoint} - check API plan")
             else:
                 logger.error(f"FMP HTTP error for {endpoint}: {e}")
