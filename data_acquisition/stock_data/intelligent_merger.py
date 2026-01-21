@@ -61,11 +61,21 @@ def merge_statement_by_period(
     field_sources = {}
     merged_kwargs = {'std_period': period}
     
+    # Determine period type (FY/Q/TTM) - Default to FY if unknown
+    # Priority: Yahoo > FMP > EDGAR > AV
+    period_type = 'FY'
+    for source in [DataSource.YAHOO, DataSource.FMP, DataSource.SEC_EDGAR, DataSource.ALPHAVANTAGE]:
+        stmt = statements_by_source.get(source)
+        if stmt and hasattr(stmt, 'std_period_type') and stmt.std_period_type:
+             period_type = stmt.std_period_type
+             break
+    merged_kwargs['std_period_type'] = period_type
+    
     # Get all fields for this statement type
     all_fields = statement_class.model_fields.keys()
     
     for field_name in all_fields:
-        if field_name == 'std_period':
+        if field_name in ['std_period', 'std_period_type']:
             continue
         
         # Gather values from all sources for this field
@@ -161,7 +171,9 @@ class IntelligentMerger:
         
         # Merge each period
         merged_statements = []
-        for period in sorted_periods[:6]:  # Limit to 6 periods
+        # Increase limit significantly to allow for mixed Annual + Quarterly data.
+        # e.g. 5 years = 5 FY + 20 Qs = 25 periods.
+        for period in sorted_periods[:30]:  # Limit to 30 periods (was 6)
             statements_by_source = {
                 DataSource.YAHOO: yahoo_map.get(period),
                 DataSource.SEC_EDGAR: edgar_map.get(period),
@@ -252,6 +264,13 @@ class IntelligentMerger:
             if winning_source:
                 field_sources[field_name] = winning_source
 
+        # Log merge decision
+        self.merge_log.append({
+            'period': 'Profile',
+            'statement_type': 'CompanyProfile',
+            'field_sources': field_sources
+        })
+
         # Log summary
         log_merge_summary(self.symbol, "CompanyProfile", field_sources)
         
@@ -267,3 +286,16 @@ class IntelligentMerger:
                     stats[source_name] = 0
                 stats[source_name] += 1
         return stats
+
+    def get_contributions(self, source: str) -> List[str]:
+        """
+        Get unique list of fields contributed by a specific source.
+        Used for reporting what data was filled by FMP/AV.
+        """
+        fields = set()
+        # Check statement merges
+        for entry in self.merge_log:
+            for field_name, src_enum in entry.get('field_sources', {}).items():
+                if src_enum.value == source:
+                    fields.add(field_name)
+        return sorted(list(fields))

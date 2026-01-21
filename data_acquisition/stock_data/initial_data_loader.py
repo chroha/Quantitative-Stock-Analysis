@@ -49,11 +49,121 @@ class StockDataLoader:
         self.validator = FieldValidator()
         self.validation_result: Optional[OverallValidationResult] = None
     
+    def _sanitize_data(self, data: StockData) -> StockData:
+        """
+        Remove financial statement periods that are missing required fields.
+        Ensures the final dataset is high-quality and consistent.
+        """
+        def filter_stmts(stmts, stmt_type):
+            valid_stmts = []
+            dropped = 0
+            for stmt in stmts:
+                res = self.validator.validate_statement(stmt, stmt_type)
+                if not res.missing_required:
+                    valid_stmts.append(stmt)
+                else:
+                    dropped += 1
+            if dropped > 0:
+                print(f"      [Sanitizer] Dropped {dropped} incomplete {stmt_type} periods (Missing Required Fields)")
+            return valid_stmts
+
+        data.income_statements = filter_stmts(data.income_statements, 'income')
+        data.balance_sheets = filter_stmts(data.balance_sheets, 'balance')
+        data.cash_flows = filter_stmts(data.cash_flows, 'cashflow')
+        
+        return data
+
+    def _construct_synthetic_ttm(self, data: StockData) -> StockData:
+        """
+        Construct a Synthetic TTM (Trailing Twelve Months) period if the latest Annual report is outdated.
+        This provides a '2025' view even if only quarters are released.
+        """
+        from datetime import datetime
+        
+        # Helper: Get latest statement by type
+        def get_latest(stmts, p_type):
+            return next((s for s in stmts if getattr(s, 'std_period_type', 'FY') == p_type), None)
+            
+        def sum_quarters(quarters, stmt_class):
+            if len(quarters) < 4: return None
+            # Sum numeric fields
+            fields = stmt_class.model_fields.keys()
+            merged_kwargs = {
+                'std_period': f"TTM-{quarters[0].std_period}", # e.g. TTM-2025-09-30
+                'std_period_type': 'TTM'
+            }
+            
+            from utils.unified_schema import FieldWithSource, DataSource
+            
+            for field in fields:
+                if field in ['std_period', 'std_period_type']: continue
+                
+                # Check if field is numeric (FieldWithSource)
+                # We assume simple summation is valid for flow metrics (Income, CashFlow)
+                # NOT valid for Balance Sheet (Snapshot)
+                
+                total_val = 0.0
+                has_val = False
+                source = None
+                
+                for q in quarters:
+                    val_obj = getattr(q, field, None)
+                    if val_obj and val_obj.value is not None:
+                         total_val += val_obj.value
+                         has_val = True
+                         source = val_obj.source # Take source from latest
+                
+                if has_val:
+                    merged_kwargs[field] = FieldWithSource(value=total_val, source=source or DataSource.YAHOO)
+            
+            return stmt_class(**merged_kwargs)
+
+        # 1. Check Income Statement
+        latest_fy = get_latest(data.income_statements, 'FY')
+        latest_q = get_latest(data.income_statements, 'Q')
+        
+        # Determine if we need TTM (Latest Q is fresher than Latest FY)
+        # Simple string comparison works for YYYY-MM-DD
+        if latest_q and latest_fy and latest_q.std_period > latest_fy.std_period:
+            # Find 4 consecutive quarters
+            # quarters list is already sorted Descending (Newest -> Oldest)
+            quarters = [s for s in data.income_statements if getattr(s, 'std_period_type', 'Q') == 'Q']
+            # We need the first 4
+            if len(quarters) >= 4:
+                ttm_inc = sum_quarters(quarters[:4], IncomeStatement)
+                if ttm_inc:
+                    # Insert at top
+                    data.income_statements.insert(0, ttm_inc)
+                    print(f"      [TTM Builder] Constructed Synthetic TTM Income Statement (Ends {quarters[0].std_period})")
+
+        # 2. Check Cash Flow
+        latest_fy_cf = get_latest(data.cash_flows, 'FY')
+        latest_q_cf = get_latest(data.cash_flows, 'Q')
+        
+        if latest_q_cf and latest_fy_cf and latest_q_cf.std_period > latest_fy_cf.std_period:
+            quarters = [s for s in data.cash_flows if getattr(s, 'std_period_type', 'Q') == 'Q']
+            if len(quarters) >= 4:
+                ttm_cf = sum_quarters(quarters[:4], CashFlow)
+                if ttm_cf:
+                    data.cash_flows.insert(0, ttm_cf)
+                    print(f"      [TTM Builder] Constructed Synthetic TTM Cash Flow (Ends {quarters[0].std_period})")
+
+        return data
+
     def _log_status(self, data: StockData, prefix: str = "->"):
         """Helper to log completeness and history depth."""
         valid = self._validate_data(data, "StatusCheck")
-        hist_years = len(data.income_statements)
-        print(f"          {prefix} Completeness: {valid.average_completeness:.1%} | History: {hist_years} years")
+        # Only count Annual (FY) or TTM periods as "History Years"
+        hist_years = len([s for s in data.income_statements if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']])
+        print(f"          {prefix} Completeness: {valid.average_completeness:.1%} | History: {hist_years} Years (FY/TTM)")
+        
+        # Verbose output for missing fields to help user understand why score is low
+        if not valid.is_complete:
+            missing = self.validator.get_missing_fields_summary(valid)
+            req = missing.get('required', [])
+            if req:
+                # Show top 5 missing required fields
+                print(f"              Missing Required: {', '.join(req[:5])}{'...' if len(req)>5 else ''}")
 
     def _validate_data(self, data: StockData, source_label: str) -> OverallValidationResult:
         """
@@ -290,7 +400,36 @@ class StockDataLoader:
         )
         
         # Decide if we need FMP
-        fmp_needed = missing_valuation or missing_basic or missing_estimates or missing_growth
+        # Check directly if we have the necessary statement lines (Tax/Equity/Debt/SBC/Capex)
+        has_income = current_data.income_statements and len(current_data.income_statements) > 0
+        has_balance = current_data.balance_sheets and len(current_data.balance_sheets) > 0
+        has_cashflow = current_data.cash_flows and len(current_data.cash_flows) > 0
+        
+        missing_profitability_inputs = True
+        if has_income and has_balance and has_cashflow:
+            try:
+                latest_inc = current_data.income_statements[0]
+                latest_bal = current_data.balance_sheets[0]
+                latest_cf = current_data.cash_flows[0]
+                
+                # Check for Tax and Operating Income (vital for ROIC)
+                has_tax = latest_inc.std_income_tax_expense is not None
+                has_op_inc = latest_inc.std_operating_income is not None
+                
+                # Check for Equity and Debt (vital for ROIC)
+                has_equity = latest_bal.std_shareholder_equity is not None
+                has_debt = latest_bal.std_total_debt is not None
+
+                # Check for SBC and Capex (vital for FCF/Valuation)
+                has_sbc = latest_cf.std_stock_based_compensation is not None
+                has_capex = latest_cf.std_capital_expenditure is not None
+                
+                if has_tax and has_op_inc and has_equity and has_debt and has_sbc and has_capex:
+                    missing_profitability_inputs = False
+            except:
+                pass
+
+        fmp_needed = missing_valuation or missing_basic or missing_estimates or missing_growth or missing_profitability_inputs
         
         fmp_updates = []
         if self.use_fmp and fmp_needed:
@@ -302,75 +441,57 @@ class StockDataLoader:
                 # Rule 1: Valuation Ratios
                 if missing_valuation:
                     print("   - Missing Valuation -> Calling FMP Ratios")
+                    paid_api_used = True
                     ratios = fmp_fetcher.fetch_ratios()
                     if ratios: 
                         fmp_updates.append(ratios)
-                        paid_api_used = True
                     
                 # Rule 2: Basic Info
                 if missing_basic:
                     print("   - Missing Basic Info -> Calling FMP Profile")
+                    paid_api_used = True
                     # Note: We fetch full profile only if basic info missing.
                     base_profile = fmp_fetcher.fetch_profile()
                     if base_profile:
                         fmp_updates.append(base_profile)
-                        paid_api_used = True
                 
                 # Rule 3: Missing Financials (for ROIC/Scoring)
-                # Check directly if we have the necessary statement lines
-                has_income = current_data.income_statements and len(current_data.income_statements) > 0
-                has_balance = current_data.balance_sheets and len(current_data.balance_sheets) > 0
-                
-                missing_profitability_inputs = True
-                if has_income and has_balance:
-                    latest_inc = current_data.income_statements[0]
-                    # Check for Tax and Operating Income (vital for ROIC)
-                    has_tax = latest_inc.std_income_tax_expense is not None
-                    has_op_inc = latest_inc.std_operating_income is not None
-                    
-                    latest_bal = current_data.balance_sheets[0]
-                    # Check for Equity and Debt (vital for ROIC)
-                    has_equity = latest_bal.std_shareholder_equity is not None
-                    has_debt = latest_bal.std_total_debt is not None
-                    
-                    if has_tax and has_op_inc and has_equity and has_debt:
-                        missing_profitability_inputs = False
-                        
                 if missing_profitability_inputs:
-                     print("   - Missing Financials (Tax/Equity/Debt) -> Calling FMP Statements")
+                     print("   - Missing Financials (Tax/Equity/Debt/SBC/Capex) -> Calling FMP Statements")
+                     paid_api_used = True
                      inc_stmts = fmp_fetcher.fetch_income_statements()
                      bal_stmts = fmp_fetcher.fetch_balance_sheets()
+                     cf_stmts = fmp_fetcher.fetch_cash_flow_statements()
                      
                      if inc_stmts:
                          fmp_updates.append(inc_stmts)
                      if bal_stmts:
                          fmp_updates.append(bal_stmts)
-                     
-                     if inc_stmts or bal_stmts:
-                         paid_api_used = True
+                     if cf_stmts:
+                         fmp_updates.append(cf_stmts)
                     
                 if profile.std_market_cap is None or profile.std_book_value_per_share is None:
                      print("   - Missing Key Metrics -> Calling FMP Key Metrics")
+                     paid_api_used = True
                      metrics = fmp_fetcher.fetch_key_metrics()
                      if metrics: 
                         fmp_updates.append(metrics)
-                        paid_api_used = True
                 
                 # Rule 3: Forward Estimates
                 if missing_estimates:
                     print("   - Missing Estimates -> Calling FMP Estimates")
+                    paid_api_used = True
                     estimates = fmp_fetcher.fetch_analyst_estimates()
                     if estimates: 
                         fmp_updates.append(estimates)
-                        paid_api_used = True
     
                 # Rule 4: Growth
                 if missing_growth:
                     print("   - Missing Growth -> Calling FMP Growth")
+                    paid_api_used = True
                     growth = fmp_fetcher.fetch_financial_growth()
                     if growth: 
                         fmp_updates.append(growth)
-                        paid_api_used = True
                     
             except Exception as e:
                 logger.error(f"FMP fetch error: {e}")
@@ -381,7 +502,11 @@ class StockDataLoader:
         if fmp_updates:
             for update in fmp_updates:
                  current_data.profile = merger.merge_profiles(current_data.profile, update)
-            print(f"   (Merged {len(fmp_updates)} FMP datasets)")
+            
+            # Retrieve what FMP filled
+            fmp_fields = merger.get_contributions('fmp')
+            field_str = ', '.join(fmp_fields[:5]) + ('...' if len(fmp_fields)>5 else '') if fmp_fields else "Statements"
+            print(f"   (Merged {len(fmp_updates)} FMP items. Filled: {field_str})")
 
         # --- Phase 3: Alpha Vantage (Paid/Fallback) ---
         profile = current_data.profile # Update ref
@@ -395,6 +520,7 @@ class StockDataLoader:
             # Check for critical gaps (Overview)
             if still_missing_critical:
                 print("-> [Phase 3] Critical gaps remain. Calling Alpha Vantage (Overview)...")
+                paid_api_used = True
                 try:
                     from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
                     av_fetcher = AlphaVantageFetcher(symbol)
@@ -402,33 +528,57 @@ class StockDataLoader:
                     
                     if av_profile:
                         current_data.profile = merger.merge_profiles(current_data.profile, av_profile)
-                        print("   (Merged Alpha Vantage Overview)")
-                        paid_api_used = True
+                        av_fields = merger.get_contributions('alphavantage')
+                        print(f"   (Merged Alpha Vantage Overview. Filled: {', '.join(av_fields)})")
                     else:
                         print("   (Alpha Vantage fetch failed)")
                 except Exception as e:
                     logger.error(f"Alpha Vantage fetch error: {e}")
             
             # Check for missing financials (Statements) if FMP didn't fill them
+            # Check for missing financials (Statements) if FMP didn't fill them
             # Re-check inputs after FMP phase
-            has_income_av = current_data.income_statements and len(current_data.income_statements) > 0
-            has_balance_av = current_data.balance_sheets and len(current_data.balance_sheets) > 0
+            has_income = current_data.income_statements and len(current_data.income_statements) > 0
+            has_balance = current_data.balance_sheets and len(current_data.balance_sheets) > 0
+            has_cashflow = current_data.cash_flows and len(current_data.cash_flows) > 0
             
             p3_missing_financials = True
-            if has_income_av and has_balance_av:
+            if has_income and has_balance and has_cashflow:
                 try:
                     l_inc = current_data.income_statements[0]
                     l_bal = current_data.balance_sheets[0]
-                    if (l_inc.std_income_tax_expense is not None and 
+                    l_cf = current_data.cash_flows[0]
+                    
+                    # Enhanced Critical Check for Scoring:
+                    # 1. ROIC components: Tax, OpInc, Equity, Debt, Cash
+                    # 2. Capital Allocation: SBC, Capex
+                    # 3. Share Counts (for Buyback/Dilution)
+                    
+                    has_basic_metrics = (
+                        l_inc.std_income_tax_expense is not None and 
                         l_inc.std_operating_income is not None and 
                         l_bal.std_shareholder_equity is not None and 
-                        l_bal.std_total_debt is not None):
+                        l_bal.std_total_debt is not None
+                    )
+                    
+                    has_advanced_metrics = (
+                        l_cf.std_stock_based_compensation is not None and
+                        l_cf.std_capital_expenditure is not None
+                    )
+                    
+                    # For share count, we usually check profile or balance sheet/income stmt.
+                    # Normalized schema puts weighted average shares in Income Statement usually.
+                    has_shares = l_inc.std_weighted_average_shares is not None
+                    
+                    if has_basic_metrics and has_advanced_metrics and has_shares:
                         p3_missing_financials = False
+                        
                 except:
                     pass
             
             if p3_missing_financials:
                 print("-> [Phase 3] Missing Financials (Tax/Equity/Debt). Calling Alpha Vantage Statements...")
+                paid_api_used = True
                 try:
                     from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
                     # Reuse fetcher if available, else init
@@ -440,20 +590,29 @@ class StockDataLoader:
                     
                     if av_inc:
                         current_data.income_statements = merger.merge_statements(
-                            current_data.income_statements, av_inc, 'std_period'
+                            current_data.income_statements, [], [], av_inc, IncomeStatement
                         )
                     if av_bal:
                          current_data.balance_sheets = merger.merge_statements(
-                            current_data.balance_sheets, av_bal, 'std_period'
+                            current_data.balance_sheets, [], [], av_bal, BalanceSheet
                         )
                     
-                    if av_inc or av_bal:
-                        print(f"   (Merged AV Statements: Inc={len(av_inc)}, Bal={len(av_bal)})")
-                        paid_api_used = True
+                    # Log what AV actually filled
+                    av_fields = merger.get_contributions('alphavantage')
+                    filled_str = ', '.join(av_fields[:5]) + ('...' if len(av_fields)>5 else '') if av_fields else "Statements"
+                    print(f"   (Merged AV Statements: Inc={len(av_inc or [])}, Bal={len(av_bal or [])}. Filled: {filled_str})")
                         
                 except Exception as e:
                     logger.error(f"Alpha Vantage statements fetch error: {e}")
         
+        # --- TTM Construction: Synthesize latest year if needed ---
+        current_data = self._construct_synthetic_ttm(current_data)
+        
+        # --- Sanitization: Remove Incomplete Periods ---
+        # If a period is missing required fields (like Revenue), it defeats the purpose of analysis.
+        # It's better to have high-quality partial history than broken full history.
+        current_data = self._sanitize_data(current_data)
+
         # --- Final Validation ---
         self._log_status(current_data, prefix="-> [Final Status]")
         self.validation_result = self._validate_data(current_data, "Final")

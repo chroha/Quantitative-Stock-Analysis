@@ -90,12 +90,13 @@ class EdgarFetcher:
             time.sleep(0.15) 
             logger.info(f"Fetching EDGAR facts for {symbol} (CIK: {cik})...")
             
-            resp = requests.get(url, headers=self.headers, timeout=20) # Increased timeout for large JSON
+            resp = requests.get(url, headers=self.headers, timeout=20)
             if resp.status_code != 200:
-                logger.warning(f"EDGAR request failed: {resp.status_code}")
+                print(f"      [Edgar] Request failed: {resp.status_code}")
                 return {'income_statements': [], 'balance_sheets': [], 'cash_flows': []}
                 
-            facts = resp.json().get('facts', {}).get('us-gaap', {})
+            resp_json = resp.json()
+            facts = resp_json.get('facts', {}).get('us-gaap', {})
             
             # Parse all types
             income = self._parse_statements(facts, 'income')
@@ -116,6 +117,17 @@ class EdgarFetcher:
         """Wrapper for just income statements compatibility."""
         return self.fetch_all_financials(symbol)['income_statements']
 
+    def fetch_balance_sheets(self, symbol: str) -> List[Any]:
+        """Wrapper for just balance sheets compatibility."""
+        return self.fetch_all_financials(symbol)['balance_sheets']
+        
+    def fetch_cash_flow_statements(self, symbol: str) -> List[Any]:
+        """Wrapper for just cash flow statements compatibility."""
+        return self.fetch_all_financials(symbol)['cash_flows']
+        
+    # Alias for backward compatibility and interface consistency
+    fetch_cash_flows = fetch_cash_flow_statements
+
     def _parse_statements(self, gaap_facts: Dict, stmt_type: str) -> List[Any]:
         """
         Generic parser for Income, Balance, CashFlow based on stmt_type.
@@ -130,15 +142,15 @@ class EdgarFetcher:
         if stmt_type == 'balance':
             TargetClass = BalanceSheet
             fields_dict = BALANCE_FIELDS
-            allowed_forms = ['10-K', '10-Q']
+            allowed_forms = ['10-K', '10-Q', '10-K/A', '10-Q/A', 'S-1', 'S-1/A']
         elif stmt_type == 'income':
             TargetClass = IncomeStatement
             fields_dict = INCOME_FIELDS
-            allowed_forms = ['10-K'] 
+            allowed_forms = ['10-K', '10-K/A', 'S-1', 'S-1/A'] 
         else: # cashflow
             TargetClass = CashFlow
             fields_dict = CASHFLOW_FIELDS
-            allowed_forms = ['10-K']
+            allowed_forms = ['10-K', '10-K/A', 'S-1', 'S-1/A']
 
         raw_data_by_date = {}
 
@@ -152,35 +164,43 @@ class EdgarFetcher:
             # Ensure tags is list
             if isinstance(tags, str): tags = [tags]
             
-            found_tag = False
+            # Iterate through all configured tags for this unified field
+            # We DON'T break after the first tag found, because different tags 
+            # might cover different historical segments (e.g. tag A for 2015-2020, tag B for 2021-2024).
             for tag in tags:
                 if tag in gaap_facts:
                     units = gaap_facts[tag].get('units', {})
                     for unit_key, records in units.items():
                         for r in records:
-                            # Filter for allowed forms
+                            # 1. Form Filter
                             if r.get('form') in allowed_forms:
-                                # Use 'end' date as the standard period identifier (YYYY-MM-DD)
                                 if 'end' in r:
                                     date_str = r['end']
-                                    
-                                    # For P&L/Cash Flow (10-K), we want full year data not partial -> Check 'fp'='FY'
-                                    # For Balance Sheet (10-K/10-Q), 'fp' can be FY, Q1, Q2, Q3
+                                    # 2. Period Type Logic
                                     is_valid_period = False
                                     if stmt_type == 'balance':
-                                        is_valid_period = True # Balance sheet is snapshot, always valid
+                                        is_valid_period = True
                                     else:
-                                        # Income/Cash Flow: Strict Annual
                                         if r.get('fp') == 'FY':
                                             is_valid_period = True
                                     
                                     if is_valid_period:
-                                        if date_str not in raw_data_by_date: raw_data_by_date[date_str] = {}
+                                        if date_str not in raw_data_by_date: 
+                                            raw_data_by_date[date_str] = {}
                                         
-                                        # Store logic: Take the latest filed one
-                                        raw_data_by_date[date_str][field] = r['val']
-                                        found_tag = True
-                    if found_tag: break # Priority tag found for this field
+                                        if field not in raw_data_by_date[date_str]:
+                                            raw_data_by_date[date_str][field] = r['val']
+                                            # Store fiscal period type (FY/Q) metadata once per date
+                                            if '_fp' not in raw_data_by_date[date_str]:
+                                                raw_data_by_date[date_str]['_fp'] = r.get('fp', 'FY')
+                                    else:
+                                        pass
+                            else:
+                                pass
+                else:
+                    pass
+        
+        # print(f"      [Edgar] {stmt_type}: Found {len(raw_data_by_date)} unique dates in raw data.")
         
         # Build objects and perform internal calculations
         results = []
@@ -227,20 +247,36 @@ class EdgarFetcher:
                 
                 valid_fields = TargetClass.model_fields.keys()
                 
+                # Determine period type (FY or Q) from the raw record
+                # We pick the fp from one of the fields found for this date
+                # In EdgarFetcher parsing, we use fp='FY' for Income/CashFlow, 
+                # but Balance Sheet might have others.
+                # Let's find the 'fp' from the first record we encountered for any field on this date.
+                # Wait, raw_data_by_date only stores 'val'. I need to store 'fp' too.
+                # I'll fix the raw_data_by_date structure above first.
+                
                 for field in valid_fields:
-                    if field == 'std_period': continue
+                    if field in ['std_period', 'std_period_type']: continue
                     
                     if field in extracted:
                         val = extracted[field]
-                        kwargs[field] = FieldWithSource(value=float(val), source='sec_edgar')
+                        if val is not None:
+                            kwargs[field] = FieldWithSource(value=float(val), source='sec_edgar')
                     else:
                         kwargs[field] = None
+                
+                # Set period type (Defaults to FY as SEC Fetcher primarily fetches annual)
+                fp_val = extracted.get('_fp', 'FY')
+                kwargs['std_period_type'] = 'FY' if fp_val == 'FY' else 'Q'
                 
                 stmt = TargetClass(**kwargs)
                 results.append(stmt)
             except Exception as e:
-                pass # Skip malformed
+                # Log the error so we don't fail silently
+                print(f"      [Edgar] Construction error for {date_str}: {e}")
+                import traceback
+                # traceback.print_exc() 
+                continue
         
         results.sort(key=lambda x: x.std_period, reverse=True)
-        # Limit to 6 years as per user request to avoid history dilution
         return results[:6]

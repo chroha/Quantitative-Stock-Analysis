@@ -15,11 +15,13 @@ from utils.unified_schema import (
     StockData, PriceData, IncomeStatement, BalanceSheet, CashFlow,
     CompanyProfile, AnalystTargets, FieldWithSource, TextFieldWithSource, YAHOO_FIELD_MAPPING
 )
+from utils.field_registry import DataSource
+from data_acquisition.stock_data.base_fetcher import BaseFetcher
 
 logger = setup_logger('yahoo_fetcher')
 
 
-class YahooFetcher:
+class YahooFetcher(BaseFetcher):
     """Fetches data from Yahoo Finance and maps to unified schema."""
     
     def __init__(self, symbol: str):
@@ -29,7 +31,7 @@ class YahooFetcher:
         Args:
             symbol: Stock ticker symbol
         """
-        self.symbol = symbol.upper()
+        super().__init__(symbol, DataSource.YAHOO)
         self.ticker = None
         logger.info(f"Initializing Yahoo fetcher for {self.symbol}")
     
@@ -169,13 +171,14 @@ class YahooFetcher:
             logger.error(f"Failed to fetch price history from Yahoo: {e}")
             return []
     
-    def _parse_financial_statement(self, df: pd.DataFrame, statement_type: str) -> list:
+    def _parse_financial_statement(self, df: pd.DataFrame, statement_type: str, period_type: str = 'FY') -> list:
         """
         Parse financial statement DataFrame to unified schema.
         
         Args:
             df: DataFrame from yfinance
             statement_type: 'income', 'balance', or 'cashflow'
+            period_type: 'FY' (Annual) or 'Q' (Quarterly)
             
         Returns:
             List of statement objects
@@ -201,11 +204,11 @@ class YahooFetcher:
             
             # Create statement object
             if statement_type == 'income':
-                stmt = IncomeStatement(std_period=period_str, **mapped_fields)
+                stmt = IncomeStatement(std_period=period_str, std_period_type=period_type, **mapped_fields)
             elif statement_type == 'balance':
-                stmt = BalanceSheet(std_period=period_str, **mapped_fields)
+                stmt = BalanceSheet(std_period=period_str, std_period_type=period_type, **mapped_fields)
             elif statement_type == 'cashflow':
-                stmt = CashFlow(std_period=period_str, **mapped_fields)
+                stmt = CashFlow(std_period=period_str, std_period_type=period_type, **mapped_fields)
             else:
                 continue
                 
@@ -215,13 +218,30 @@ class YahooFetcher:
         return statements
     
     def fetch_income_statements(self) -> list[IncomeStatement]:
-        """Fetch income statements."""
+        """Fetch income statements (Annual + latest Quarterly)."""
         try:
             if not self.ticker:
                 self.ticker = yf.Ticker(self.symbol)
             
-            income_stmt = self.ticker.financials
-            return self._parse_financial_statement(income_stmt, 'income')
+            # Fetch Annual
+            annual_df = self.ticker.financials
+            # yfinance sometimes returns duplicates or TTM, filter?
+            # For now, trust parser.
+            annual_stmts = self._parse_financial_statement(annual_df, 'income', 'FY')
+            
+            # Fetch Quarterly
+            quarterly_df = self.ticker.quarterly_financials
+            quarterly_stmts = self._parse_financial_statement(quarterly_df, 'income', 'Q')
+            
+            # Merge and deduplicate by date (prefer latest fetch or quarterly for recent)
+            merged = {s.std_period: s for s in annual_stmts}
+            for s in quarterly_stmts:
+                if s.std_period not in merged:
+                    merged[s.std_period] = s
+            
+            final_list = list(merged.values())
+            final_list.sort(key=lambda x: x.std_period, reverse=True)
+            return final_list
         
         except Exception as e:
             logger.error(f"Failed to fetch income statements from Yahoo: {e}")
@@ -235,11 +255,11 @@ class YahooFetcher:
             
             # Fetch Annual
             annual_df = self.ticker.balance_sheet
-            annual_stmts = self._parse_financial_statement(annual_df, 'balance')
+            annual_stmts = self._parse_financial_statement(annual_df, 'balance', 'FY')
             
             # Fetch Quarterly
             quarterly_df = self.ticker.quarterly_balance_sheet
-            quarterly_stmts = self._parse_financial_statement(quarterly_df, 'balance')
+            quarterly_stmts = self._parse_financial_statement(quarterly_df, 'balance', 'Q')
             
             # Merge and deduplicate by date
             # Key: date string. Value: Statement object
@@ -261,18 +281,35 @@ class YahooFetcher:
             logger.error(f"Failed to fetch balance sheets from Yahoo: {e}")
             return []
     
-    def fetch_cash_flows(self) -> list[CashFlow]:
-        """Fetch cash flow statements."""
+    def fetch_cash_flow_statements(self) -> list[CashFlow]:
+        """Fetch cash flow statements (Annual + latest Quarterly)."""
         try:
             if not self.ticker:
                 self.ticker = yf.Ticker(self.symbol)
             
-            cash_flow = self.ticker.cashflow
-            return self._parse_financial_statement(cash_flow, 'cashflow')
+            # Fetch Annual
+            annual_df = self.ticker.cashflow
+            annual_stmts = self._parse_financial_statement(annual_df, 'cashflow', 'FY')
+            
+            # Fetch Quarterly
+            quarterly_df = self.ticker.quarterly_cashflow
+            quarterly_stmts = self._parse_financial_statement(quarterly_df, 'cashflow', 'Q')
+            
+            # Merge
+            merged = {s.std_period: s for s in annual_stmts}
+            for s in quarterly_stmts:
+                if s.std_period not in merged:
+                    merged[s.std_period] = s
+            
+            final_list = list(merged.values())
+            final_list.sort(key=lambda x: x.std_period, reverse=True)
+            return final_list
         
         except Exception as e:
             logger.error(f"Failed to fetch cash flows from Yahoo: {e}")
             return []
+            
+
     
     def fetch_all(self) -> StockData:
         """

@@ -226,6 +226,28 @@ class CompanyScorer:
             'warnings': warnings
         }
     
+    def _score_single_metric(self, metric_name, value, weight, metric_config, global_defaults):
+        """Helper to score a single metric and return weighted score + details."""
+        if value is None:
+            return 0, None
+            
+        score_result = self.metric_scorer.score_metric(
+            metric_name, value, metric_config, global_defaults
+        )
+        
+        weighted_score = (score_result['raw_score'] / 100) * weight
+        
+        details = {
+            'value': value,
+            'raw_score': score_result['raw_score'],
+            'weight': weight,
+            'weighted_score': round(weighted_score, 2),
+            'tier': score_result['tier'],
+            'bucket': score_result.get('bucket'),
+            'interpretation': score_result.get('interpretation')
+        }
+        return weighted_score, details
+
     def _score_growth(self, growth, sector_config, global_defaults, weights) -> dict:
         """Score growth category (35 points max)."""
         metric_weights = weights['metrics']
@@ -239,47 +261,25 @@ class CompanyScorer:
         fcf_cagr = growth.fcf_cagr_5y
         fcf_weight = metric_weights.get('fcf_cagr_5y', 12)
         
-        if fcf_cagr is not None and fcf_cagr < 0:
-            # Negative FCF growth - check for compensation
-            # TODO: Access capital_allocation for dilution check
-            metric_config = {
-                'scoring_mode': 'tier_3_absolute',
-               'absolute_thresholds': TIER3_THRESHOLDS['fcf_cagr_5y']
-            }
-            score_result = self.metric_scorer.score_metric(
-                'fcf_cagr_5y', fcf_cagr, metric_config, global_defaults
-            )
-            
-            weighted_score = (score_result['raw_score'] / 100) * fcf_weight
-            total_score += weighted_score
-            metric_details['fcf_cagr_5y'] = {
-                'value': fcf_cagr,
-                'raw_score': score_result['raw_score'],
-                'weight': fcf_weight,
-                'weighted_score': round(weighted_score, 2),
-                'tier': score_result['tier'],
-                'interpretation': score_result.get('interpretation')
-            }
-        elif fcf_cagr is not None:
-            # Positive FCF growth
-            metric_config = {
+        # Determine config for FCF
+        fcf_config = None
+        if fcf_cagr is not None:
+            fcf_config = {
                 'scoring_mode': 'tier_3_absolute',
                 'absolute_thresholds': TIER3_THRESHOLDS['fcf_cagr_5y']
             }
-            score_result = self.metric_scorer.score_metric(
-                'fcf_cagr_5y', fcf_cagr, metric_config, global_defaults
+            if fcf_cagr < 0:
+                # TODO: Access capital_allocation for dilution check
+                # For now just score it normally (will be low)
+                pass
+        
+        if fcf_config:
+            w_score, details = self._score_single_metric(
+                'fcf_cagr_5y', fcf_cagr, fcf_weight, fcf_config, global_defaults
             )
-            
-            weighted_score = (score_result['raw_score'] / 100) * fcf_weight
-            total_score += weighted_score
-            metric_details['fcf_cagr_5y'] = {
-                'value': fcf_cagr,
-                'raw_score': score_result['raw_score'],
-                'weight': fcf_weight,
-                'weighted_score': round(weighted_score, 2),
-                'tier': score_result['tier'],
-                'interpretation': score_result.get('interpretation')
-            }
+            if details:
+                total_score += w_score
+                metric_details['fcf_cagr_5y'] = details
         
         # === Other growth metrics (standard Tier 3) ===
         tier3_metrics = {
@@ -290,28 +290,16 @@ class CompanyScorer:
         }
         
         for metric_name, (value, weight) in tier3_metrics.items():
-            if value is None:
-                continue
-            
             metric_config = {
                 'scoring_mode': 'tier_3_absolute',
                 'absolute_thresholds': TIER3_THRESHOLDS.get(metric_name, {})
             }
-            score_result = self.metric_scorer.score_metric(
-                metric_name, value, metric_config, global_defaults
+            w_score, details = self._score_single_metric(
+                metric_name, value, weight, metric_config, global_defaults
             )
-            
-            if score_result['raw_score'] is not None:
-                weighted_score = (score_result['raw_score'] / 100) * weight
-                total_score += weighted_score
-                metric_details[metric_name] = {
-                    'value': value,
-                    'raw_score': score_result['raw_score'],
-                    'weight': weight,
-                    'weighted_score': round(weighted_score, 2),
-                    'tier': score_result['tier'],
-                    'interpretation': score_result.get('interpretation')
-                }
+            if details:
+                total_score += w_score
+                metric_details[metric_name] = details
         
         return {
             'score': round(total_score, 2),
@@ -330,104 +318,66 @@ class CompanyScorer:
         metric_details = {}
         warnings = []
         
-        # Share Dilution (Tier 3 custom)
-        share_dilution = capital_allocation.share_dilution_cagr_5y
-        dilution_weight = metric_weights.get('share_dilution_cagr_5y', 10)
+        # Share Dilution
+        w_score, details = self._score_single_metric(
+            'share_dilution_cagr_5y', 
+            capital_allocation.share_dilution_cagr_5y, 
+            metric_weights.get('share_dilution_cagr_5y', 10),
+            {'scoring_mode': 'tier_3_absolute'}, 
+            global_defaults
+        )
+        if details:
+            total_score += w_score
+            metric_details['share_dilution_cagr_5y'] = details
         
-        if share_dilution is not None:
-            metric_config = {'scoring_mode': 'tier_3_absolute'}
-            score_result = self.metric_scorer.score_metric(
-                'share_dilution_cagr_5y', share_dilution, metric_config, global_defaults
-            )
-            
-            weighted_score = (score_result['raw_score'] / 100) * dilution_weight
-            total_score += weighted_score
-            metric_details['share_dilution_cagr_5y'] = {
-                'value': share_dilution,
-                'raw_score': score_result['raw_score'],
-                'weight': dilution_weight,
-                'weighted_score': round(weighted_score, 2),
-                'tier': score_result['tier'],
-                'bucket': score_result.get('bucket'),
-                'interpretation': score_result.get('interpretation')
-            }
+        # CapEx Intensity
+        w_score, details = self._score_single_metric(
+            'capex_intensity_3y', 
+            capital_allocation.capex_intensity_3y, 
+            metric_weights.get('capex_intensity_3y', 8),
+            {'scoring_mode': 'tier_3_absolute'}, 
+            global_defaults
+        )
+        if details:
+            total_score += w_score
+            metric_details['capex_intensity_3y'] = details
         
-        # CapEx Intensity (Tier 3 U-curve)
-        capex_intensity = capital_allocation.capex_intensity_3y
-        capex_weight = metric_weights.get('capex_intensity_3y', 8)
-        
-        if capex_intensity is not None:
-            metric_config = {'scoring_mode': 'tier_3_absolute'}
-            score_result = self.metric_scorer.score_metric(
-                'capex_intensity_3y', capex_intensity, metric_config, global_defaults
-            )
-            
-            weighted_score = (score_result['raw_score'] / 100) * capex_weight
-            total_score += weighted_score
-            metric_details['capex_intensity_3y'] = {
-                'value': capex_intensity,
-                'raw_score': score_result['raw_score'],
-                'weight': capex_weight,
-                'weighted_score': round(weighted_score, 2),
-                'tier': score_result['tier'],
-                'bucket': score_result.get('bucket'),
-                'interpretation': score_result.get('interpretation')
-            }
-        
-        # SBC Impact (Tier 3)
-        sbc_impact = capital_allocation.sbc_impact_3y
-        sbc_weight = metric_weights.get('sbc_impact_3y', 4)
-        
-        if sbc_impact is not None:
-            metric_config = {
+        # SBC Impact
+        w_score, details = self._score_single_metric(
+            'sbc_impact_3y', 
+            capital_allocation.sbc_impact_3y, 
+            metric_weights.get('sbc_impact_3y', 4),
+            {
                 'scoring_mode': 'tier_3_absolute',
                 'absolute_thresholds': TIER3_THRESHOLDS['sbc_impact_3y']
-            }
-            score_result = self.metric_scorer.score_metric(
-                'sbc_impact_3y', sbc_impact, metric_config, global_defaults
-            )
-            
-            weighted_score = (score_result['raw_score'] / 100) * sbc_weight
-            total_score += weighted_score
-            metric_details['sbc_impact_3y'] = {
-                'value': sbc_impact,
-                'raw_score': score_result['raw_score'],
-                'weight': sbc_weight,
-                'weighted_score': round(weighted_score, 2),
-                'tier': score_result['tier'],
-                'interpretation': score_result.get('interpretation')
-            }
+            }, 
+            global_defaults
+        )
+        if details:
+            total_score += w_score
+            metric_details['sbc_impact_3y'] = details
         
-        # Debt to Equity (Tier 2 from benchmarks if available)
+        # Debt to Equity
         debt_to_equity = capital_allocation.debt_to_equity
         de_weight = metric_weights.get('debt_to_equity', 3)
         
         if debt_to_equity is not None:
             metrics_config = sector_config.get('metrics', {})
             if 'debt_to_equity' in metrics_config:
-                metric_config = metrics_config['debt_to_equity']
-                score_result = self.metric_scorer.score_metric(
-                    'debt_to_equity', debt_to_equity, metric_config, global_defaults
+                w_score, details = self._score_single_metric(
+                    'debt_to_equity', debt_to_equity, de_weight, 
+                    metrics_config['debt_to_equity'], global_defaults
                 )
-                
-                weighted_score = (score_result['raw_score'] / 100) * de_weight
-                total_score += weighted_score
-                metric_details['debt_to_equity'] = {
-                    'value': debt_to_equity,
-                    'raw_score': score_result['raw_score'],
-                    'weight': de_weight,
-                    'weighted_score': round(weighted_score, 2),
-                    'tier': score_result['tier'],
-                    'interpretation': score_result.get('interpretation')
-                }
+                if details:
+                    total_score += w_score
+                    metric_details['debt_to_equity'] = details
             else:
-                # Value exists but no benchmark
                 metric_details['debt_to_equity'] = {
                     'value': debt_to_equity, 
-                    'raw_score': 0,
+                    'raw_score': 0, 
                     'weight': 0, 
-                    'weighted_score': 0,
-                    'tier': 'N/A',
+                    'weighted_score': 0, 
+                    'tier': 'N/A', 
                     'interpretation': 'No Benchmark'
                 }
         

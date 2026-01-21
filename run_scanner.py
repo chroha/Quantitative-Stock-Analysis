@@ -24,7 +24,7 @@ from utils import LoggingContext, set_logging_mode
 set_logging_mode(LoggingContext.SILENT)
 
 # Now import modules (their loggers will respect SILENT mode)
-from data_acquisition import StockDataLoader
+from data_acquisition import StockDataLoader, BenchmarkDataLoader
 from fundamentals.financial_scorers.financial_scorers_output import FinancialScorerGenerator
 from fundamentals.technical_scorers.technical_scorers_output import TechnicalScorerGenerator
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
@@ -218,6 +218,22 @@ def main():
     output_dir = os.path.join(current_dir, "generated_data")
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
+
+    # 0. Benchmark Data Check (Prevent crash)
+    bench_loader = BenchmarkDataLoader()
+    bench_path = bench_loader.get_output_path()
+    if not bench_path.exists():
+        print("[INFO] Missing Industry Benchmarks. Downloading...")
+        bench_loader.run_update()
+    else:
+        # Prompt for update if benchmarks exist but user might want to refresh
+        # Ask if running interactively (approximated by not being a list file run? or just always ask?)
+        # User requested to be asked.
+        if True: 
+             choice = input("  Update industry benchmarks? (y/N): ").strip().lower()
+             if choice == 'y':
+                 print("  Downloading industry data files...")
+                 bench_loader.run_update(force_refresh=True)
         
     # Rate limiting delay for batch scanning (to avoid API rate limits)
     # Alpha Vantage free tier: 5 requests/minute, so we need ~12s between stocks
@@ -233,7 +249,7 @@ def main():
         
         # Add delay between stocks to avoid API rate limits (skip for last stock)
         if len(symbols) > 1 and i < len(symbols) - 1:
-            paid_api_used = True # Default safe
+            paid_api_used = False # Default to False (Optimistic)
             if res and 'paid_api_used' in res:
                 paid_api_used = res['paid_api_used']
             

@@ -120,6 +120,24 @@ class BaseFetcher(ABC):
         except (ValueError, TypeError):
             return None
 
+    @abstractmethod
+    def fetch_income_statements(self) -> list:
+        """Fetch income statements."""
+        pass
+
+    @abstractmethod
+    def fetch_balance_sheets(self) -> list:
+        """Fetch balance sheets."""
+        pass
+
+    @abstractmethod
+    def fetch_cash_flow_statements(self) -> list:
+        """Fetch cash flow statements."""
+        pass
+        
+    def fetch_cash_flows(self) -> list:
+        """Alias for fetch_cash_flow_statements (Backward Compatibility)."""
+        return self.fetch_cash_flow_statements()
 
 # Fetcher registry for dynamic source selection
 class FetcherRegistry:

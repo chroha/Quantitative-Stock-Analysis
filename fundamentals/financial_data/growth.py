@@ -288,9 +288,19 @@ class GrowthCalculator(CalculatorBase):
         """
         metrics = GrowthMetrics()
         
+        # Filter for Annual statements (Fiscal Year) to ensure valid CAGR
+        # We might have mixed Annual (FY) and Quarterly (Q) data in the list.
+        # Default to 'FY' if period_type is missing (backward compatibility).
+        
+        annual_income = [s for s in stock_data.income_statements 
+                         if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']]
+        
+        annual_cashflow = [s for s in stock_data.cash_flows 
+                           if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']]
+
         # Need at least 5 years for CAGR
-        if len(stock_data.income_statements) < 5:
-            msg = f"Insufficient income statements: {len(stock_data.income_statements)} (Preferred 5)"
+        if len(annual_income) < 5:
+            msg = f"Insufficient annual income statements: {len(annual_income)} (Preferred 5)"
             self.logger.warning(msg)
             metrics.warnings.append(MetricWarning(
                 metric_name='growth_general',
@@ -299,8 +309,8 @@ class GrowthCalculator(CalculatorBase):
                 severity='warning'
             ))
         
-        if len(stock_data.cash_flows) < 5:
-            msg = f"Insufficient cash flows: {len(stock_data.cash_flows)} (Preferred 5)"
+        if len(annual_cashflow) < 5:
+            msg = f"Insufficient annual cash flows: {len(annual_cashflow)} (Preferred 5)"
             self.logger.warning(msg)
             metrics.warnings.append(MetricWarning(
                 metric_name='growth_general',
@@ -312,14 +322,16 @@ class GrowthCalculator(CalculatorBase):
         # Extract revenue and net income (5 years, oldest to newest)
         revenues = []
         net_incomes = []
-        for stmt in reversed(stock_data.income_statements[:5]):
+        # Use filtered annual list
+        # Sorted desc (newest first). Slice first 5, then reverse to get Oldest->Newest
+        for stmt in reversed(annual_income[:5]):
             revenues.append(self.get_field_value(stmt, 'std_revenue'))
             net_incomes.append(self.get_field_value(stmt, 'std_net_income'))
         
         # Extract OCF and CapEx (5 years, oldest to newest)
         ocfs = []
         capexs = []
-        for cf in reversed(stock_data.cash_flows[:5]):
+        for cf in reversed(annual_cashflow[:5]):
             ocfs.append(self.get_field_value(cf, 'std_operating_cash_flow'))
             capexs.append(self.get_field_value(cf, 'std_capex'))
         

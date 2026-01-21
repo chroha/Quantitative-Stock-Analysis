@@ -17,6 +17,13 @@ def build_analysis_prompt(data: Dict[str, Any]) -> str:
     prof = fin.get('profitability', {})
     growth = fin.get('growth', {})
     cap = fin.get('capital', {})
+
+    tech = data.get('technical_score', {})
+    tech_trend = tech.get('trend', {})
+    tech_mom = tech.get('momentum', {})
+    tech_vol = tech.get('volatility', {})
+    tech_struct = tech.get('structure', {})
+    tech_volume = tech.get('volume', {})
     
     def g(d, k): 
         val = d.get(k, {}).get('max', '-')
@@ -90,19 +97,28 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 **评:** [总评]
 
 ### 1. 趋势与动量 (X/X)
-| 指标 | 数值 | 信号 | 解读 |
-|------|------|------|----|
-| ADX | X | [信号] | [简评] |
-| 52周位置 | X% | [信号] | [简评] |
-| RSI | X | [信号] | [简评] |
-| MACD | X | [信号] | [简评] |
+| 指标 | 数值 | 得分 | 信号 | 解读 |
+|---|---|---|---|---|
+| ADX趋势 | X | X/{g(tech_trend, 'adx')} | [信号] | [简评] |
+| 均线系统 | - | X/{g(tech_trend, 'multi_ma')} | [信号] | [简评] |
+| 52周位置 | X% | X/{g(tech_trend, '52w_pos')} | [信号] | [简评] |
+| RSI指标 | X | X/{g(tech_mom, 'rsi')} | [信号] | [简评] |
+| MACD | X | X/{g(tech_mom, 'macd')} | [信号] | [简评] |
+| 变动率(ROC) | X | X/{g(tech_mom, 'roc')} | [信号] | [简评] |
 
 ### 2. 波动与结构 (X/X)
-| 指标 | 数值 | 信号 | 解读 |
-|------|------|------|----|
-| ATR | X% | [信号] | [简评] |
-| 布林带 | - | [信号] | [简评] |
-| 支撑/阻力 | - | [信号] | [简评] |
+| 指标 | 数值 | 得分 | 信号 | 解读 |
+|---|---|---|---|---|
+| ATR波动 | X% | X/{g(tech_vol, 'atr')} | [信号] | [简评] |
+| 布林带 | - | X/{g(tech_vol, 'bollinger')} | [信号] | [简评] |
+| 支撑/阻力 | - | X/{g(tech_struct, 'resistance')} | [信号] | [简评] |
+| 高低结构 | - | X/{g(tech_struct, 'high_low')} | [信号] | [简评] |
+
+### 3. 量价分析 (X/X)
+| 指标 | 数值 | 得分 | 信号 | 解读 |
+|---|---|---|---|---|
+| OBV能量 | X | X/{g(tech_volume, 'obv')} | [信号] | [简评] |
+| 量能强度 | X | X/{g(tech_volume, 'vol_strength')} | [信号] | [简评] |
 
 ## 三、估值分析 (加权估价:$X)
 **当前价:** $X | 上行空间:X%
@@ -168,19 +184,28 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 **Comment:** [Overall Comment]
 
 ### 1. Trend & Momentum (X/X)
-| Indicator | Value | Signal | Comment |
-|-----------|-------|--------|---------|
-| ADX | X | [Signal] | [Brief Comment] |
-| 52W Pos | X% | [Signal] | [Brief Comment] |
-| RSI | X | [Signal] | [Brief Comment] |
-| MACD | X | [Signal] | [Brief Comment] |
+| Indicator | Value | Score | Signal | Interpretation |
+|---|---|---|---|---|
+| ADX | {{ tech_trend.adx.val }} | {{ tech_trend.adx.score }}/{{ tech_trend.adx.max }} | {{ tech_trend.adx.signal }} | Trend Strength |
+| Multi MA | - | {{ tech_trend.multi_ma.score }}/{{ tech_trend.multi_ma.max }} | {{ tech_trend.multi_ma.signal }} | MA Arrangement |
+| 52W Position | {{ tech_trend.52w_pos.val }} | {{ tech_trend.52w_pos.score }}/{{ tech_trend.52w_pos.max }} | {{ tech_trend.52w_pos.signal }} | Price Position |
+| RSI | {{ tech_momentum.rsi.val }} | {{ tech_momentum.rsi.score }}/{{ tech_momentum.rsi.max }} | {{ tech_momentum.rsi.signal }} | Momentum State |
+| MACD | - | {{ tech_momentum.macd.score }}/{{ tech_momentum.macd.max }} | {{ tech_momentum.macd.signal }} | Trend Confirmation |
+| ROC | {{ tech_momentum.roc.val }} | {{ tech_momentum.roc.score }}/{{ tech_momentum.roc.max }} | {{ tech_momentum.roc.signal }} | Rate of Change |
 
 ### 2. Volatility & Structure (X/X)
-| Indicator | Value | Signal | Comment |
-|-----------|-------|--------|---------|
-| ATR | X% | [Signal] | [Brief Comment] |
-| Bollinger | - | [Signal] | [Brief Comment] |
-| Supp/Res | - | [Signal] | [Brief Comment] |
+| Indicator | Value | Score | Signal | Interpretation |
+|---|---|---|---|---|
+| ATR | {{ tech_volatility.atr.val }} | {{ tech_volatility.atr.score }}/{{ tech_volatility.atr.max }} | {{ tech_volatility.atr.signal }} | Volatility Level |
+| Bollinger | - | {{ tech_volatility.bollinger.score }}/{{ tech_volatility.bollinger.max }} | {{ tech_volatility.bollinger.signal }} | Band Position |
+| Resistance | {{ tech_structure.resistance.val }} | {{ tech_structure.resistance.score }}/{{ tech_structure.resistance.max }} | {{ tech_structure.resistance.signal }} | Dist to Res |
+| High/Low | - | {{ tech_structure.high_low.score }}/{{ tech_structure.high_low.max }} | {{ tech_structure.high_low.signal }} | Market Structure |
+
+### 3. Volume Analysis (X/X)
+| Indicator | Value | Score | Signal | Interpretation |
+|---|---|---|---|---|
+| OBV | {{ tech_volume.obv.val }} | {{ tech_volume.obv.score }}/{{ tech_volume.obv.max }} | {{ tech_volume.obv.signal }} | On-Balance Vol |
+| Vol Strength | {{ tech_volume.vol_strength.val }} | {{ tech_volume.vol_strength.score }}/{{ tech_volume.vol_strength.max }} | {{ tech_volume.vol_strength.signal }} | Relative Vol |
 
 ## III. Valuation Analysis (Weighted: $X)
 **Price:** $X | **Upside:** X%

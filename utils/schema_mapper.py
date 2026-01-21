@@ -80,7 +80,7 @@ class SchemaMapper:
                 
             # Extract raw value
             raw_value = SchemaMapper._extract_value(data, source_names, source)
-            
+                        
             # Create field object if value exists
             if raw_value is not None and not pd.isna(raw_value):
                 try:

@@ -19,6 +19,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from config.settings import settings
+from config import constants
 from utils.logger import setup_logger
 from utils.unified_schema import (
     IncomeStatement, BalanceSheet, CashFlow, CompanyProfile,
@@ -38,13 +39,11 @@ class AlphaVantageFetcher(BaseFetcher):
     Used as third-tier fallback data source.
     """
     
-    BASE_URL = "https://www.alphavantage.co/query"
+    BASE_URL = constants.ALPHAVANTAGE_BASE_URL
     
     # Rate limiting - Alpha Vantage free tier: 5 requests/minute, 500/day
-    # For single stock (3 requests), 1.5s interval is safe and fast
-    # For batch processing, caller should add delays between stocks
     _last_request_time = 0
-    MIN_REQUEST_INTERVAL = 1.5  # 1.5 seconds between requests (conservative for 3-call batches)
+    MIN_REQUEST_INTERVAL = constants.ALPHAVANTAGE_MIN_REQUEST_INTERVAL
     
     def __init__(self, symbol: str):
         from utils.field_registry import DataSource as RegistryDataSource
@@ -90,7 +89,7 @@ class AlphaVantageFetcher(BaseFetcher):
         
         try:
             logger.info(f"Fetching {function} for {self.symbol} from Alpha Vantage")
-            response = requests.get(self.BASE_URL, params=params, timeout=30)
+            response = requests.get(self.BASE_URL, params=params, timeout=constants.ALPHAVANTAGE_TIMEOUT_SECONDS)
             response.raise_for_status()
             
             data = response.json()
@@ -147,7 +146,7 @@ class AlphaVantageFetcher(BaseFetcher):
         注意: 如果在此处添加新字段，必须同步更新 utils/unified_schema.py 中的 CompanyProfile 定义。
         否则，数据将在保存过程中被丢弃。
         """
-        data = self._make_request('OVERVIEW')
+        data = self._make_request(constants.ALPHAVANTAGE_FUNCTIONS['overview'])
         
         if not data or 'Symbol' not in data:
             return None
@@ -187,7 +186,7 @@ class AlphaVantageFetcher(BaseFetcher):
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
         
-        data = self._make_request('INCOME_STATEMENT')
+        data = self._make_request(constants.ALPHAVANTAGE_FUNCTIONS['income_statement'])
         
         if not data or 'annualReports' not in data:
             return []
@@ -217,7 +216,7 @@ class AlphaVantageFetcher(BaseFetcher):
     
     def fetch_balance_sheets(self) -> List[BalanceSheet]:
         """Fetch balance sheets (Annual + Quarterly)."""
-        data = self._make_request('BALANCE_SHEET')
+        data = self._make_request(constants.ALPHAVANTAGE_FUNCTIONS['balance_sheet'])
         
         if not data:
             return []
@@ -319,12 +318,12 @@ class AlphaVantageFetcher(BaseFetcher):
         logger.info(f"Fetched {len(final_list)} balance sheets (Annual+Quarterly) from Alpha Vantage")
         return final_list
     
-    def fetch_cash_flows(self) -> List[CashFlow]:
+    def fetch_cash_flow_statements(self) -> List[CashFlow]:
         """Fetch annual cash flow statements."""
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
         
-        data = self._make_request('CASH_FLOW')
+        data = self._make_request(constants.ALPHAVANTAGE_FUNCTIONS['cash_flow'])
         
         if not data or 'annualReports' not in data:
             return []
@@ -367,6 +366,8 @@ class AlphaVantageFetcher(BaseFetcher):
                 continue
         
         return statements
+
+
 
 
 # Register this fetcher

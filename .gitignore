@@ -13,4 +13,6 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
+generated_data/
+generated_reports/
 

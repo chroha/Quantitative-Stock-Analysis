@@ -48,6 +48,7 @@ class IncomeStatement(BaseModel):
     利润表模型，使用统一字段名。
     """
     std_period: Optional[str] = Field(None, description="Period (e.g., '2024-Q4', '2024-FY')")
+    std_period_type: Literal['FY', 'Q', 'TTM'] = Field('FY', description="Period type: Fiscal Year, Quarter, or TTM")
     std_revenue: Optional[FieldWithSource] = Field(None, description="Total revenue")
     std_cost_of_revenue: Optional[FieldWithSource] = Field(None, description="Cost of revenue")
     std_gross_profit: Optional[FieldWithSource] = Field(None, description="Gross profit")
@@ -69,6 +70,7 @@ class BalanceSheet(BaseModel):
     资产负债表模型，使用统一字段名。
     """
     std_period: Optional[str] = Field(None, description="Period (e.g., '2024-Q4', '2024-FY')")
+    std_period_type: Literal['FY', 'Q', 'TTM'] = Field('FY', description="Period type: Fiscal Year, Quarter, or TTM")
     std_total_assets: Optional[FieldWithSource] = Field(None, description="Total assets")
     std_current_assets: Optional[FieldWithSource] = Field(None, description="Current assets")
     std_cash: Optional[FieldWithSource] = Field(None, description="Cash and equivalents")
@@ -86,6 +88,7 @@ class CashFlow(BaseModel):
     现金流量表模型，使用统一字段名。
     """
     std_period: Optional[str] = Field(None, description="Period (e.g., '2024-Q4', '2024-FY')")
+    std_period_type: Literal['FY', 'Q', 'TTM'] = Field('FY', description="Period type: Fiscal Year, Quarter, or TTM")
     std_operating_cash_flow: Optional[FieldWithSource] = Field(None, description="Operating cash flow")
     std_investing_cash_flow: Optional[FieldWithSource] = Field(None, description="Investing cash flow")
     std_financing_cash_flow: Optional[FieldWithSource] = Field(None, description="Financing cash flow")

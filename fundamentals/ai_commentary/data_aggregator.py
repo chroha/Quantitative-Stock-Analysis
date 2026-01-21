@@ -71,7 +71,16 @@ class DataAggregator:
             
             if stmts and len(stmts) > 0:
                 p1 = stmts[0].get('std_period', '')
-                history_years = len(stmts)
+                # Only count Annual/TTM for history depth display
+                # Need to handle dict access since raw data is dict here, not object? 
+                # Yes, _load_json returns dict. 
+                # Check period_type field availability.
+                hist_count = 0
+                for s in stmts:
+                    ptype = s.get('std_period_type', 'FY') # Default to FY if missing
+                    if ptype in ['FY', 'TTM']:
+                        hist_count += 1
+                history_years = hist_count
                 
             if bs_stmts and len(bs_stmts) > 0:
                 p2 = bs_stmts[0].get('std_period', '')
@@ -206,13 +215,15 @@ class DataAggregator:
                 "score": cats.get('trend_strength', {}).get('earned_points', 0), 
                 "max": cats.get('trend_strength', {}).get('max_points', 0),
                 "adx": fmt('trend_strength', 'adx'),
+                "multi_ma": fmt('trend_strength', 'multi_ma'),
                 "52w_pos": fmt('trend_strength', 'price_position')
             },
             "momentum": {
                 "score": cats.get('momentum', {}).get('earned_points', 0),
                 "max": cats.get('momentum', {}).get('max_points', 0),
                 "rsi": fmt('momentum', 'rsi'),
-                "macd": fmt('momentum', 'macd')
+                "macd": fmt('momentum', 'macd'),
+                "roc": fmt('momentum', 'roc')
             },
             "volatility": {
                 "score": cats.get('volatility', {}).get('earned_points', 0),
@@ -223,7 +234,14 @@ class DataAggregator:
             "structure": {
                 "score": cats.get('price_structure', {}).get('earned_points', 0),
                 "max": cats.get('price_structure', {}).get('max_points', 0),
-                "resistance": fmt('price_structure', 'support_resistance')
+                "resistance": fmt('price_structure', 'support_resistance'),
+                "high_low": fmt('price_structure', 'high_low_structure')
+            },
+            "volume": {
+                "score": cats.get('volume_price', {}).get('earned_points', 0),
+                "max": cats.get('volume_price', {}).get('max_points', 0),
+                "obv": fmt('volume_price', 'obv'),
+                "vol_strength": fmt('volume_price', 'volume_strength')
             }
         }
 
@@ -395,6 +413,10 @@ class DataAggregator:
                 lines.append(f"| Avg Volume | 平均成交量 | {format_val(avg_vol, MetricFormat.DECIMAL)} | `20-Day Average` |")
                 
                 # Moving Averages (Trend inputs)
+                sma_20 = find_ind_val('multi_ma', 'ma20')
+                if sma_20:
+                    lines.append(f"| SMA 20 | 20日均线 | {format_val(sma_20, MetricFormat.CURRENCY)} | `Short Trend` |")
+                
                 sma_50 = find_ind_val('multi_ma', 'ma50')
                 if sma_50:
                     lines.append(f"| SMA 50 | 50日均线 | {format_val(sma_50, MetricFormat.CURRENCY)} | `Medium Trend` |")
@@ -419,6 +441,10 @@ class DataAggregator:
                 rsi = find_ind_val('rsi', 'rsi')
                 lines.append(f"| RSI (14) | 相对强弱指数 | {format_val(rsi, MetricFormat.DECIMAL)} | `Momentum (0-100)` |")
                 
+                roc = find_ind_val('roc', 'roc')
+                if roc is not None:
+                    lines.append(f"| ROC (20) | 变动率 | {format_val(roc, MetricFormat.PERCENT)} | `Price Rate of Change` |")
+                
                 macd_line = find_ind_val('macd', 'macd')
                 signal_line = find_ind_val('macd', 'signal_line')
                 macd_hist = find_ind_val('macd', 'histogram')
@@ -435,6 +461,30 @@ class DataAggregator:
                 if adx:
                     lines.append(f"| ADX | 趋势强度 | {format_val(adx, MetricFormat.DECIMAL)} | `>25=Strong Trend` |")
                 
+                # Structure
+                supp = find_ind_val('support_resistance', 'nearest_support')
+                res = find_ind_val('support_resistance', 'nearest_resistance')
+                if supp:
+                    lines.append(f"| Support | 最近支撑 | {format_val(supp, MetricFormat.CURRENCY)} | `Nearest Support Level` |")
+                if res:
+                    lines.append(f"| Resistance | 最近阻力 | {format_val(res, MetricFormat.CURRENCY)} | `Nearest Resistance Level` |")
+                    
+                hl_pattern = find_ind_val('high_low_structure', 'pattern')
+                if hl_pattern:
+                    lines.append(f"| Structure | 市场结构 | {format_val(hl_pattern, MetricFormat.STRING)} | `High/Low Pattern` |")
+
+                # Volume Analysis
+                obv = find_ind_val('obv', 'obv')
+                if obv:
+                    # OBV is cumulative, formatting as large currency just to get B/M suffix but no currency sign logic?
+                    # format_val uses currency logic if fmt=CURRENCY. We can use DECIMAL or just force string.
+                    # Let's use DECIMAL for now, or add a CUSTOM handling if easy.
+                    lines.append(f"| OBV | 能量潮 | {format_val(obv, MetricFormat.DECIMAL)} | `On-Balance Volume` |")
+                    
+                vol_ratio = find_ind_val('volume_strength', 'volume_ratio')
+                if vol_ratio:
+                    lines.append(f"| Vol Ratio | 量比 | {format_val(vol_ratio, MetricFormat.DECIMAL)} | `Vol / AvgVol` |")
+
                 # Volatility (ATR)
                 atr = find_ind_val('atr', 'atr') # Raw value
                 atr_pct = find_ind_val('atr', 'atr_pct') # Percentage

@@ -155,7 +155,7 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
         yahoo_names=['Basic Average Shares'],
         edgar_tags=['WeightedAverageNumberOfSharesOutstandingBasic'],
         fmp_names=['weightedAverageShsOut'],
-        av_names=None,
+        av_names=['commonStockSharesOutstanding', 'weightedAverageShsOut', 'weightedAverageShsOutDil'],
     ),
     'std_ebitda': FieldDefinition(
         unified_name='std_ebitda',
@@ -313,7 +313,7 @@ CASHFLOW_FIELDS: Dict[str, FieldDefinition] = {
         yahoo_names=['Stock Based Compensation'],
         edgar_tags=['ShareBasedCompensation', 'ShareBasedCompensationArrangementByShareBasedPaymentAwardEquityInstrumentsOtherThanOptionsVestedInPeriod'],
         fmp_names=['stockBasedCompensation'],
-        av_names=None,
+        av_names=['stockBasedCompensation'],
     ),
     'std_dividends_paid': FieldDefinition(
         unified_name='std_dividends_paid',

@@ -400,8 +400,21 @@ class ProfitabilityCalculator(CalculatorBase):
             self.logger.error("Missing income statements or balance sheets")
             return metrics
         
-        latest_income = stock_data.income_statements[0]
-        latest_balance = stock_data.balance_sheets[0]
+        # Find latest Annual (FY) or TTM financial data
+        # We prefer FY to ensure annualized metrics (ROIC, ROE) are correct.
+        # But if TTM is available (synthesized from quarters), it's even better for timeliness.
+        
+        latest_income = next((s for s in stock_data.income_statements if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+        latest_balance = next((s for s in stock_data.balance_sheets if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+        
+        if not latest_income or not latest_balance:
+            # Fallback to latest available if no Annual found (e.g. only have Qs?)
+            # or if period_type logic fails.
+            latest_income = stock_data.income_statements[0]
+            latest_balance = stock_data.balance_sheets[0]
+            self.logger.warning("No Annual (FY) or TTM statements found. Using latest available (Warning: Metrics might be quarterly).")
+        else:
+             self.logger.debug(f"Using Latest Annual/TTM Report for Profitability: {latest_income.std_period} ({getattr(latest_income, 'std_period_type', 'FY')})")
         
         # Extract values from income statement
         operating_income = self.get_field_value(latest_income, 'std_operating_income')

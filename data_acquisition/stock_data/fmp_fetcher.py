@@ -12,21 +12,24 @@ Correct format: https://financialmodelingprep.com/stable/{endpoint}?symbol=AAPL&
 import requests
 from typing import Optional
 from config.settings import settings
+from config import constants
 from utils.logger import setup_logger
 from utils.unified_schema import (
     AnalystTargets, CompanyProfile, FieldWithSource, TextFieldWithSource, FMP_FIELD_MAPPING
 )
+from utils.field_registry import DataSource
+from data_acquisition.stock_data.base_fetcher import BaseFetcher
 
 logger = setup_logger('fmp_fetcher')
 
 
-class FMPFetcher:
+class FMPFetcher(BaseFetcher):
     """
     Fetches supplementary data from FMP API.
     Uses /stable/ endpoints with query parameters.
     """
     
-    BASE_URL = "https://financialmodelingprep.com/stable"
+    BASE_URL = constants.FMP_BASE_URL
     
     def __init__(self, symbol: str):
         """
@@ -35,7 +38,8 @@ class FMPFetcher:
         Args:
             symbol: Stock ticker symbol
         """
-        self.symbol = symbol.upper()
+
+        super().__init__(symbol, DataSource.FMP)
         self.api_key = settings.FMP_API_KEY
         self._free_tier_blocked = False  # Track if free tier limit hit
         logger.info(f"Initializing FMP fetcher for {self.symbol} (API key: {settings.get_masked_fmp_key()})")
@@ -65,7 +69,7 @@ class FMPFetcher:
         
         try:
             logger.debug(f"Requesting FMP endpoint: {endpoint}")
-            response = requests.get(url, params=params, timeout=10)
+            response = requests.get(url, params=params, timeout=constants.FMP_TIMEOUT_SECONDS)
             response.raise_for_status()
             
             data = response.json()
@@ -108,7 +112,7 @@ class FMPFetcher:
         Returns:
             AnalystTargets object or None if fetch fails
         """
-        data = self._make_request("price-target-consensus")
+        data = self._make_request(constants.FMP_ENDPOINTS['price_target'])
         
         if not data or not isinstance(data, list) or len(data) == 0:
             logger.warning(f"No analyst target data available for {self.symbol}")
@@ -145,7 +149,7 @@ class FMPFetcher:
         Returns:
             CompanyProfile object or None if fetch fails
         """
-        data = self._make_request("profile")
+        data = self._make_request(constants.FMP_ENDPOINTS['profile'])
         
         if not data or not isinstance(data, list) or len(data) == 0:
             logger.warning(f"No profile data available for {self.symbol} from FMP")
@@ -201,7 +205,7 @@ class FMPFetcher:
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
         
-        data = self._make_request("income-statement")
+        data = self._make_request(constants.FMP_ENDPOINTS['income_statement'])
         
         if not data or not isinstance(data, list):
             logger.warning(f"No income statement data from FMP for {self.symbol}")
@@ -259,11 +263,11 @@ class FMPFetcher:
             return stmts
 
         # 1. Fetch Annual
-        annual_data = self._make_request("balance-sheet-statement")
+        annual_data = self._make_request(constants.FMP_ENDPOINTS['balance_sheet'])
         annual_stmts = process_data(annual_data[:6]) if annual_data else []
 
         # 2. Fetch Quarterly (latest 4 is enough to get the recent one)
-        quarterly_data = self._make_request("balance-sheet-statement", {'period': 'quarter', 'limit': 4})
+        quarterly_data = self._make_request(constants.FMP_ENDPOINTS['balance_sheet'], {'period': 'quarter', 'limit': 4})
         quarterly_stmts = process_data(quarterly_data) if quarterly_data else []
 
         # 3. Merge and Deduplicate
@@ -279,7 +283,7 @@ class FMPFetcher:
         logger.info(f"Fetched {len(final_list)} balance sheets (Annual+Quarterly) from FMP")
         return final_list
     
-    def fetch_cash_flows(self) -> list:
+    def fetch_cash_flow_statements(self) -> list:
         """
         Fetch cash flow statements from FMP /stable/cash-flow-statement endpoint.
         
@@ -287,8 +291,10 @@ class FMPFetcher:
             List of CashFlow objects
         """
         from utils.unified_schema import CashFlow
+        from utils.schema_mapper import SchemaMapper
+        from utils.field_registry import DataSource as RegistryDataSource
         
-        data = self._make_request("cash-flow-statement")
+        data = self._make_request(constants.FMP_ENDPOINTS['cash_flow'])
         
         if not data or not isinstance(data, list):
             logger.warning(f"No cash flow data from FMP for {self.symbol}")
@@ -297,17 +303,16 @@ class FMPFetcher:
         statements = []
         for item in data[:6]:
             try:
-                stmt = CashFlow(
-                    std_period=item.get('date'),
-                    std_operating_cash_flow=FieldWithSource(value=float(item['operatingCashFlow']), source='fmp') if item.get('operatingCashFlow') else None,
-                    std_investing_cash_flow=FieldWithSource(value=float(item['netCashUsedForInvestingActivites']), source='fmp') if item.get('netCashUsedForInvestingActivites') else None,
-                    std_financing_cash_flow=FieldWithSource(value=float(item['netCashUsedProvidedByFinancingActivities']), source='fmp') if item.get('netCashUsedProvidedByFinancingActivities') else None,
-                    std_capex=FieldWithSource(value=float(item['capitalExpenditure']), source='fmp') if item.get('capitalExpenditure') else None,
-                    std_free_cash_flow=FieldWithSource(value=float(item['freeCashFlow']), source='fmp') if item.get('freeCashFlow') else None,
-                    std_stock_based_compensation=FieldWithSource(value=float(item['stockBasedCompensation']), source='fmp') if item.get('stockBasedCompensation') else None,
-                    std_dividends_paid=FieldWithSource(value=float(item['dividendsPaid']), source='fmp') if item.get('dividendsPaid') else None,
-                    std_repurchase_of_stock=FieldWithSource(value=float(item['commonStockRepurchased']), source='fmp') if item.get('commonStockRepurchased') else None,
+                period_str = item.get('date')
+                if not period_str: continue
+
+                mapped_fields = SchemaMapper.map_statement(
+                    item, 
+                    'cashflow', 
+                    RegistryDataSource.FMP
                 )
+
+                stmt = CashFlow(std_period=period_str, **mapped_fields)
                 statements.append(stmt)
             except (ValueError, KeyError) as e:
                 logger.warning(f"Failed to parse FMP cash flow for period {item.get('date')}: {e}")
@@ -332,3 +337,65 @@ class FMPFetcher:
             'balance_sheets': self.fetch_balance_sheets(),
             'cash_flows': self.fetch_cash_flows(),
         }
+
+    def fetch_ratios(self) -> Optional[CompanyProfile]:
+        """Fetch valuation ratios."""
+        data = self._make_request(constants.FMP_ENDPOINTS['ratios'], {'limit': 1})
+        if not data: return None
+        
+        try:
+            item = data[0]
+            return CompanyProfile(
+                std_pe_ratio=FieldWithSource(value=float(item.get('peRatioTTM') or 0), source='fmp'),
+                std_pb_ratio=FieldWithSource(value=float(item.get('priceToBookRatioTTM') or 0), source='fmp'),
+                std_ps_ratio=FieldWithSource(value=float(item.get('priceToSalesRatioTTM') or 0), source='fmp'),
+                std_dividend_yield=FieldWithSource(value=float(item.get('dividendYielTTM') or 0), source='fmp') if item.get('dividendYielTTM') else None,
+                std_peg_ratio=FieldWithSource(value=float(item.get('pegRatioTTM') or 0), source='fmp') if item.get('pegRatioTTM') else None,
+            )
+        except (ValueError, IndexError, KeyError) as e:
+            logger.warning(f"Failed to parse FMP ratios: {e}")
+            return None
+
+    def fetch_key_metrics(self) -> Optional[CompanyProfile]:
+        """Fetch key metrics (Market Cap, BVPS, etc)."""
+        data = self._make_request(constants.FMP_ENDPOINTS['key_metrics'], {'limit': 1})
+        if not data: return None
+        
+        try:
+            item = data[0]
+            return CompanyProfile(
+                std_market_cap=FieldWithSource(value=float(item.get('marketCap') or 0), source='fmp'),
+                std_book_value_per_share=FieldWithSource(value=float(item.get('bookValuePerShare') or 0), source='fmp'),
+                std_eps=FieldWithSource(value=float(item.get('netIncomePerShare') or 0), source='fmp')
+            )
+        except (ValueError, IndexError, KeyError) as e:
+             logger.warning(f"Failed to parse FMP key metrics: {e}")
+             return None
+
+    def fetch_financial_growth(self) -> Optional[CompanyProfile]:
+        """Fetch financial growth metrics."""
+        data = self._make_request(constants.FMP_ENDPOINTS['financial_growth'], {'limit': 1})
+        if not data: return None
+        
+        try:
+            item = data[0]
+            return CompanyProfile(
+                 std_earnings_growth=FieldWithSource(value=float(item.get('epsgrowth') or 0), source='fmp')
+            )
+        except (ValueError, IndexError, KeyError) as e:
+             logger.warning(f"Failed to parse FMP growth: {e}")
+             return None
+
+    def fetch_analyst_estimates(self) -> Optional[CompanyProfile]:
+        """Fetch analyst estimates (Forward EPS)."""
+        data = self._make_request(constants.FMP_ENDPOINTS['analyst_estimates'], {'limit': 1})
+        if not data: return None
+        
+        try:
+            item = data[0]
+            return CompanyProfile(
+                std_forward_eps=FieldWithSource(value=float(item.get('estimatedEpsAvg') or 0), source='fmp')
+            )
+        except (ValueError, IndexError, KeyError) as e:
+             logger.warning(f"Failed to parse FMP estimates: {e}")
+             return None
