@@ -43,7 +43,12 @@ class FieldDefinition:
     def __post_init__(self):
         if self.priority is None:
             # Default priority: Yahoo > FMP > EDGAR > AlphaVantage
-            self.priority = [DataSource.YAHOO, DataSource.FMP, DataSource.SEC_EDGAR, DataSource.ALPHAVANTAGE]
+            self.priority = [
+                DataSource.YAHOO, 
+                DataSource.FMP, 
+                DataSource.SEC_EDGAR, 
+                DataSource.ALPHAVANTAGE
+            ]
 
 
 # =============================================================================

@@ -95,7 +95,10 @@ class ProfitabilityCalculator(CalculatorBase):
             )
             
         # Calculate NOPAT
-        nopat = operating_income * (1 - effective_tax_rate) if operating_income else None
+        if operating_income is not None and effective_tax_rate is not None:
+            nopat = operating_income * (1 - effective_tax_rate)
+        else:
+            nopat = None
         
         # Calculate Invested Capital (Lenient)
         # If cash is missing, assume 0. If debt missing, assume 0. Equity is critical.

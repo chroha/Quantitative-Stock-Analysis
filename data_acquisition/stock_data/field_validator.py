@@ -272,9 +272,6 @@ class FieldValidator:
     def get_missing_fields_summary(self, result: OverallValidationResult) -> Dict[str, List[str]]:
         """
         Get a summary of all missing fields across all periods.
-        
-        Returns:
-            Dict with 'required' and 'important' keys, each containing unique missing field names
         """
         missing_required = set()
         missing_important = set()
@@ -287,3 +284,22 @@ class FieldValidator:
             'required': sorted(list(missing_required)),
             'important': sorted(list(missing_important))
         }
+
+    def get_completeness_matrix(self, result: OverallValidationResult) -> Dict[str, Dict[str, str]]:
+        """
+        Generate a year-by-category status matrix.
+        Returns: { '2024': { 'income': 'OK', 'balance': 'MISSING', ... } }
+        """
+        matrix = {}
+        for res in result.period_results:
+            year = res.period.split('-')[0] if '-' in res.period else res.period
+            if year not in matrix:
+                matrix[year] = {}
+            
+            status = "OK" if res.is_complete else "INCOMPLETE"
+            if res.missing_required:
+                status = f"MISSING({len(res.missing_required)})"
+            
+            matrix[year][res.statement_type] = status
+            
+        return matrix

@@ -144,7 +144,7 @@ class IntelligentMerger:
             statement_class: Target class
             
         Returns:
-            List of merged statements (most recent 6 periods)
+            List of merged statements (most recent 30 periods)
         """
         from datetime import datetime, timedelta
         
@@ -171,9 +171,7 @@ class IntelligentMerger:
         
         # Merge each period
         merged_statements = []
-        # Increase limit significantly to allow for mixed Annual + Quarterly data.
-        # e.g. 5 years = 5 FY + 20 Qs = 25 periods.
-        for period in sorted_periods[:30]:  # Limit to 30 periods (was 6)
+        for period in sorted_periods[:30]:  # Limit to 30 periods
             statements_by_source = {
                 DataSource.YAHOO: yahoo_map.get(period),
                 DataSource.SEC_EDGAR: edgar_map.get(period),

@@ -13,7 +13,8 @@ Performs a full-pipeline analysis for a single stock:
     - **T2 SEC EDGAR**: Official XBRL data directly from the U.S. Securities and Exchange Commission.
     - **T3 FMP**: Supplements analyst estimates and structured financial data.
     - **T4 Alpha Vantage**: Final fallback for obscure stocks with data gaps.
-- **Financial Scoring**: Scores the company (0-100) based on 20+ weighted metrics including ROIC, ROE, margins, growth rates, and capital allocation, benchmarked against industry standards (Damodaran data).
+    - **Completeness Scorecard**: Visualizes data health, history depth (Year-by-Year matrix), and missing fields in real-time.
+- **Financial Scoring**: Scores the company (0-100) based on 20+ weighted metrics including ROIC, ROE, margins, growth rates, benchmarked against industry standards.
 - **Technical Scoring**: Evaluates current trend and momentum using RSI, MACD, and Moving Averages (SMA/EMA).
 - **Valuation Models**: 
     - Discounted Cash Flow (DCF)
@@ -69,11 +70,10 @@ Final human-readable reports are stored here:
 ## Installation & Configuration
 
 ### 1. Requirements
-Ensure Python 3.8+ is installed, then install dependencies:
+Ensure Python 3.8+ is installed, then install dependencies directly:
 ```bash
-pip install -r requirements.txt
+pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil google-generativeai
 ```
-(Key dependencies: `pandas`, `yfinance`, `requests`, `google-generativeai`)
 
 ### 2. API Key Configuration
 This system relies on external APIs to ensure data integrity. Create a `.env` file in the root directory and add your keys:

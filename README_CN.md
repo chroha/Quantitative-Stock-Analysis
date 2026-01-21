@@ -13,7 +13,8 @@
     - **T2 SEC EDGAR**: 官方 XBRL 数据源，直接从美国证监会获取原始财务报表。
     - **T3 FMP**: 补充分析师预期和其他结构化数据。
     - **T4 Alpha Vantage**: 最终后备源，填补冷门股票的数据空缺。
-- **财务评分**: 基于 ROIC, ROE, 利润率, 增长率, 资本配置等 20+ 个指标进行加权打分 (0-100)。评分考虑了行业基准（Damodaran 数据）。
+    - **数据完整性评分卡 (Scorecard)**: 实时可视化数据健康度、历史深度（逐年矩阵）及缺失字段。
+- **财务评分**: 基于 ROIC, ROE, 利润率, 增长率, 资本配置等 20+ 个指标进行加权打分 (0-100)。评分考虑了行业基准。
 - **技术评分**: 结合 RSI, MACD, 均线系统 (SMA/EMA) 评估当前趋势与动能。
 - **估值模型**: 
     - 现金流折现 (DCF)
@@ -69,11 +70,10 @@
 ## 安装与配置
 
 ### 1. 环境依赖
-请确保安装 Python 3.8+，然后安装所需库：
+请确保安装 Python 3.8+，然后直接安装所需库：
 ```bash
-pip install -r requirements.txt
+pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil google-generativeai
 ```
-(主要依赖包括: `pandas`, `yfinance`, `requests`, `google-generativeai`)
 
 ### 2. API Key 配置
 本系统依赖外部 API 服务以保证数据的完整性。请在项目根目录下创建 `.env` 文件，并填入您的 Key：
