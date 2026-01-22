@@ -91,19 +91,32 @@ class CommentaryGenerator:
                     # Extract usage metadata
                     usage = result.get("usageMetadata", {})
                     total_tokens = usage.get("totalTokenCount", 0)
-                    print(f"   [AI] Success! Model: {model_name} | Tokens Used: {total_tokens}")
-                    
                     candidates = result.get("candidates", [])
                     if candidates:
                         candidate = candidates[0]
-                        finish_reason = candidate.get("finishReason", "")
+                        finish_reason = candidate.get("finishReason", "UNKNOWN")
                         
-                        # Warn if truncated
-                        if finish_reason == "MAX_TOKENS":
-                            logger.warning(f"Response truncated (MAX_TOKENS). Consider increasing limit.")
-                            print(f"   [WARN] Response may be incomplete (hit token limit)")
+                        # Check for safety blocking or other non-success finish reasons
+                        if finish_reason not in ["", "STOP", "MAX_TOKENS"]:
+                            logger.warning(f"Generation stopped due to: {finish_reason}")
+                            print(f"   [AI] Model {model_name} stopped: {finish_reason}")
+                            return None
+
+                        content_parts = candidate.get("content", {}).get("parts", [])
+                        if content_parts:
+                            text_content = content_parts[0].get("text", "")
+                            if text_content:
+                                print(f"   [AI] Success! Model: {model_name} | Tokens Used: {total_tokens}")
+                                # Warn if truncated
+                                if finish_reason == "MAX_TOKENS":
+                                    logger.warning(f"Response truncated (MAX_TOKENS).")
+                                    print(f"   [WARN] Response may be incomplete (hit token limit)")
+                                return text_content
                         
-                        return candidate.get("content", {}).get("parts", [])[0].get("text", "")
+                        print(f"   [AI] Model {model_name} returned 200 OK but no text content.")
+                        return None
+
+                    print(f"   [AI] Model {model_name} returned 200 OK but no candidates (Safety Block?).")
                     return None # Empty response
                 
                 # Handle Rate Limits (429) or Server Overload (503)
