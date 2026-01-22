@@ -2,7 +2,7 @@
 
 [中文版文档](README_CN.md)
 ## Introduction
-This is an advanced quantitative stock analysis and screening tool designed to automate the comprehensive evaluation of US stocks across fundamentals, technicals, and valuation. It automatically acquires data, calculates complex financial metrics, performs multi-dimensional scoring, and generates investment reports.
+This is a quantitative stock analysis and screening tool built for personal use. It is designed to help me quickly and comprehensively evaluate US stocks across fundamentals, technicals, and valuation. It automatically acquires data, calculates complex financial metrics, performs multi-dimensional scoring based on designed quantitative logic, and generates investment reports to assist in decision-making.
 
 ## Core Features
 
@@ -22,7 +22,7 @@ Performs a full-pipeline analysis for a single stock:
     - Relative Valuation (PE/PB/PS/EV-EBITDA Multiples)
     - Value Investing (Graham Number, Peter Lynch, PEG Ratio)
     - Analyst Consensus Targets
-- **AI Investment Commentary**: Generates professional investment insights and risk warnings using Google Gemini, based on all the data above.
+- **AI Investment Commentary**: Uses Google Gemini to generate an interpretative report based on all the above data.
 
 ### 2. Batch Stock Scanner (`run_scanner.py`)
 - **Batch Processing**: Scans a user-defined list of stocks in one go.
@@ -43,9 +43,14 @@ Performs a full-pipeline analysis for a single stock:
 │   ├── technical_scorers/  # Technical Indicator Scoring
 │   ├── valuation/          # Valuation Models
 │   └── ai_commentary/      # AI Report Generation
-├── generated_data/         # Output Directory (JSON Data, PDF/TXT Reports)
+├── generated_data/         # Intermediate Data (JSON)
+├── generated_reports/      # Final Reports (AI Analysis, Scan Summaries)
 ├── config/                 # Configuration (Thresholds & Settings)
-└── utils/                  # Utilities (Logger, Masking, Schema)
+├── user_config/            # User Config & Temp Industry Data
+├── utils/                  # Utilities (Logger, Masking, Schema)
+├── run_analysis.py         # Single Stock Analysis Entry
+├── run_scanner.py          # Batch Scanner Entry
+└── run_getform.py          # Form Generation Tool
 ```
 
 ## Data Storage & Artifacts
@@ -66,6 +71,7 @@ Intermediate processing data is stored here:
 Final human-readable reports are stored here:
 - **Scanner Report**: `stock_scan_{DATE}.txt` (Summary of batch scan)
 - **AI Report**: `ai_analysis_{SYMBOL}_{DATE}.md` (Deep dive analysis by AI)
+- **Data Table**: `collated_scores_{DATE}.csv` (Aggregated CSV report from run_getform.py)
 
 ## Installation & Configuration
 
@@ -91,8 +97,8 @@ GEMINI_API_KEY=your_key_here
 ```
 
 ### 3. Get API Keys
-- **Alpha Vantage**: [Get Key (Free)](https://www.alphavantage.co/support/#api-key) - 25 calls/day limit.
-- **FMP**: [Sign Up (Free Tier)](https://site.financialmodelingprep.com/) - Free tier limits handled automatically.
+- **Alpha Vantage**: [Get Key (Free)](https://www.alphavantage.co/support/#api-key) - Free tier has some endpoint limitations.
+- **FMP**: [Sign Up (Free Tier)](https://site.financialmodelingprep.com/) - Free tier has limitations (max 250 requests/day).
 - **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - Free to use.
 
 ## Usage
@@ -109,6 +115,12 @@ python run_analysis.py
 python run_scanner.py AAPL MSFT NVDA TSLA
 # Or run without arguments to verify/input list
 python run_scanner.py
+```
+
+### Run Data Aggregation (Report Mode)
+```bash
+python run_getform.py AAPL MSFT
+# Aggregates scores and valuations into a single CSV file
 ```
 
 ## Core Algorithms & Logic
@@ -130,6 +142,13 @@ Instead of a "one-size-fits-all" approach, the system uses tailored weights for 
 *   **Energy/Utilities**: Prioritizes **Cash Flow** (FCF) and Debt Health.
 *   *Adaptive Mechanism*: If a metric is missing, its weight is automatically redistributed to other metrics in the same category, ensuring a valid 0-100 score.
 
+#### Scoring Weights Visualization
+![scoring_weights_overview](scoring_weights_overview.png)
+*Scoring Weights Overview*
+
+![scoring_weights_detailed](scoring_weights_detailed.png)
+*Detailed Valuation Weights*
+
 ### 3. Valuation Blender
 To avoid single-model bias, the system aggregates **10 Major Valuation Models** with sector-specific weighting (`valuation_config.py`):
 *   **Absolute Valuation**:
@@ -147,12 +166,12 @@ To avoid single-model bias, the system aggregates **10 Major Valuation Models** 
 *   **Market Consensus**:
     10. **Analyst Targets**: Incorporates Wall Street sentiment as a reference.
 
-### 4. Data Integrity & Fallback
-Uses a cascading fetch strategy: Yahoo (Primary) -> FMP (Secondary) -> Alpha Vantage (Fallback). Ensures analysis completion even if one source fails. (Note: Manual data entry mode has been removed in V3.0 in favor of full automation).
+#### Valuation Logic Visualization
+![Valuation Weights Detailed](valuation_weights_detailed_en.png)
+*Detailed Valuation Weights & Logic*
 
-## Future Roadmap
-
-> **Note:** SEC EDGAR integration has been completed in V3.0 as a Tier 2 data source.
+![Valuation Weights Final](valuation_weights_final_en.png)
+*Final Valuation Synthesis*
 
 ---
 Generated by Antigravity Agent
