@@ -1,0 +1,18 @@
+{
+    "lookback_periods": {
+        "GS2_days": 60,
+        "VIX_days": 10,
+        "USDJPY_days": 10,
+        "cpi_months": 13
+    },
+    "cache_ttl_seconds": {
+        "fred_data": 3600,
+        "fred_cpi": 86400,
+        "yahoo_market_hours": 300,
+        "yahoo_after_hours": 3600
+    },
+    "trend_thresholds": {
+        "slope_rising": 0.1,
+        "slope_declining": -0.1
+    }
+}

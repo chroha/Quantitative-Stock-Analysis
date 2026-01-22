@@ -325,6 +325,21 @@ def main():
                 else:
                     report = f"# AI Analysis - {symbol} (Generation Failed)\n\n> [!WARNING]\n> AI commentary could not be generated due to API availability issues.\n\n" + appendix
             
+            # Append Disclaimer
+            disclaimer = """
+
+---
+
+### Disclaimer / 免责声明
+
+**English:**
+This report is for informational and educational purposes only and does not constitute financial product advice. It has been prepared without taking into account your personal objectives, financial situation, or needs. Past performance is not a reliable indicator of future performance. You should consider seeking independent professional advice before making any investment decisions.
+
+**中文：**
+本报告仅供信息参考及教育用途，不构成任何金融产品建议。本报告内容在编制时未考虑您的个人投资目标、财务状况或特定需求。历史表现并非未来表现的可靠指标。在做出任何投资决策之前，您应考虑寻求独立的专业咨询。
+"""
+            if report:
+                report = report + disclaimer
             if report:
                 report_file = f"ai_analysis_{symbol}_{current_date}.md"
                 # Save to generated_reports

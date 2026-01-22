@@ -53,6 +53,7 @@ class YahooFetcher(BaseFetcher):
         except (ValueError, TypeError):
             return None
     
+
     def fetch_profile(self) -> Optional[CompanyProfile]:
         """
         Fetch company profile information.

@@ -16,3 +16,7 @@ __pycache__/
 generated_data/
 generated_reports/
 
+
+# Exceptions
+!**/macro_config.json
+!**/user_config.json
