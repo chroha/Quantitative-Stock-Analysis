@@ -111,7 +111,7 @@ To see what the generated AI analysis reports look like, check out this example:
 Ensure Python 3.8+ is installed, then install dependencies directly:
 
 ```bash
-pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil google-generativeai
+pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil fredapi scipy pytz
 ```
 
 ### 2. API Key Configuration

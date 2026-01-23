@@ -111,7 +111,7 @@
 请确保安装 Python 3.8+，然后直接安装所需库：
 
 ```bash
-pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil google-generativeai
+pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil fredapi scipy pytz
 ```
 
 ### 2. API Key 配置
