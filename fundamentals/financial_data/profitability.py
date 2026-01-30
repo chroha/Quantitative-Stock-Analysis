@@ -15,6 +15,8 @@ from datetime import datetime
 from fundamentals.financial_data.calculator_base import CalculatorBase, CalculationResult, MetricWarning
 
 
+from config.analysis_config import METRIC_BOUNDS
+
 @dataclass
 class ProfitabilityMetrics:
     """Container for profitability metrics."""
@@ -86,11 +88,12 @@ class ProfitabilityCalculator(CalculatorBase):
              result.add_warning('ROIC', 'data_missing', 'Missing effective tax rate', 'warning')
         else:
             # Check bounds
+            bounds = METRIC_BOUNDS.get('effective_tax_rate', {'min': 0.0, 'max': 1.0})
             self.check_bounds(
                 effective_tax_rate,
                 'effective_tax_rate',
-                min_value=0.0,
-                max_value=1.0,
+                min_value=bounds['min'],
+                max_value=bounds['max'],
                 result=result
             )
             
@@ -130,11 +133,12 @@ class ProfitabilityCalculator(CalculatorBase):
         
         if roic is not None:
             # Check extreme values
+            bounds = METRIC_BOUNDS.get('ROIC', {'min': -0.5, 'max': 1.0})
             self.check_bounds(
                 roic,
                 'ROIC',
-                min_value=-0.5,
-                max_value=1.0,
+                min_value=bounds['min'],
+                max_value=bounds['max'],
                 result=result
             )
         
@@ -187,11 +191,12 @@ class ProfitabilityCalculator(CalculatorBase):
         
         if roe is not None:
             # Check extreme values
+            bounds = METRIC_BOUNDS.get('ROE', {'min': -0.5, 'max': 2.0})
             self.check_bounds(
                 roe,
                 'ROE',
-                min_value=-0.5,
-                max_value=2.0,
+                min_value=bounds['min'],
+                max_value=bounds['max'],
                 result=result
             )
         
@@ -254,11 +259,12 @@ class ProfitabilityCalculator(CalculatorBase):
             margin = None
         
         if margin is not None:
+            bounds = METRIC_BOUNDS.get('gross_margin', {'min': -1.0, 'max': 1.0})
             self.check_bounds(
                 margin,
                 'gross_margin',
-                min_value=-1.0,
-                max_value=1.0,
+                min_value=bounds['min'],
+                max_value=bounds['max'],
                 result=result
             )
         
@@ -294,11 +300,12 @@ class ProfitabilityCalculator(CalculatorBase):
         margin = self.safe_divide(net_income, revenue, 'net_margin', result)
         
         if margin is not None:
+            bounds = METRIC_BOUNDS.get('net_margin', {'min': -1.0, 'max': 0.5})
             self.check_bounds(
                 margin,
                 'net_margin',
-                min_value=-1.0,
-                max_value=0.5,
+                min_value=bounds['min'],
+                max_value=bounds['max'],
                 result=result
             )
         

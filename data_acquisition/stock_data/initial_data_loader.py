@@ -24,6 +24,8 @@ from data_acquisition.stock_data.data_merger import DataMerger
 from data_acquisition.stock_data.intelligent_merger import IntelligentMerger
 from data_acquisition.stock_data.field_validator import FieldValidator, OverallValidationResult
 
+from config.analysis_config import GAP_THRESHOLDS, DATA_THRESHOLDS
+
 logger = setup_logger('data_loader')
 
 
@@ -266,14 +268,14 @@ class StockDataLoader:
 
         fmp_needed = missing_valuation or missing_basic or missing_estimates or missing_growth or missing_profitability_inputs
         
-        if self.use_fmp:
+        if self.use_fmp and GAP_THRESHOLDS.get("PHASE3_FMP_ENABLED", True):
             print("-> [Phase 3] Checking for Gaps (FMP)...")
             if fmp_needed:
                 try:
                     from data_acquisition.stock_data.fmp_fetcher import FMPFetcher
                     fmp_fetcher = FMPFetcher(current_data.symbol)
                     
-                    if missing_valuation:
+                    if missing_valuation and GAP_THRESHOLDS.get("FETCH_ON_MISSING_VALUATION", True):
                         print("   - Missing Valuation -> Calling FMP Ratios")
                         current_data.metadata['paid_api_used'] = True
                         ratios = fmp_fetcher.fetch_ratios()
@@ -313,14 +315,14 @@ class StockDataLoader:
                          else:
                              print("   (FMP: No new fields merged or Free Tier limit reached)")
                     
-                    if missing_growth:
+                    if missing_growth and GAP_THRESHOLDS.get("FETCH_ON_MISSING_GROWTH", True):
                         print("   - Missing Growth -> Calling FMP Growth")
                         current_data.metadata['paid_api_used'] = True
                         growth_metrics = fmp_fetcher.fetch_financial_growth()
                         if growth_metrics:
                              current_data.profile = merger.merge_profiles(current_data.profile, growth_metrics)
                     
-                    if missing_estimates:
+                    if missing_estimates and GAP_THRESHOLDS.get("FETCH_ON_MISSING_ESTIMATES", True):
                         print("   - Missing Estimates -> Calling FMP Estimates")
                         current_data.metadata['paid_api_used'] = True
                         estimates = fmp_fetcher.fetch_analyst_estimates()
@@ -346,7 +348,7 @@ class StockDataLoader:
             profile.std_market_cap is None
         )
         
-        if self.use_alphavantage:
+        if self.use_alphavantage and GAP_THRESHOLDS.get("PHASE4_AV_ENABLED", True):
             if still_missing_critical:
                 print("   - Critical gaps remain -> Calling Alpha Vantage (Overview)")
                 current_data.metadata['paid_api_used'] = True

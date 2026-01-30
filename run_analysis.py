@@ -124,6 +124,16 @@ def main():
             stock_loader.save_stock_data(stock_data, output_dir)
             
         # Validate sufficiency of data
+        try:
+            from config.analysis_config import DATA_THRESHOLDS
+        except ImportError:
+            # Fallback defaults if config is missing during refactor
+            DATA_THRESHOLDS = {
+                "REQUIRE_PROFILE_NAME": True,
+                "REQUIRE_HISTORY": True,
+                "REQUIRE_FINANCIALS": True
+            }
+
         # Check for meaningful data (not just empty objects)
         has_profile = False
         if stock_data and stock_data.profile and stock_data.profile.std_company_name:
@@ -137,7 +147,16 @@ def main():
         if stock_data and stock_data.income_statements:
              has_financials = len(stock_data.income_statements) > 0
         
-        has_critical_data = stock_data and (has_profile or has_history or has_financials)
+        # Check against config
+        critical_missing = []
+        if DATA_THRESHOLDS.get("REQUIRE_PROFILE_NAME", True) and not has_profile:
+            critical_missing.append("Company Profile")
+        if DATA_THRESHOLDS.get("REQUIRE_HISTORY", True) and not has_history:
+            critical_missing.append("Price History")
+        if DATA_THRESHOLDS.get("REQUIRE_FINANCIALS", True) and not has_financials:
+             critical_missing.append("Financial Statements")
+             
+        has_critical_data = len(critical_missing) == 0
 
         if not has_critical_data:
             print(f"  {ICON.FAIL} No meaningful data found for {symbol}.")

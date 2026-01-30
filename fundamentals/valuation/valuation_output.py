@@ -91,15 +91,27 @@ class ValuationOutput:
             print(f"\nWeighted Fair Value: ${weighted_fv:.2f}")
         
         if price_diff is not None:
+            # Import thresholds
+            try:
+                from config.analysis_config import VALUATION_THRESHOLDS
+            except ImportError:
+                 VALUATION_THRESHOLDS = {
+                    "SIGNIFICANTLY_UNDERVALUED": 20.0,
+                    "UNDERVALUED": 10.0,
+                    "FAIRLY_VALUED_LOWER": -10.0,
+                    "OVERVALUED_LOWER": -20.0,
+                }
+
             diff_str = f"{'+'if price_diff >= 0 else ''}{price_diff:.1f}%"
             
-            if price_diff > 20:
+            # Logic: Value > Threshold
+            if price_diff > VALUATION_THRESHOLDS.get("SIGNIFICANTLY_UNDERVALUED", 20.0):
                 assessment = "Significantly Undervalued"
-            elif price_diff > 10:
+            elif price_diff > VALUATION_THRESHOLDS.get("UNDERVALUED", 10.0):
                 assessment = "Undervalued"
-            elif price_diff > -10:
+            elif price_diff > VALUATION_THRESHOLDS.get("FAIRLY_VALUED_LOWER", -10.0):
                 assessment = "Fairly Valued"
-            elif price_diff > -20:
+            elif price_diff > VALUATION_THRESHOLDS.get("OVERVALUED_LOWER", -20.0):
                 assessment = "Overvalued"
             else:
                 assessment = "Significantly Overvalued"
