@@ -8,7 +8,7 @@
 
 ## 核心功能
 
-### 1. 深度个股分析 (`run_analysis.py`)
+### 1. 个股分析 (`run_analysis.py`)
 
 针对单个股票进行全流程分析：
 
@@ -102,7 +102,8 @@
 
 如果您想查看生成的 AI 分析报告长什么样，可以参考以下样例：
 
-- **[A股/美股 AI 深度分析报告样例](report_example/ai_analysis_AAPL_2026-01-22.md)**
+- **[美股 AI 分析报告样例](report_example/ai_analysis_AAPL_example.md)**
+- **[宏观策略分析报告样例](report_example/macro_report_example.md)**
 
 ## 安装与配置
 
@@ -129,6 +130,9 @@ FMP_API_KEY=your_key_here
 
 # [必填] Google Gemini: 用于生成 AI 分析报告
 GEMINI_API_KEY=your_key_here
+
+# [必填] FRED API Key: 用于获取宏观经济数据
+FRED_API_KEY=your_key_here
 ```
 
 ### 3. 获取 API Key
@@ -136,10 +140,20 @@ GEMINI_API_KEY=your_key_here
 - **Alpha Vantage**: [获取 Key (免费)](https://www.alphavantage.co/support/#api-key) - 免费版有部分端点限制。
 - **FMP**: [注册 (免费版)](https://site.financialmodelingprep.com/) - 免费层级有部分限制，每日最大请求250次，每股根据数据需补充情况消耗0-5次。
 - **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - 免费使用。
+- **FRED**: [获取 Key (免费)](https://fred.stlouisfed.org/) - 免费使用。
+
+### 4. 高级配置 (Advanced Configuration)
+
+系统行为高度可定制，所有关键阈值均在 `config/analysis_config.py` 中定义。
+
+- **数据完整性 (Data Sufficiency)**: 定义分析所需的最少数据量 (如 `MIN_HISTORY_YEARS_GOOD`)。
+- **缺口分析 (Gap Analysis)**: 开关备用数据源的抓取逻辑 (如 `FETCH_ON_MISSING_VALUATION`)。
+- **估值阈值 (Valuation Limits)**: 设定低估/高估的文本评判标准。
+- **指标边界 (Metric Bounds)**: 定义财务指标的有效范围 (如 ROIC, ROE) 以过滤异常值。
 
 ## 使用说明
 
-### 运行个股分析 (深度模式)
+### 运行个股分析 (分析模式)
 
 ```bash
 python run_analysis.py AAPL
@@ -171,7 +185,7 @@ python run_macro_report.py
 
 ## 核心算法与逻辑 (Core Algorithms & Logic)
 
-本系统不仅仅是数据的展示，而是内置了一套完整的量化评估引擎。
+本系统除了数据展示外，也包含了一套量化评估逻辑。
 
 ### 1. 合成统计学基准 (Synthetic Benchmarking Algorithm)
 

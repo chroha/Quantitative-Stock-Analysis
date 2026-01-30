@@ -1,4 +1,4 @@
-# Quantitative Stock Analysis System V3.0
+# Quantitative Stock Analysis System
 
 [中文版文档](README_CN.md)
 
@@ -8,7 +8,7 @@ This is a quantitative stock analysis and screening tool built for personal use.
 
 ## Core Features
 
-### 1. Deep Stock Analysis (`run_analysis.py`)
+### 1. Stock Analysis (`run_analysis.py`)
 
 Performs a full-pipeline analysis for a single stock:
 
@@ -102,7 +102,8 @@ Final human-readable reports are stored here:
 
 To see what the generated AI analysis reports look like, check out this example:
 
-- **[Sample AI Depth Analysis Report](report_example/ai_analysis_AAPL_2026-01-22.md)**
+- **[Sample AI Analysis Report](report_example/ai_analysis_AAPL_example.md)**
+- **[Sample Macro Strategy Report](report_example/macro_report_example.md)**
 
 ## Installation & Configuration
 
@@ -129,6 +130,9 @@ FMP_API_KEY=your_key_here
 
 # [Required] Google Gemini: For generating AI analysis reports
 GEMINI_API_KEY=your_key_here
+
+# [Required] FRED API Key: For macro economic data
+FRED_API_KEY=your_key_here
 ```
 
 ### 3. Get API Keys
@@ -136,10 +140,20 @@ GEMINI_API_KEY=your_key_here
 - **Alpha Vantage**: [Get Key (Free)](https://www.alphavantage.co/support/#api-key) - Free tier has some endpoint limitations.
 - **FMP**: [Sign Up (Free Tier)](https://site.financialmodelingprep.com/) - Free tier has limitations (max 250 requests/day).
 - **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - Free to use.
+- **FRED**: [Get Key (Free)](https://fred.stlouisfed.org/) - Free to use.
+
+### 4. Advanced Configuration
+
+The system behavior is highly customizable via `config/analysis_config.py`.
+
+- **Data Sufficiency**: Define how much data is required to run (e.g., `MIN_HISTORY_YEARS_GOOD`).
+- **Gap Analysis**: Toggle fallback data fetching (e.g., `FETCH_ON_MISSING_VALUATION`).
+- **Valuation Limits**: Set thresholds for "Undervalued" or "Overvalued" text assessments.
+- **Metric Bounds**: Define valid ranges for financial metrics (e.g., ROIC, ROE) to filter outliers.
 
 ## Usage
 
-### Run Single Stock Analysis (Deep Mode)
+### Run Single Stock Analysis (Analysis Mode)
 
 ```bash
 python run_analysis.py AAPL
@@ -171,7 +185,7 @@ python run_macro_report.py
 
 ## Core Algorithms & Logic
 
-The system is not just a data dashboard, but a sophisticated quantitative evaluation engine.
+The system incorporates a structured quantitative evaluation engine.
 
 ### 1. Synthetic Benchmarking Algorithm
 
