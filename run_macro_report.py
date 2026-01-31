@@ -16,8 +16,14 @@ from utils import LoggingContext, set_logging_mode
 set_logging_mode(LoggingContext.ORCHESTRATED)
 
 from data_acquisition.macro_data.macro_aggregator import MacroAggregator
+# Analyzers
+from fundamentals.macro_indicator.cycle_analyzer import CycleAnalyzer
+from fundamentals.macro_indicator.risk_assessor import RiskAssessor
+from fundamentals.macro_indicator.valuation_allocator import ValuationAllocator
+# Reporters
 from fundamentals.macro_indicator.macro_report import MacroReportGenerator
-from fundamentals.macro_indicator.macro_markdown_report import MacroMarkdownGenerator
+from fundamentals.macro_indicator.macro_markdown_report import MacroMarkdownReport
+from fundamentals.macro_indicator.macro_ai_analyst import MacroAIAnalyst
 from utils.logger import setup_logger
 from utils.console_utils import symbol as ICON, print_step, print_separator
 
@@ -36,7 +42,7 @@ def safe_print(text):
         print(re.sub(r'[^\x00-\x7F]+', '', text))
 
 def main():
-    print_header("MACRO STRATEGY ANALYSIS SYSTEM")
+    print_header("MACRO STRATEGY ANALYSIS SYSTEM (Dashboard V2)")
     
     # Paths
     current_dir = Path(__file__).parent.absolute()
@@ -49,90 +55,120 @@ def main():
     existing_data = None
     if json_path.exists():
         try:
-            with open(json_path, 'r') as f:
+            with open(json_path, 'r', encoding='utf-8') as f:
                 existing_data = json.load(f)
         except Exception:
             pass
             
     # Interactive Flow
     should_fetch = True
-    force_refresh = False
+    today_str = datetime.now().strftime("%Y-%m-%d")
     
     if existing_data:
         ts = existing_data.get('snapshot_date', 'Unknown')
+        data_date = ts[:10]  # First 10 chars for YYYY-MM-DD
+        
         try:
-            # Parse ISO timestamp for cleaner display
             dt = datetime.fromisoformat(ts)
-            ts_display = dt.strftime("%Y-%m-%d %H:%M")
+            ts_display = dt.strftime("%H:%M")
         except:
             ts_display = ts
-            
-        print(f"\n  {ICON.OK} Found existing macro data (Snapshot: {ts_display})")
-        print("  [1] Use existing data (Generate Report Only)")
-        print("  [2] Refresh data (Smart Update - use cache if valid)")
-        print("  [3] Force Refresh (Clear cache + Fresh Fetch)")
-        
-        choice = input("\n  Select option [1]: ").strip() or "1"
-        
-        if choice == "1":
-            should_fetch = False
-        elif choice == "3":
-            force_refresh = True
-            print(f"\n  {ICON.WARN} Clearing cache for fresh fetch...")
-            if cache_dir.exists():
-                shutil.rmtree(cache_dir, ignore_errors=True)
-                cache_dir.mkdir(exist_ok=True)
+
+        if data_date == today_str:
+            print(f"\n  {ICON.OK} Found macro data for TODAY ({ts_display})")
+            user_input = input(f"  Refresh data? [y/N]: ").strip().lower()
+            if user_input != 'y':
+                should_fetch = False
+                print(f"  > Using existing data.")
+            else:
+                print(f"  > Refreshing data...")
+        else:
+            print(f"\n  {ICON.INFO} Existing data is from {data_date}. Fetching new data for today...")
+    else:
+        print(f"\n  {ICON.INFO} No local data found. Starting fresh fetch...")
     
     # Step 1: Data Acquisition
+    macro_data = existing_data
+    
     if should_fetch:
-        print_step(1, 2, "Fetching Macro Data")
+        print_step(1, 3, "Fetching Macro Data")
         try:
             # Pass 'input' function to enable interactive prompting for missing data
             aggregator = MacroAggregator(interactive_input_func=input) 
-            snapshot = aggregator.run()
+            macro_data = aggregator.run()
             
             # Check status
-            status = snapshot['data_quality']['overall_status']
+            status = macro_data['data_quality']['overall_status']
             if status == 'ok':
                 print(f"  {ICON.OK} Data fetch successful")
+                # Show summary
+                summary = aggregator.get_summary(macro_data)
+                print("\n" + "\n".join(["  " + line for line in summary.split('\n')]))
+                
             elif status == 'degraded':
                  print(f"  {ICON.WARN} Data fetch completed with warnings")
             else:
                  print(f"  {ICON.FAIL} Data fetch failed")
                  return
                  
-            existing_data = snapshot # Update current data
-            
         except Exception as e:
             logger.error(f"Fetch failed: {e}")
             print(f"  {ICON.FAIL} Critical error during data fetch: {e}")
             return
     else:
-        print_step(1, 2, "Loading Data")
+        print_step(1, 3, "Loading Data")
         print(f"  {ICON.OK} Loaded local snapshot")
 
-    # Step 2: Report Generation
-    print_step(2, 2, "Generating Analysis Report")
-    
-    if not existing_data:
+    if not macro_data:
         print(f"  {ICON.FAIL} No data available to generate report.")
         return
 
+    # Step 2: Analysis Algorithms
+    print_step(2, 3, "Running Analysis Models")
     try:
-        # 1. Console Report (Concise / English)
-        console_gen = MacroReportGenerator()
-        console_text = console_gen.generate_report(existing_data)
+        # Initialize Analyzers
+        cycle_analyzer = CycleAnalyzer()
+        risk_assessor = RiskAssessor()
+        valuation_allocator = ValuationAllocator()
         
-        print("\n" + "="*60)
-        safe_print(console_text)
-        print("="*60)
+        # Run Analysis
+        analysis_results = {
+            'cycle': cycle_analyzer.analyze(macro_data),
+            'risk': risk_assessor.analyze(macro_data),
+            'valuation': valuation_allocator.analyze(macro_data)
+        }
         
-        # 2. Markdown Report (Bilingual / Detailed)
-        md_gen = MacroMarkdownGenerator()
-        md_text = md_gen.generate_markdown(existing_data)
+        # Use 'phase' for cycle, and 'equity_bond_allocation' for valuation
+        print(f"  {ICON.OK} Business Cycle Analyzed: {analysis_results['cycle'].get('phase', 'Unknown')}")
+        print(f"  {ICON.OK} Risk Environment Assessed: {analysis_results['risk'].get('environment', 'Unknown')}")
+        print(f"  {ICON.OK} Valuation Model Run: {analysis_results['valuation'].get('equity_bond_allocation', 'Unknown')}")
+        
+    except Exception as e:
+        logger.error(f"Analysis failed: {e}", exc_info=True)
+        print(f"  {ICON.FAIL} Analysis modules failed: {e}")
+        return
+
+    # Step 3: Report Generation
+    print_step(3, 3, "Generating Reports")
+    
+    # AI Commentary Generation
+    ai_commentary = None
+    try:
+        print(f"  > Generating AI Strategic Commentary (Bilingual)...")
+        ai_analyst = MacroAIAnalyst()
+        ai_commentary = ai_analyst.generate_commentary(macro_data, analysis_results)
+        print(f"  {ICON.OK} AI Commentary generated.")
+    except Exception as e:
+        logger.error(f"AI Generation failed: {e}")
+        print(f"  {ICON.WARN} AI Commentary failed: {e}")
+    
+    try:
+        # Markdown Dashboard (Bilingual / Detailed)
+        md_gen = MacroMarkdownReport(output_dir=reports_dir)
+        md_text = md_gen.generate_report(macro_data, analysis_results, ai_commentary)
         
         # Determine filename
-        ts = existing_data.get('snapshot_date', datetime.now().isoformat())
+        ts = macro_data.get('snapshot_date', datetime.now().isoformat())
         try:
             dt = datetime.fromisoformat(ts)
             date_str = dt.strftime("%Y-%m-%d")
@@ -147,7 +183,7 @@ def main():
         with open(report_file, 'w', encoding='utf-8') as f:
             f.write(md_text)
             
-        print(f"\n  {ICON.OK} Detailed report saved: {report_file}")
+        print(f"\n  {ICON.OK} Dashboard generated: {report_file}")
         
     except Exception as e:
         logger.error(f"Report generation failed: {e}", exc_info=True)

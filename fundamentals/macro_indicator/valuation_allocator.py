@@ -36,10 +36,10 @@ class ValuationAllocator:
         # Asset Allocation Logic
         if erp is not None:
             erp_pct = erp * 100
-            if erp_pct < 0:
-                equity_allocation = "Underweight Stocks / Overweight Bonds"
-                details.append(f"ERP Negative ({erp_pct:.2f}%) -> Stocks Expensive")
-            elif erp_pct > 3.0: # User said: ">3% stock bias (aggressive)"
+            if erp_pct < 1.0: # User feedback: ERP < 1% is Expensive/Risk-Reward poor
+                equity_allocation = "Underweight Stocks (Defensive)"
+                details.append(f"ERP Expensive ({erp_pct:.2f}%) -> Risk Reward Poor")
+            elif erp_pct > 3.0:
                 equity_allocation = "Overweight Stocks (Aggressive)"
                 details.append(f"ERP Attractive ({erp_pct:.2f}%)")
             else:
@@ -65,5 +65,7 @@ class ValuationAllocator:
             "geographic_bias": geo_bias,
             "erp": erp,
             "details": details,
-            "pe_source": equity.get('SPX_forward_pe_source', 'unknown')
+            "pe_source": equity.get('SPX_forward_pe_source', 'unknown'),
+            "pe_ratio": pe,
+            "yield_10y": yield_10y
         }

@@ -2,9 +2,11 @@
 FRED Data Fetcher - 从FRED获取宏观经济数据
 
 Fetches economic indicators from FRED (Federal Reserve Economic Data):
-- GS10: 10-Year Treasury Yield
-- GS2: 2-Year Treasury Yield  
-- CPIAUCSL: Consumer Price Index
+- Yields: GS10, GS2
+- Inflation: CPIAUCSL
+- Employment: UNRATE, ICSA (Claims), CCSA (Continued Claims)
+- Sentiment: UMCSENT
+- Risk/Liquidity: STLFSI3, BAMLH0A0HYM2
 
 提供缓存机制和错误处理
 """
@@ -65,7 +67,6 @@ class FREDFetcher:
         
         # Load configuration
         self.config = config or self._load_default_config()
-        self.lookback_days = self.config.get('lookback_periods', {})
         self.lookback_days = self.config.get('lookback_periods', {})
         self.cache_ttl = self.config.get('cache_ttl_seconds', {}).get('fred_data', 3600)
         self.cpi_ttl = self.config.get('cache_ttl_seconds', {}).get('fred_cpi', 86400)
@@ -179,8 +180,8 @@ class FREDFetcher:
                 start_date = datetime.now() - timedelta(days=days)
                 data = self.fred.get_series(series_id, observation_start=start_date)
             else:
-                # Get recent data and take latest (default 30 days)
-                start_date = datetime.now() - timedelta(days=30)
+                # Get recent data and take latest (default 60 days to be safe for monthly)
+                start_date = datetime.now() - timedelta(days=60)
                 data = self.fred.get_series(series_id, observation_start=start_date)
             
             # Update request counter
@@ -211,7 +212,7 @@ class FREDFetcher:
                     start_date = datetime.now() - timedelta(days=days)
                     data = self.fred.get_series(series_id, observation_start=start_date)
                 else:
-                    data = self.fred.get_series(series_id, observation_start=datetime.now() - timedelta(days=30))
+                    data = self.fred.get_series(series_id, observation_start=datetime.now() - timedelta(days=60))
                 
                 if data is not None and len(data) > 0:
                     logger.info(f"Retry successful for {series_id}")
@@ -231,62 +232,91 @@ class FREDFetcher:
                     json.dump(data, f)
         except:
             pass
+
+    def _get_latest_point(self, series_id: str, days_lookback: int = 60) -> Dict[str, Any]:
+        """Helper to get latest value and date for a series."""
+        s = self._fetch_series(series_id, days=days_lookback)
+        if s is not None and len(s) > 0:
+            val = float(s.iloc[-1])
+            date_str = s.index[-1].strftime('%Y-%m-%d')
             
+            # Trend (Previous value comparison)
+            prev_val = float(s.iloc[-2]) if len(s) > 1 else val
+            trend = "stable"
+            if val > prev_val: trend = "up"
+            elif val < prev_val: trend = "down"
+            
+            return {
+                'value': val,
+                'date': date_str,
+                'prev_value': prev_val,
+                'trend': trend
+            }
+        return None
+
     def fetch_treasury_yields(self) -> Dict[str, Any]:
-        """
-        Fetch Treasury yield data (GS10, GS2).
-        
-        Returns:
-            Dict with current yields and historical GS2 data
-        """
+        """Fetch Treasury yield data (DGS10, DGS2 - Daily)."""
         result = {
             'GS10_current': None,
+            'GS10_prev': None,
             'GS2_current': None,
+            'GS2_prev': None,
             'GS2_historical': None,
             'yield_curve_10y_2y': None,
+            'yield_curve_10y_2y_prev': None,
+            'yield_date': None,
             'status': 'ok',
             'warnings': []
         }
         
-        # Fetch GS10 (current value)
-        gs10_data = self._fetch_series('GS10')
+        # Fetch DGS10 (Daily 10-Year Treasury Constant Maturity Rate)
+        # Short lookback (14 days) to get latest daily print
+        gs10_data = self._fetch_series('DGS10', days=14)
         if gs10_data is not None and len(gs10_data) > 0:
             result['GS10_current'] = float(gs10_data.iloc[-1])
-            logger.info(f"GS10 (10Y Treasury): {result['GS10_current']:.2f}%")
+            if len(gs10_data) > 1:
+                result['GS10_prev'] = float(gs10_data.iloc[-2])
+            result['yield_date'] = gs10_data.index[-1].strftime('%Y-%m-%d')
+            logger.info(f"DGS10 (10Y Daily): {result['GS10_current']:.2f}% ({result['yield_date']})")
         else:
-            result['warnings'].append("Failed to fetch GS10")
+            result['warnings'].append("Failed to fetch DGS10")
             result['status'] = 'degraded'
         
-        # Fetch GS2 (current + historical)
-        gs2_days = self.lookback_days.get('GS2_days', 60)
-        gs2_data = self._fetch_series('GS2', days=gs2_days)
+        # Fetch DGS2 (Daily 2-Year Treasury Constant Maturity Rate)
+        gs2_data = self._fetch_series('DGS2', days=14)
         if gs2_data is not None and len(gs2_data) > 0:
             result['GS2_current'] = float(gs2_data.iloc[-1])
+            if len(gs2_data) > 1:
+                result['GS2_prev'] = float(gs2_data.iloc[-2])
+             # Store historical for trend if needed, but mainly we need current
             result['GS2_historical'] = [
                 {'date': date.strftime('%Y-%m-%d'), 'value': float(value)}
                 for date, value in gs2_data.items()
             ]
-            logger.info(f"GS2 (2Y Treasury): {result['GS2_current']:.2f}% ({len(gs2_data)} days)")
+            # Use date from DGS2 if DGS10 failed, or just confirm consistency
+            if not result['yield_date']:
+                result['yield_date'] = gs2_data.index[-1].strftime('%Y-%m-%d')
+                
+            logger.info(f"DGS2 (2Y Daily): {result['GS2_current']:.2f}%")
         else:
-            result['warnings'].append("Failed to fetch GS2")
+            result['warnings'].append("Failed to fetch DGS2")
             result['status'] = 'degraded'
         
         # Calculate yield curve spread
-        if result['GS10_current'] and result['GS2_current']:
+        if result['GS10_current'] is not None and result['GS2_current'] is not None:
             result['yield_curve_10y_2y'] = result['GS10_current'] - result['GS2_current']
             logger.info(f"Yield curve (10Y-2Y): {result['yield_curve_10y_2y']:.2f}%")
+            
+        if result['GS10_prev'] is not None and result['GS2_prev'] is not None:
+            result['yield_curve_10y_2y_prev'] = result['GS10_prev'] - result['GS2_prev']
         
         return result
     
     def fetch_cpi(self) -> Dict[str, Any]:
-        """
-        Fetch Consumer Price Index (CPI) data including history for YoY calc.
-        
-        Returns:
-            Dict with latest CPI value, history, and metadata
-        """
+        """Fetch Consumer Price Index (CPI)."""
         result = {
             'CPI_latest': None,
+            'CPI_YOY': None,
             'CPI_date': None,
             'CPI_history': None,
             'data_age_days': None,
@@ -294,24 +324,59 @@ class FREDFetcher:
             'warnings': []
         }
         
-        # Fetch 13 months history for YoY calculation
-        months = self.config.get('lookback_periods', {}).get('cpi_months', 13)
-        days_lookback = months * 31  # Approx days
+        # Fetch 14 months history for YoY (12 month window + margin)
+        days_lookback = 450 
         
         cpi_data = self._fetch_series('CPIAUCSL', days=days_lookback)
         
         if cpi_data is not None and len(cpi_data) > 0:
-            result['CPI_latest'] = float(cpi_data.iloc[-1])
-            result['CPI_date'] = cpi_data.index[-1].strftime('%Y-%m-%d')
+            latest_val = float(cpi_data.iloc[-1])
+            latest_date = cpi_data.index[-1]
             
-            # Store history list for aggregator to calculate YoY
+            result['CPI_latest'] = latest_val
+            if len(cpi_data) > 1:
+                result['CPI_prev'] = float(cpi_data.iloc[-2])
+            result['CPI_date'] = latest_date.strftime('%Y-%m-%d')
             result['CPI_history'] = [
                 {'date': date.strftime('%Y-%m-%d'), 'value': float(value)}
                 for date, value in cpi_data.items()
             ]
             
-            # Check data staleness
-            data_age = (datetime.now() - cpi_data.index[-1]).days
+            # Calculate YoY
+            # Find closest date 12 months ago
+            target_date = latest_date - timedelta(days=365)
+            # Find closest index
+            try:
+                # Find index with nearest date
+                idx = cpi_data.index.get_indexer([target_date], method='nearest')[0]
+                val_year_ago = float(cpi_data.iloc[idx])
+                # Check if date is reasonable (within 15 days of target)
+                date_year_ago = cpi_data.index[idx]
+                if abs((date_year_ago - target_date).days) < 20:
+                    yoy = (latest_val / val_year_ago) - 1
+                    result['CPI_YOY'] = yoy * 100 # stored as percentage e.g. 3.2
+                    logger.info(f"CPI YoY: {result['CPI_YOY']:.2f}%")
+                else:
+                    logger.warning(f"Could not find exact 1-year ago match for CPI. Closest: {date_year_ago}")
+
+                # Calculate Trend (Previous Month YoY)
+                if len(cpi_data) >= 2:
+                    prev_val = float(cpi_data.iloc[-2])
+                    prev_date = cpi_data.index[-2]
+                    target_prev = prev_date - timedelta(days=365)
+                    try:
+                        idx_prev = cpi_data.index.get_indexer([target_prev], method='nearest')[0]
+                        val_year_ago_prev = float(cpi_data.iloc[idx_prev])
+                        date_year_ago_prev = cpi_data.index[idx_prev]
+                        if abs((date_year_ago_prev - target_prev).days) < 20:
+                            yoy_prev = (prev_val / val_year_ago_prev) - 1
+                            result['CPI_YOY_prev'] = yoy_prev * 100
+                    except:
+                        pass
+            except Exception as e:
+                logger.warning(f"Error calc CPI YoY: {e}")
+            
+            data_age = (datetime.now() - latest_date).days
             result['data_age_days'] = data_age
             
             if data_age > 45:
@@ -319,43 +384,91 @@ class FREDFetcher:
                 result['warnings'].append(warning)
                 logger.warning(warning)
             
-            # Check if we have enough history for YoY (needs at least 13 months roughly)
-            if len(cpi_data) < 12:
-                result['warnings'].append("CPI history less than 12 months, YoY may be unreliable")
-            
-            logger.info(f"CPI: {result['CPI_latest']:.1f} (as of {result['CPI_date']}, {data_age} days ago)")
+            logger.info(f"CPI Index: {result['CPI_latest']:.1f} (as of {result['CPI_date']})")
         else:
             result['warnings'].append("Failed to fetch CPI")
             result['status'] = 'degraded'
         
         return result
         
-    def fetch_unemployment(self) -> Dict[str, Any]:
-        """
-        Fetch Unemployment Rate (UNRATE).
-        
-        Returns:
-            Dict with latest UNRATE value
-        """
+    def fetch_employment_data(self) -> Dict[str, Any]:
+        """Fetch Employment Data (Unemployment Rate, Initial Claims)."""
         result = {
-            'UNRATE_current': None,
-            'UNRATE_date': None,
+            'UNRATE': None,
+            'ICSA': None, # Initial Claims
+            'CCSA': None, # Continued Claims
+            'status': 'ok', 
+            'warnings': []
+        }
+        
+        # 1. Unemployment Rate (Monthly)
+        unrate = self._get_latest_point('UNRATE', days_lookback=90)
+        if unrate:
+            result['UNRATE'] = unrate
+            logger.info(f"Unemployment Rate: {unrate['value']:.1f}% ({unrate['date']})")
+        else:
+            result['warnings'].append("Failed to fetch UNRATE")
+            
+        # 2. Initial Jobless Claims (Weekly)
+        icsa = self._get_latest_point('ICSA', days_lookback=30)
+        if icsa:
+            result['ICSA'] = icsa
+            logger.info(f"Initial Claims: {icsa['value']:,.0f} ({icsa['date']})")
+        else:
+            result['warnings'].append("Failed to fetch ICSA")
+
+        # 3. Continued Claims (Weekly)
+        ccsa = self._get_latest_point('CCSA', days_lookback=30)
+        if ccsa:
+            result['CCSA'] = ccsa
+        else:
+            # Not critical, suppress warning
+            pass
+            
+        if not result['UNRATE'] and not result['ICSA']:
+            result['status'] = 'degraded'
+
+        return result
+
+    def fetch_sentiment_and_risk(self) -> Dict[str, Any]:
+        """Fetch Sentiment and Risk Indicators."""
+        result = {
+            'UMCSENT': None,    # Consumer Sentiment
+            'STLFSI3': None,    # Financial Stress
+            'HY_SPREAD': None,  # High Yield Spread
             'status': 'ok',
             'warnings': []
         }
         
-        unrate_data = self._fetch_series('UNRATE', days=60) # Last 2 months is enough for latest
-        
-        if unrate_data is not None and len(unrate_data) > 0:
-            result['UNRATE_current'] = float(unrate_data.iloc[-1])
-            result['UNRATE_date'] = unrate_data.index[-1].strftime('%Y-%m-%d')
-            logger.info(f"Unemployment Rate: {result['UNRATE_current']:.1f}% ({result['UNRATE_date']})")
+        # 1. Consumer Sentiment (Monthly)
+        umcsent = self._get_latest_point('UMCSENT', days_lookback=90)
+        if umcsent:
+            result['UMCSENT'] = umcsent
+            logger.info(f"Consumer Sentiment: {umcsent['value']:.1f}")
         else:
-            result['warnings'].append("Failed to fetch Unemployment Rate")
-            result['status'] = 'degraded'
-            
+             result['warnings'].append("Failed to fetch UMCSENT")
+
+        # 2. Financial Stress Index (Weekly)
+        # STLFSI3 discontinued, replaced by STLFSI4
+        stress = self._get_latest_point('STLFSI4', days_lookback=60)
+        if stress:
+            result['STLFSI3'] = stress # Keep key same for Aggregator compatibility or update it? 
+            # Aggregator uses f_rsk.get('STLFSI3')
+            # Let's keep the internal key 'STLFSI3' in the result dict to avoid breaking Aggregator mapping
+            # satisfying "Fin Stress Idx': f_rsk.get('STLFSI3')" in aggregator.
+        else:
+             result['warnings'].append("Failed to fetch STLFSI4 (Fin Stress)")
+        
+        # 3. High Yield Option-Adjusted Spread (Daily)
+        hy_spread = self._get_latest_point('BAMLH0A0HYM2', days_lookback=10)
+        if hy_spread:
+            result['HY_SPREAD'] = hy_spread
+            logger.info(f"HY Spread: {hy_spread['value']:.2f}%")
+        else:
+             result['warnings'].append("Failed to fetch High Yield Spread")
+             
         return result
-    
+
     def fetch_all(self) -> Dict[str, Any]:
         """
         Fetch all FRED data.
@@ -369,15 +482,18 @@ class FREDFetcher:
         
         treasury = self.fetch_treasury_yields()
         inflation = self.fetch_cpi()
-        unemployment = self.fetch_unemployment()
+        employment = self.fetch_employment_data()
+        risk_sentiment = self.fetch_sentiment_and_risk()
         
         # Combine results
         result = {
             'treasury_yields': {k: v for k, v in treasury.items() if k not in ['status', 'warnings']},
             'inflation': {k: v for k, v in inflation.items() if k not in ['status', 'warnings']},
-            'employment': {k: v for k, v in unemployment.items() if k not in ['status', 'warnings']},
-            'status': 'ok' if all(x['status'] == 'ok' for x in [treasury, inflation, unemployment]) else 'degraded',
-            'warnings': treasury['warnings'] + inflation['warnings'] + unemployment['warnings']
+            'employment': {k: v for k, v in employment.items() if k not in ['status', 'warnings']},
+            'risk_sentiment': {k: v for k, v in risk_sentiment.items() if k not in ['status', 'warnings']},
+            
+            'status': 'ok' if all(x['status'] == 'ok' for x in [treasury, inflation, employment]) else 'degraded',
+            'warnings': treasury['warnings'] + inflation['warnings'] + employment['warnings'] + risk_sentiment['warnings']
         }
         
         logger.info(f"FRED fetch complete. Status: {result['status']}")

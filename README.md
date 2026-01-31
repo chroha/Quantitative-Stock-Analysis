@@ -32,11 +32,9 @@ Performs a full-pipeline analysis for a single stock:
 
 A completely new macroeconomic analysis module for top-down market strategy:
 
-- **Multi-dimensional Data Integration**: Automatically fetches key macro indicators from FRED (Treasury Yields, CPI, Unemployment) and Yahoo Finance (S&P 500, VIX, Exchange Rates).
-- **Economic Cycle Positioning**: Quantitatively assesses the current economic cycle phase (e.g., Recovery, Overheating, Stagflation) based on yield spreads, inflation, and employment data.
-- **Risk Environment Assessment**: Evaluates market risk appetite (Risk On/Off) by synthesizing signals from VIX volatility, Dollar Index (DXY), and Carry Trade (USD/JPY).
-- **Asset Allocation Advice**: Generates asset allocation (Equity/Bond) and geographic bias (US/Emerging) recommendations based on Equity Risk Premium (ERP) and valuation levels.
-- **Bilingual Reports**: Automatically generates bilingual (English/Chinese) Markdown reports including raw data tables.
+- **AI Macro Strategy**: Generates "Institutional Grade CIO" commentary by analyzing macro anomalies and divergences.
+- **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation) and Yahoo Finance (Global Markets).
+- **Quantitative Framework**: Includes Economic Cycle positioning, ERP extreme valuations, and Aussie Terms of Trade analysis.
 
 ### 2. Batch Stock Scanner (`run_scanner.py`)
 

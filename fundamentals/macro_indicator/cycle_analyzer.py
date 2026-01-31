@@ -43,7 +43,8 @@ class CycleAnalyzer:
                 cpi_yoy = (cpi_latest / cpi_last_year) - 1.0
         
         # 3. Unemployment
-        unrate = employment.get('UNRATE_current')
+        unrate_raw = employment.get('UNRATE')
+        unrate = unrate_raw.get('value') if isinstance(unrate_raw, dict) else unrate_raw
         
         # Scoring Logic
         score = 0

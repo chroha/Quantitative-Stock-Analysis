@@ -1,14 +1,16 @@
 """
 Yahoo Finance Macro Data Fetcher - 从Yahoo Finance获取宏观市场数据
 
-Fetches market indicators from Yahoo Finance:
-- ^VIX: Volatility Index
-- ^GSPC: S&P 500 Index
-- DX-Y.NYB: US Dollar Index
-- JPY=X: USD/JPY Exchange Rate
-- AUDUSD=X: AUD/USD Exchange Rate
+Fetches market indicators from Yahoo Finance using Batch Download.
+Assets:
+- Equity Indices: SPY (S&P 500), IWM (Russell 2000)
+- Market Style: VUG (Growth), VTV (Value)
+- Volatility: ^VIX, ^VIX3M
+- Commodities: CL=F (Oil), GC=F (Gold), HG=F (Copper)
+- Crypto: BTC-USD
+- Currencies: AUDUSD=X, AUDCNY=X, DX-Y.NYB (DXY), JPY=X (USD/JPY)
 
-提供趋势计算和fallback机制
+Provides calculated metrics: 1D%, 1W%, 1M%, YTD%, 52W Position.
 """
 
 import os
@@ -18,8 +20,7 @@ import requests
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from scipy import stats
-from datetime import datetime, time as datetime_time, timedelta
+from datetime import datetime, timedelta
 import pytz
 from typing import Dict, Any, Optional, List, Tuple
 from pathlib import Path
@@ -30,458 +31,275 @@ logger = setup_logger('yahoo_macro_fetcher')
 
 
 class YahooMacroFetcher:
-    """Fetcher for Yahoo Finance macro market data with trend calculation."""
+    """Fetcher for Yahoo Finance macro market data with batch processing and trend calculation."""
     
+    # Define Ticker Mapping
+    TICKERS = {
+        'SPY': 'SP500_ETF',
+        'IWM': 'Russell2000_ETF',
+        'VUG': 'Growth_ETF',
+        'VTV': 'Value_ETF',
+        '^VIX': 'VIX',
+        '^VIX3M': 'VIX3M',
+        'CL=F': 'Crude_Oil',
+        'GC=F': 'Gold',
+        'HG=F': 'Copper',
+        'BTC-USD': 'Bitcoin',
+        'DX-Y.NYB': 'DXY',
+        'JPY=X': 'USDJPY',
+        'AUDUSD=X': 'AUDUSD',
+        'AUDCNY=X': 'AUDCNY',
+        # GICS Sectors
+        'XLK': 'XLK', 'XLC': 'XLC', 'XLY': 'XLY',
+        'XLE': 'XLE', 'XLF': 'XLF', 'XLI': 'XLI', 'XLB': 'XLB', 'XLRE': 'XLRE',
+        'XLP': 'XLP', 'XLV': 'XLV', 'XLU': 'XLU'
+    }
+
+    # Reverse mapping for internal lookup
+    REVERSE_TICKERS = {v: k for k, v in TICKERS.items()}
+
     def __init__(self, config: Optional[Dict] = None):
         """
         Initialize Yahoo macro fetcher.
         
         Args:
-            config: Configuration dict with lookback periods and cache settings
+            config: Configuration dict
         """
-        self.config = config or self._load_default_config()
-        self.lookback_days = self.config.get('lookback_periods', {})
-        self.trend_thresholds = self.config.get('trend_thresholds', {})
-        
-        # Setup cache directory
-        self.cache_dir = Path(__file__).parent / 'data' / '.cache'
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+        self.config = config or {}
         self.nyse_tz = pytz.timezone('US/Eastern')
-
-    def _is_market_open(self) -> bool:
-        """Check if NYSE market is currently open."""
-        now_ny = datetime.now(self.nyse_tz)
         
-        # Check weekend
-        if now_ny.weekday() >= 5: # Sat or Sun
-            return False
-            
-        # Check hours (09:30 - 16:00)
-        market_start = now_ny.replace(hour=9, minute=30, second=0, microsecond=0)
-        market_end = now_ny.replace(hour=16, minute=0, second=0, microsecond=0)
-        
-        return market_start <= now_ny <= market_end
-
-    def _get_cache_ttl(self) -> int:
-        """Get cache TTL based on market status."""
-        if self._is_market_open():
-            return self.config.get('cache_ttl_seconds', {}).get('yahoo_market_hours', 300)
-        else:
-            return self.config.get('cache_ttl_seconds', {}).get('yahoo_after_hours', 3600)
-            
-    # Caching implementation removed for brevity as I need to impl _load_from_cache etc.
-    # But since existing code doesn't have it, I'll stick to just logic updates for now
-    # or implement minimal caching if needed.
-    # User said "Trading hours check use exchange time". I added the check.
-    
-    def _load_default_config(self) -> Dict:
-        """Load default configuration."""
-        config_path = Path(__file__).parent / 'macro_config.json'
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                return json.load(f)
-        return {
-            'lookback_periods': {'VIX_days': 10, 'USDJPY_days': 10},
-            'trend_thresholds': {'slope_rising': 0.1, 'slope_declining': -0.1}
-        }
-    
-    def _get_fmp_api_key(self) -> Optional[str]:
-        """Get FMP API key from environment or config."""
-        # Try environment variable first
-        api_key = os.getenv('FMP_API_KEY')
-        if api_key:
-            return api_key
-        
-        # Try config file
-        try:
-            return settings.FMP_API_KEY
-        except AttributeError:
-            return None
-    
-    def _fetch_spy_forward_pe_from_fmp(self) -> Optional[float]:
+    def _calculate_returns(self, history_df: pd.DataFrame) -> Dict[str, Any]:
         """
-        Fetch SPY (S&P 500 ETF) Forward PE from FMP as proxy for S&P 500.
-        Uses key-metrics-ttm endpoint which has PE ratios.
+        Calculate extensive return metrics for an asset.
         
+        Args:
+            history_df: Historical DataFrame (must possess 'Close' column)
+            
         Returns:
-            Forward PE value or None
+            Dict with price, returns (1D/1W/1M/YTD), and 52W position
         """
-        api_key = self._get_fmp_api_key()
-        if not api_key:
-            logger.debug("FMP API key not available, skipping FMP fallback")
-            return None
+        if history_df is None or len(history_df) < 2:
+            return {}
+
+        df = history_df.sort_index()
+        current_price = float(df['Close'].iloc[-1])
+        current_date = df.index[-1]
         
-        try:
-            # Strategy 1: Try key-metrics-ttm endpoint (has peRatioTTM)
-            url = "https://financialmodelingprep.com/api/v3/key-metrics-ttm/SPY"
-            params = {'apikey': api_key}
-            
-            response = requests.get(url, params=params, timeout=10)
-            response.raise_for_status()
-            data = response.json()
-            
-            if isinstance(data, list) and len(data) > 0:
-                metrics = data[0]
+        # Helper to get Pct Change
+        def get_pct_change(days_lookback):
+            try:
+                # Find date closest to lookback
+                target_date = current_date - timedelta(days=days_lookback)
+                # Get index location of closest date <= target_date
+                # Since df is sorted, we can search sorted
+                # But simple way: filter
                 
-                # Try peRatioTTM (trailing PE, best available for ETF)
-                pe_ratio = metrics.get('peRatioTTM')
-                
-                if pe_ratio and pe_ratio > 0:
-                    # Use trailing PE as proxy for forward PE (common for ETFs)
-                    logger.info(f"FMP: SPY PE Ratio (TTM) = {pe_ratio:.2f}")
-                    return float(pe_ratio)
-            
-            # Strategy 2: Try ratios endpoint
-            url2 = "https://financialmodelingprep.com/api/v3/ratios-ttm/SPY"
-            response2 = requests.get(url2, params=params, timeout=10)
-            
-            if response2.status_code == 200:
-                ratios_data = response2.json()
-                
-                if isinstance(ratios_data, list) and len(ratios_data) > 0:
-                    ratios = ratios_data[0]
-                    pe_ratio = ratios.get('priceEarningsRatioTTM') or ratios.get('peRatioTTM')
+                # Check if we have enough history
+                if df.index[0] > target_date: 
+                    # Not enough data for full period
+                   return None
+
+                # Approximate using iloc if trading days match roughly
+                # 1W = ~5 trading days, 1M = ~21, 1Y = ~252
+                # More robust: find latest date <= target_date
+                past_slice = df[df.index <= target_date]
+                if past_slice.empty:
+                    return None
                     
-                    if pe_ratio and pe_ratio > 0:
-                        logger.info(f"FMP: SPY PE Ratio = {pe_ratio:.2f} (from ratios endpoint)")
-                        return float(pe_ratio)
-            
-            logger.debug("FMP: No PE data available for SPY from any endpoint")
-            return None
-            
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 402:
-                logger.debug("FMP free tier limitation - skipping")
-            else:
-                logger.warning(f"FMP HTTP error while fetching SPY: {e}")
-            return None
-        except Exception as e:
-            logger.debug(f"FMP fetch failed: {e}")
-            return None
-    
-    def _calculate_trend(self, data: pd.Series) -> Tuple[float, float, str]:
-        """
-        Calculate trend using linear regression.
-        
-        Args:
-            data: Time series data
-            
-        Returns:
-            Tuple of (slope, average, direction_label)
-        """
-        if data is None or len(data) < 2:
-            return 0.0, 0.0, "unknown"
-        
-        # Simple moving average
-        avg = float(data.mean())
-        
-        # Linear regression for slope
-        x = np.arange(len(data))
-        y = data.values
-        
-        # Remove NaN values
-        mask = ~np.isnan(y)
-        if mask.sum() < 2:
-            return 0.0, avg, "unknown"
-        
-        x_clean = x[mask]
-        y_clean = y[mask]
-        
-        # Calculate slope using scipy.stats.linregress for R-squared
-        try:
-            slope, intercept, r_value, p_value, std_err = stats.linregress(x_clean, y_clean)
-            
-            # R-squared check
-            r_squared = r_value ** 2
-            
-            # Determine direction
-            rising_threshold = self.trend_thresholds.get('slope_rising', 0.1)
-            declining_threshold = self.trend_thresholds.get('slope_declining', -0.1)
-            
-            if r_squared < 0.5:
-                direction = "noisy/stable" # R-squared too low means weak trend
-            elif slope > rising_threshold:
-                direction = "rising"
-            elif slope < declining_threshold:
-                direction = "declining"
-            else:
-                direction = "stable"
-            
-            return float(slope), avg, direction
-            
-        except Exception as e:
-            logger.warning(f"Trend calculation failed: {e}")
-            return 0.0, avg, "unknown"
-    
-    def _fetch_ticker_history(self, symbol: str, days: int) -> Optional[pd.DataFrame]:
-        """
-        Fetch historical data for a ticker.
-        
-        Args:
-            symbol: Yahoo Finance ticker symbol
-            days: Number of days to look back
-            
-        Returns:
-            DataFrame with historical data, or None if fetch fails
-        """
-        try:
-            ticker = yf.Ticker(symbol)
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=days + 5)  # Extra buffer for weekends
-            
-            data = ticker.history(start=start_date, end=end_date)
-            
-            if data is None or len(data) == 0:
-                logger.warning(f"No data returned for {symbol}")
+                start_price = float(past_slice['Close'].iloc[-1])
+                return (current_price - start_price) / start_price
+            except Exception:
                 return None
-            
-            logger.info(f"Fetched {symbol}: {len(data)} trading days")
-            return data
-            
-        except Exception as e:
-            logger.error(f"Failed to fetch {symbol}: {e}")
-            return None
-    
-    def _get_ticker_info(self, symbol: str, field: str) -> Optional[float]:
-        """
-        Get a specific field from ticker info.
-        
-        Args:
-            symbol: Yahoo Finance ticker symbol
-            field: Field name (e.g., 'forwardPE')
-            
-        Returns:
-            Field value or None
-        """
-        try:
-            ticker = yf.Ticker(symbol)
-            info = ticker.info
-            value = info.get(field)
-            
-            if value is None or (isinstance(value, float) and np.isnan(value)):
-                return None
-            
-            return float(value)
-        except Exception as e:
-            logger.warning(f"Failed to get {field} for {symbol}: {e}")
-            return None
-    
-    def fetch_vix(self) -> Dict[str, Any]:
-        """
-        Fetch VIX (Volatility Index) with trend analysis.
-        
-        Returns:
-            Dict with VIX current value, average, and trend
-        """
-        result = {
-            'VIX_current': None,
-            'VIX_avg': None,
-            'VIX_trend_slope': None,
-            'VIX_trend_direction': None,
-            'VIX_historical': None,
-            'status': 'ok',
-            'warnings': []
-        }
-        
-        vix_days = self.lookback_days.get('VIX_days', 10)
-        data = self._fetch_ticker_history('^VIX', vix_days)
-        
-        if data is not None and len(data) > 0:
-            close_prices = data['Close'].tail(vix_days)
-            
-            result['VIX_current'] = float(close_prices.iloc[-1])
-            slope, avg, direction = self._calculate_trend(close_prices)
-            result['VIX_avg'] = avg
-            result['VIX_trend_slope'] = slope
-            result['VIX_trend_direction'] = direction
-            result['VIX_historical'] = [
-                {'date': date.strftime('%Y-%m-%d'), 'value': float(value)}
-                for date, value in close_prices.items()
-            ]
-            
-            logger.info(f"VIX: {result['VIX_current']:.2f} | Avg: {avg:.2f} | Trend: {direction} (slope: {slope:.3f})")
-        else:
-            result['warnings'].append("Failed to fetch VIX")
-            result['status'] = 'degraded'
-        
-        return result
-    
-    def fetch_sp500(self) -> Dict[str, Any]:
-        """
-        Fetch S&P 500 index with forward PE (with Trailing PE as data for fallback).
-        
-        Returns:
-            Dict with SPX price and PE data
-        """
-        result = {
-            'SPX_current': None,
-            'SPX_forward_pe': None,
-            'SPX_trailing_pe': None, # Added for interactive fallback
-            'SPX_forward_pe_source': None,
-            'status': 'ok',
-            'warnings': []
-        }
-        
-        # Get current price
-        data = self._fetch_ticker_history('^GSPC', 5)
-        if data is not None and len(data) > 0:
-            result['SPX_current'] = float(data['Close'].iloc[-1])
-            logger.info(f"S&P 500: {result['SPX_current']:.2f}")
-        else:
-            result['warnings'].append("Failed to fetch S&P 500 price")
-            result['status'] = 'degraded'
-        
-        # Strategy 1: Try Yahoo Finance Forward PE (SPY)
-        forward_pe = self._get_ticker_info('SPY', 'forwardPE')
-        trailing_pe = self._get_ticker_info('SPY', 'trailingPE')
-        
-        # Store Trailing PE for fallback use in Aggregator
-        if trailing_pe:
-            result['SPX_trailing_pe'] = trailing_pe
 
-        if forward_pe is not None:
-            result['SPX_forward_pe'] = forward_pe
-            result['SPX_forward_pe_source'] = 'yfinance_spy_forward'
-            logger.info(f"S&P 500 Forward PE: {forward_pe:.2f} (source: Yahoo SPY)")
-        else:
-            # Skip automatic fallback here. Aggregator will handle fallback or user prompt.
-            result['warnings'].append("Yahoo Forward PE unavailable for SPY")
-            logger.warning("Yahoo Forward PE unavailable")
-        
-        return result
-    
-    def fetch_dollar_index(self) -> Dict[str, Any]:
-        """
-        Fetch US Dollar Index (DXY).
-        
-        Returns:
-            Dict with DXY current value
-        """
-        result = {
-            'DXY_current': None,
-            'status': 'ok',
-            'warnings': []
-        }
-        
-        data = self._fetch_ticker_history('DX-Y.NYB', 5)
-        if data is not None and len(data) > 0:
-            result['DXY_current'] = float(data['Close'].iloc[-1])
-            logger.info(f"Dollar Index: {result['DXY_current']:.2f}")
-        else:
-            result['warnings'].append("Failed to fetch DXY")
-            result['status'] = 'degraded'
-        
-        return result
-    
-    def fetch_usdjpy(self) -> Dict[str, Any]:
-        """
-        Fetch USD/JPY exchange rate with trend analysis.
-        
-        Returns:
-            Dict with USD/JPY current value and trend
-        """
-        result = {
-            'USDJPY_current': None,
-            'USDJPY_trend_slope': None,
-            'USDJPY_trend_direction': None,
-            'USDJPY_historical': None,
-            'status': 'ok',
-            'warnings': []
-        }
-        
-        usdjpy_days = self.lookback_days.get('USDJPY_days', 10)
-        data = self._fetch_ticker_history('JPY=X', usdjpy_days)
-        
-        if data is not None and len(data) > 0:
-            close_prices = data['Close'].tail(usdjpy_days)
+        # YTD
+        try:
+            year_start = datetime(current_date.year, 1, 1)
+            # Ensure current_date timezone info is compatible with year_start if needed
+            # yfinance index usually tz-aware, datetime(..., 1, 1) is naive
+            if current_date.tzinfo and not year_start.tzinfo:
+                 # Check if we can make year_start aware, or make current_date naive
+                 # Using tz_convert or naive comparison
+                 # Safest: compare date components
+                 pass
+
+            # Simpler approach: Filter by year
+            this_year_df = df[df.index.year == current_date.year]
+            if len(this_year_df) > 1:
+                start_price = float(this_year_df['Close'].iloc[0])
+                ytd_change = (current_price - start_price) / start_price
+            else:
+                 # If only 1 data point this year (e.g. Jan 2), try to get last year close
+                 # This logic is slightly complex, fallback to simple
+                 ytd_change = None
+        except:
+            ytd_change = None
+
+        # 52-Week Position
+        try:
+            # Last 252 trading days (approx 1 year) or full df if shorter, max 1 year by calendar
+            one_year_ago = current_date - timedelta(days=365)
+            last_year_df = df[df.index >= one_year_ago]
             
-            result['USDJPY_current'] = float(close_prices.iloc[-1])
-            slope, avg, direction = self._calculate_trend(close_prices)
-            result['USDJPY_trend_slope'] = slope
-            result['USDJPY_trend_direction'] = direction
-            result['USDJPY_historical'] = [
-                {'date': date.strftime('%Y-%m-%d'), 'value': float(value)}
-                for date, value in close_prices.items()
-            ]
+            high_52w = float(last_year_df['Close'].max())
+            low_52w = float(last_year_df['Close'].min())
             
-            logger.info(f"USD/JPY: {result['USDJPY_current']:.2f} | Trend: {direction} (slope: {slope:.3f})")
-        else:
-            result['warnings'].append("Failed to fetch USD/JPY")
-            result['status'] = 'degraded'
-        
-        return result
-    
-    def fetch_audusd(self) -> Dict[str, Any]:
-        """
-        Fetch AUD/USD exchange rate.
-        
-        Returns:
-            Dict with AUD/USD current value
-        """
-        result = {
-            'AUDUSD_current': None,
-            'status': 'ok',
-            'warnings': []
+            if high_52w > low_52w:
+                pos_52w = (current_price - low_52w) / (high_52w - low_52w) * 100
+            else:
+                pos_52w = 50.0 # Flat range
+        except Exception:
+            high_52w, low_52w, pos_52w = None, None, None
+
+        return {
+            'price': current_price,
+            'change_1d': get_pct_change(1), # This might be logically 1 day ago? No, 1 calendar day is risky.
+            # Use simpler iloc based approach for short term to be safe against weekends
+            # Actually yfinance gives daily data. iloc[-2] is the previous close.
+            'change_1d_safe': (current_price / float(df['Close'].iloc[-2]) - 1) if len(df) >= 2 else 0.0,
+            'change_1w': get_pct_change(7),
+            'change_1m': get_pct_change(30),
+            'change_ytd': ytd_change,
+            'high_52w': high_52w,
+            'low_52w': low_52w,
+            'position_52w': pos_52w,
+            'last_updated': current_date.strftime('%Y-%m-%d')
         }
-        
-        data = self._fetch_ticker_history('AUDUSD=X', 5)
-        if data is not None and len(data) > 0:
-            result['AUDUSD_current'] = float(data['Close'].iloc[-1])
-            logger.info(f"AUD/USD: {result['AUDUSD_current']:.4f}")
-        else:
-            result['warnings'].append("Failed to fetch AUD/USD")
-            result['status'] = 'degraded'
-        
-        return result
-    
+
     def fetch_all(self) -> Dict[str, Any]:
         """
-        Fetch all Yahoo Finance macro data.
+        Fetch all Yahoo Finance macro data using Batch Download.
         
         Returns:
-            Combined dict with all indicators
+            Dict structured by categories (Equity, Commodities, Currencies, Market Internals)
         """
         logger.info("=" * 50)
-        logger.info("Fetching Yahoo Finance market data...")
+        logger.info("Fetching Yahoo Finance market data (Batch)...")
         logger.info("=" * 50)
         
-        # Fetch all indicators with delays to avoid rate limiting
-        vix = self.fetch_vix()
-        time.sleep(1)
-        
-        sp500 = self.fetch_sp500()
-        time.sleep(1)
-        
-        dxy = self.fetch_dollar_index()
-        time.sleep(1)
-        
-        usdjpy = self.fetch_usdjpy()
-        time.sleep(1)
-        
-        audusd = self.fetch_audusd()
-        
-        # Combine results
-        all_warnings = (vix['warnings'] + sp500['warnings'] + dxy['warnings'] + 
-                       usdjpy['warnings'] + audusd['warnings'])
-        
-        statuses = [vix['status'], sp500['status'], dxy['status'], usdjpy['status'], audusd['status']]
-        overall_status = 'ok' if all(s == 'ok' for s in statuses) else 'degraded'
-        
         result = {
-            'market_risk': {k: v for k, v in vix.items() if k not in ['status', 'warnings']},
-            'equity_market': {k: v for k, v in sp500.items() if k not in ['status', 'warnings']},
-            'currencies': {
-                **{k: v for k, v in dxy.items() if k not in ['status', 'warnings']},
-                **{k: v for k, v in usdjpy.items() if k not in ['status', 'warnings']},
-                **{k: v for k, v in audusd.items() if k not in ['status', 'warnings']}
-            },
-            'status': overall_status,
-            'warnings': all_warnings
+            'data': {},
+            'status': 'ok',
+            'warnings': []
         }
         
-        logger.info(f"Yahoo Finance fetch complete. Status: {overall_status}")
-        if all_warnings:
-            logger.warning(f"Warnings: {', '.join(all_warnings)}")
+        ticker_list = list(self.TICKERS.keys())
         
+        try:
+            # Download batch data
+            # period="2y" to ensure enough data for 52W high/low calculation even directly after new year
+            data = yf.download(ticker_list, period="2y", group_by='ticker', auto_adjust=True, progress=False, threads=True)
+            
+            if data.empty:
+                result['status'] = 'failed'
+                result['warnings'].append("Batch download returned no data")
+                return result
+
+            # Process each ticker
+            for ticker_symbol, internal_name in self.TICKERS.items():
+                try:
+                    # Handle MultiIndex column structure from yfinance
+                    # If len(tickers) > 1, columns are (Ticker, Price Type)
+                    # Use xs to extract dataframe for specific ticker
+                    try:
+                        ticker_df = data.xs(ticker_symbol, axis=1, level=0) if len(ticker_list) > 1 else data
+                    except KeyError:
+                        logger.warning(f"Ticker {ticker_symbol} not found in batch data")
+                        continue
+
+                    # If 'Close' is missing (failed download for this one), skip
+                    if 'Close' not in ticker_df.columns or ticker_df['Close'].isnull().all():
+                        logger.warning(f"No Close data for {ticker_symbol}")
+                        continue
+                        
+                    # Drop NaNs
+                    ticker_df = ticker_df.dropna(subset=['Close'])
+                    
+                    if len(ticker_df) < 2:
+                        logger.warning(f"Insufficient history for {ticker_symbol}")
+                        continue
+
+                    metrics = self._calculate_returns(ticker_df)
+                    
+                    # Store by Internal Name for cleaner aggregation
+                    result['data'][internal_name] = metrics
+                    result['data'][internal_name]['ticker'] = ticker_symbol # Store original ticker
+                    
+                    logger.info(f"Processed {internal_name}: ${metrics['price']:.2f} (1D: {metrics['change_1d_safe']:.2%})")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing {ticker_symbol}: {e}")
+                    result['warnings'].append(f"Error processing {ticker_symbol}")
+
+            # ------------------------------------------------------------------
+            # Calculate Derived Ratios (Market Internals)
+            # ------------------------------------------------------------------
+            d = result['data']
+            
+            # 1. Growth vs Value Ratio (VUG / VTV)
+            if 'Growth_ETF' in d and 'Value_ETF' in d:
+                ratio_val = d['Growth_ETF']['price'] / d['Value_ETF']['price']
+                
+                # We can't easily get historical ratio returns without full dataframe alignment
+                # For now, just current ratio is fine, or simple comparison of 1D chg
+                growth_mom = d['Growth_ETF']['change_1m'] or 0
+                value_mom = d['Value_ETF']['change_1m'] or 0
+                
+                result['data']['Style_Ratio'] = {
+                    'current': ratio_val,
+                    'momentum_signal': "Growth" if growth_mom > value_mom else "Value",
+                    'spread_1m': growth_mom - value_mom
+                }
+            
+            # 2. Size Ratio (IWM / SPY) - Small vs Large
+            if 'Russell2000_ETF' in d and 'SP500_ETF' in d:
+                 ratio_val = d['Russell2000_ETF']['price'] / d['SP500_ETF']['price']
+                 
+                 small_mom = d['Russell2000_ETF']['change_1m'] or 0
+                 large_mom = d['SP500_ETF']['change_1m'] or 0
+                 
+                 result['data']['Size_Ratio'] = {
+                    'current': ratio_val,
+                    'momentum_signal': "Small Caps" if small_mom > large_mom else "Large Caps",
+                     'spread_1m': small_mom - large_mom
+                }
+            
+            # 3. VIX Trend Structure (VIX vs SMA20)
+            # Replaces unreliable VIX3M term structure
+            if '^VIX' in ticker_list:
+                try:
+                    vix_df = data.xs('^VIX', axis=1, level=0) if len(ticker_list) > 1 else data
+                    
+                    # Drop NaNs to match main loop processing (critical for accurate SMA)
+                    if 'Close' in vix_df.columns:
+                        vix_df = vix_df.dropna(subset=['Close'])
+                    
+                    # Ensure we have enough data
+                    if len(vix_df) > 20:
+                        current_vix = vix_df['Close'].iloc[-1]
+                        sma20 = vix_df['Close'].rolling(window=20).mean().iloc[-1]
+                        
+                        ratio = current_vix / sma20
+                        
+                        # Interpretation
+                        if ratio > 1.1:
+                            signal = "Rising Fear (Risk-Off)"
+                        elif ratio < 0.9:
+                            signal = "Calming (Risk-On)"
+                        else:
+                            signal = "Neutral"
+                            
+                        result['data']['VIX_Structure'] = {
+                            'ratio': ratio,
+                            'signal': signal,
+                            'current': current_vix,
+                            'sma20': sma20
+                        }
+                except Exception as e:
+                    pass # VIX structure failed
+
+        except Exception as e:
+            logger.error(f"Batch fetch failed: {e}")
+            result['status'] = 'failed'
+            result['warnings'].append(f"Batch fetch critical error: {e}")
+
         return result
