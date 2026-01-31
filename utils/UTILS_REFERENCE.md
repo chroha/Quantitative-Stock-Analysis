@@ -30,6 +30,19 @@ This document provides a comprehensive guide to the `utils/` directory, which co
 
 - **Purpose**: Logic for converting raw JSON inputs into `unified_schema` objects using `field_registry` definitions.
 
+### `currency_normalizer.py`
+
+- **Purpose**: **Automatic currency conversion and ADR share normalization** for international stocks.
+- **Key Features**:
+  - **Global Currency Conversion**: Detects and converts foreign currency (e.g., TWD, HKD) financial data to USD using real-time FX rates.
+  - **ADR Share Normalization**: Calculates implied ADR share count from market cap and adjusts EPS accordingly.
+  - **Multi-Layer Protection**:  
+    - Converts 255+ monetary fields across all data sources (Yahoo, FMP, EDGAR, Alpha Vantage).
+    - Recalculates EPS using: `EPS_USD = Net_Income_USD / ADR_Shares`.
+    - Prevents re-conversion of already processed data (source='manual').
+- **Supported Stocks**: Primarily ADRs (TSM, BABA, JD) but applicable to any stock reporting in non-USD currencies.
+- **Technical Note**: Triggered automatically when `FinancialCurrency != ListingCurrency` in company profile.
+
 ---
 
 ## 2. Metrics & Definitions
@@ -114,6 +127,7 @@ This document provides a comprehensive guide to the `utils/` directory, which co
 | :--- | :--- |
 | `unified_schema.py` | **Data Models** (The "What") |
 | `field_registry.py` | **Data Mapping** (The "Where") |
+| `currency_normalizer.py` | **Currency Conversion & ADR Normalization** |
 | `metric_registry.py` | **Metric Definitions** (The "Definition") |
 | `numeric_utils.py` | **Math** (CAGR, Growth, Safe Float) |
 | `http_utils.py` | **Network** (Fetch, Rate Limit) |

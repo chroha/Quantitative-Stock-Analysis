@@ -146,11 +146,11 @@ class EdgarFetcher:
         elif stmt_type == 'income':
             TargetClass = IncomeStatement
             fields_dict = INCOME_FIELDS
-            allowed_forms = ['10-K', '10-K/A', 'S-1', 'S-1/A'] 
+            allowed_forms = ['10-K', '10-K/A', '10-Q', '10-Q/A', 'S-1', 'S-1/A'] 
         else: # cashflow
             TargetClass = CashFlow
             fields_dict = CASHFLOW_FIELDS
-            allowed_forms = ['10-K', '10-K/A', 'S-1', 'S-1/A']
+            allowed_forms = ['10-K', '10-K/A', '10-Q', '10-Q/A', 'S-1', 'S-1/A']
 
         raw_data_by_date = {}
 
@@ -181,7 +181,8 @@ class EdgarFetcher:
                                     if stmt_type == 'balance':
                                         is_valid_period = True
                                     else:
-                                        if r.get('fp') == 'FY':
+                                        # Income/CashFlow: Allow FY and Quarters
+                                        if r.get('fp') in ['FY', 'Q1', 'Q2', 'Q3', 'Q4']:
                                             is_valid_period = True
                                     
                                     if is_valid_period:
@@ -279,4 +280,4 @@ class EdgarFetcher:
                 continue
         
         results.sort(key=lambda x: x.std_period, reverse=True)
-        return results[:6]
+        return results[:32]

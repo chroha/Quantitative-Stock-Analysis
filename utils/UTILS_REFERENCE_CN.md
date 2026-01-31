@@ -30,6 +30,19 @@
 
 - **用途**: 将原始 JSON 数据转换为 `unified_schema` 对象的转换逻辑。
 
+### `currency_normalizer.py`
+
+- **用途**: **国际股票的自动货币转换和ADR股份标准化**。
+- **核心功能**:
+  - **全局货币转换**: 自动检测并转换外币（如新台币、港币）财报数据为美元，使用实时汇率。
+  - **ADR股份标准化**: 通过市值计算隐含ADR股数，并据此调整EPS。
+  - **多层防护机制**:  
+    - 转换255+个货币字段，覆盖所有数据源（Yahoo、FMP、EDGAR、Alpha Vantage）。
+    - 重新计算EPS: `EPS_USD = 美元净利润 / ADR股数`。
+    - 防止重复转换已处理数据（source='manual'）。
+- **适用股票**: 主要针对ADR（台积电TSM、阿里BABA、京东JD），但可应用于任何非美元报告的公司。
+- **技术细节**: 当公司档案中检测到 `FinancialCurrency != ListingCurrency` 时自动触发。
+
 ---
 
 ## 2. 指标与定义 (Metrics & Definitions)
@@ -113,6 +126,7 @@
 | :--- | :--- |
 | `unified_schema.py` | **数据模型** (是什么) |
 | `field_registry.py` | **字段映射** (在哪里) |
+| `currency_normalizer.py` | **货币转换 & ADR标准化** |
 | `metric_registry.py` | **指标定义** (怎么叫) |
 | `numeric_utils.py` | **数学运算** (CAGR, Growth) |
 | `http_utils.py` | **网络请求** (Fetch, Limit) |

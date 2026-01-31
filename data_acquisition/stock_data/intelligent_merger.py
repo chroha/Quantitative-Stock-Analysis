@@ -134,66 +134,86 @@ class IntelligentMerger:
         statement_class: type
     ) -> List[Any]:
         """
-        Merge statement lists from all sources.
-        
-        Args:
-            yahoo_stmts: Statements from Yahoo
-            edgar_stmts: Statements from EDGAR
-            fmp_stmts: Statements from FMP
-            av_stmts: Statements from Alpha Vantage
-            statement_class: Target class
-            
-        Returns:
-            List of merged statements (most recent 30 periods)
+        Merge statement lists from all sources using robust group-by-date logic.
         """
-        from datetime import datetime, timedelta
+        from datetime import datetime
         
-        # Build maps by period for each source
-        def build_period_map(stmts: List[Any]) -> Dict[str, Any]:
-            if not stmts:
-                return {}
-            return {s.std_period: s for s in stmts if s and s.std_period}
+        def get_date(p_str):
+            try: return datetime.strptime(p_str, '%Y-%m-%d')
+            except: return None
+
+        # 1. Collect everything into a flat list with source tag
+        all_stmts = []
+        if yahoo_stmts: all_stmts.extend([(DataSource.YAHOO, s) for s in yahoo_stmts if s])
+        if edgar_stmts: all_stmts.extend([(DataSource.SEC_EDGAR, s) for s in edgar_stmts if s])
+        if fmp_stmts: all_stmts.extend([(DataSource.FMP, s) for s in fmp_stmts if s])
+        if av_stmts: all_stmts.extend([(DataSource.ALPHAVANTAGE, s) for s in av_stmts if s])
         
-        yahoo_map = build_period_map(yahoo_stmts)
-        edgar_map = build_period_map(edgar_stmts)
-        fmp_map = build_period_map(fmp_stmts)
-        av_map = build_period_map(av_stmts)
+        # 2. Group by date windows (7 days)
+        # We sort by date first to make grouping easier
+        valid_stmts = [item for item in all_stmts if get_date(item[1].std_period)]
+        valid_stmts.sort(key=lambda x: get_date(x[1].std_period), reverse=True)
         
-        # Get all unique periods
-        all_periods = set()
-        all_periods.update(yahoo_map.keys())
-        all_periods.update(edgar_map.keys())
-        all_periods.update(fmp_map.keys())
-        all_periods.update(av_map.keys())
-        
-        # Sort periods descending (most recent first)
-        sorted_periods = sorted(all_periods, reverse=True)
-        
-        # Merge each period
+        groups = []
+        for src, stmt in valid_stmts:
+            s_date = get_date(stmt.std_period)
+            
+            # Find an existing group
+            found_group = None
+            for group in groups:
+                ref_date = get_date(group[0][1].std_period)
+                if abs((s_date - ref_date).days) <= 7:
+                    found_group = group
+                    break
+            
+            if found_group is not None:
+                found_group.append((src, stmt))
+            else:
+                groups.append([(src, stmt)])
+                
+        # 3. Merge each group
         merged_statements = []
-        for period in sorted_periods[:30]:  # Limit to 30 periods
+        for group in groups[:30]: # Limit to 30 periods
+            # For each group, we pick the BEST statement for each source
+            # Priority: If a source has both FY and Q in the same window (unlikely but possible), preferred is usually Q for recent or FY for final.
+            # But the 'merge_statement_by_period' logic handles field merging once we have one per source.
+            
             statements_by_source = {
-                DataSource.YAHOO: yahoo_map.get(period),
-                DataSource.SEC_EDGAR: edgar_map.get(period),
-                DataSource.FMP: fmp_map.get(period),
-                DataSource.ALPHAVANTAGE: av_map.get(period),
+                DataSource.YAHOO: None,
+                DataSource.SEC_EDGAR: None,
+                DataSource.FMP: None,
+                DataSource.ALPHAVANTAGE: None
             }
             
-            merged_stmt, field_sources = merge_statement_by_period(
-                statements_by_source, statement_class, period
-            )
+            # Use the most common/latest date from the group as the canonical period
+            primary_period = group[0][1].std_period 
             
+            for src, stmt in group:
+                # If source already has one, keep the one with more fields or better period type
+                existing = statements_by_source[src]
+                if not existing:
+                    statements_by_source[src] = stmt
+                else:
+                    # Preference: FY usually has more audit quality, Q is more granular. 
+                    # For TTM, we need Qs. So if we have both in a 7-day window, 
+                    # we should actually check the 'std_period_type'
+                    if stmt.std_period_type == 'FY' and existing.std_period_type == 'Q':
+                        # Keep FY for profile/annuals
+                        statements_by_source[src] = stmt
+                    elif stmt.std_period_type == 'Q' and existing.std_period_type == 'FY':
+                         # If we are in the merger, we might want to keep the Q for TTM
+                         # Actually, the merge logic should ideally split them, 
+                         # but if they are within 7 days, they are likely the same report.
+                         pass 
+            
+            merged_stmt, field_sources = merge_statement_by_period(
+                statements_by_source, statement_class, primary_period
+            )
             merged_statements.append(merged_stmt)
             
-            # Log merge decision
-            self.merge_log.append({
-                'period': period,
-                'statement_type': statement_class.__name__,
-                'field_sources': field_sources
-            })
+            # Log summary
+            log_merge_summary(self.symbol, f"{statement_class.__name__}[{primary_period}]", field_sources)
             
-            log_merge_summary(self.symbol, f"{statement_class.__name__}[{period}]", field_sources)
-        
         return merged_statements
 
     def merge_profiles(self, base_profile: Optional[CompanyProfile], supplementary_profile: Optional[CompanyProfile]) -> CompanyProfile:

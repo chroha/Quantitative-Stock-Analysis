@@ -139,16 +139,17 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
     'std_eps': FieldDefinition(
         unified_name='std_eps',
         description='Earnings per share (basic)',
-        important=True,
-        yahoo_names=['Basic EPS'],
+        required=True,
+        yahoo_names=['Basic EPS', 'BasicEPS', 'EPS'],
         edgar_tags=['EarningsPerShareBasic'],
         fmp_names=['eps'],
-        av_names=None,  # AV doesn't provide EPS directly in income statement
+        av_names=None,
     ),
     'std_eps_diluted': FieldDefinition(
         unified_name='std_eps_diluted',
         description='Diluted EPS',
-        yahoo_names=['Diluted EPS'],
+        required=True,
+        yahoo_names=['Diluted EPS', 'DilutedEPS'],
         edgar_tags=['EarningsPerShareDiluted'],
         fmp_names=['epsdiluted'],
         av_names=None,
@@ -156,8 +157,8 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
     'std_shares_outstanding': FieldDefinition(
         unified_name='std_shares_outstanding',
         description='Shares outstanding',
-        important=True,
-        yahoo_names=['Basic Average Shares'],
+        required=True,
+        yahoo_names=['Basic Average Shares', 'Diluted Average Shares', 'Ordinary Shares Number', 'Share Issued', 'Weighted Average Shares'],
         edgar_tags=['WeightedAverageNumberOfSharesOutstandingBasic'],
         fmp_names=['weightedAverageShsOut'],
         av_names=['commonStockSharesOutstanding', 'weightedAverageShsOut', 'weightedAverageShsOutDil'],

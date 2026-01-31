@@ -226,6 +226,7 @@ class CompanyProfile(BaseModel):
     std_website: Optional[TextFieldWithSource] = Field(None, description="Company website")
     std_ceo: Optional[TextFieldWithSource] = Field(None, description="CEO name")
     std_beta: Optional[FieldWithSource] = Field(None, description="Stock Beta (risk coefficient)")
+    std_shares_outstanding: Optional[FieldWithSource] = Field(None, description="Total shares outstanding")
     
     # Forward EPS and Valuation Fields
     std_forward_eps: Optional[FieldWithSource] = Field(None, description="Forward EPS (analyst estimate)")
@@ -241,6 +242,10 @@ class CompanyProfile(BaseModel):
     std_eps: Optional[FieldWithSource] = Field(None, description="Earnings Per Share (Basis)")
     std_book_value_per_share: Optional[FieldWithSource] = Field(None, description="Book Value Per Share")
     std_dividend_yield: Optional[FieldWithSource] = Field(None, description="Dividend Yield")
+    
+    # Currency Fields (for ADR/International Stock Normalization)
+    std_financial_currency: Optional[TextFieldWithSource] = Field(None, description="Currency used in financial statements (e.g., 'TWD')")
+    std_listing_currency: Optional[TextFieldWithSource] = Field(None, description="Currency stock is listed in (e.g., 'USD')")
 
 
 class StockData(BaseModel):

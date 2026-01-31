@@ -3,7 +3,7 @@ Yahoo Finance data fetcher.
 Primary data source for financial statements and price data.
 [INTERNAL PROCESS MODULE] - This module is used by StockDataLoader, do not call directly.
 
-[INTERNAL PROCESS MODULE] - This module is used by StockDataLoader, do not call directly.
+
 """
 
 import yfinance as yf
@@ -96,6 +96,9 @@ class YahooFetcher(BaseFetcher):
                 std_forward_pe=self._create_field_with_source(info.get('forwardPE')),
                 std_peg_ratio=self._create_field_with_source(info.get('trailingPegRatio')),
                 std_earnings_growth=self._create_field_with_source(info.get('earningsGrowth')),
+                # Currency Fields (CRITICAL for ADR/International Stock Currency Normalization)
+                std_financial_currency=TextFieldWithSource(value=info.get('financialCurrency', 'USD'), source='yahoo') if info.get('financialCurrency') else None,
+                std_listing_currency=TextFieldWithSource(value=info.get('currency', 'USD'), source='yahoo') if info.get('currency') else None,
             )
         
         except Exception as e:

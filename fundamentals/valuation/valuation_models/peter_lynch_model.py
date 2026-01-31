@@ -78,29 +78,124 @@ class PeterLynchModel(BaseValuationModel):
             return None
 
     def _calculate_ni_cagr(self, stock_data: StockData) -> Optional[float]:
-        # Needs at least 4-5 years
+        # Needs at least 3 years of data
         stmts = stock_data.income_statements
-        if not stmts or len(stmts) < 2:
+        if not stmts or len(stmts) < 3:
             return None
             
-        # Try to use standard NI, if None, skip
+        # Filter for Annual reports only to be precise, or just use indices if sorted
+        # Assuming sorted desc (Latest -> Oldest)
+        
+        # We want approx 5 years lookback. 
+        # If we have annuals mixed with quarters, it's tricky. 
+        # Let's try to find the statement closest to 5 years ago.
+        
+        import datetime
+        latest_date = stmts[0].std_period
+        # Handle TTM prefix
+        if latest_date.startswith("TTM-"):
+             latest_date = latest_date[4:]
+             
+        try:
+            latest_dt = datetime.datetime.strptime(latest_date, "%Y-%m-%d")
+        except:
+            return None
+            
+        target_date = latest_dt - datetime.timedelta(days=5*365)
+        
+        base_stmt = None
+        years_diff = 0
+        
+        # Find statement closest to 5y ago, but not older than 6y
+        for stmt in stmts:
+            try:
+                s_date = stmt.std_period
+                if s_date.startswith("TTM-"):
+                    s_date = s_date[4:]
+                    
+                s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
+                age_days = (latest_dt - s_dt).days
+                age_years = age_days / 365.0
+                
+                if 4.5 <= age_years <= 6.5:
+                    base_stmt = stmt
+                    years_diff = age_years
+                    break
+            except:
+                continue
+                
+        # Fallback: if no 5y data, try 3y
+        if not base_stmt:
+             target_date_3y = latest_dt - datetime.timedelta(days=3*365)
+             for stmt in stmts:
+                try:
+                    s_date = stmt.std_period
+                    if s_date.startswith("TTM-"):
+                        s_date = s_date[4:]
+                    s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
+                    age_days = (latest_dt - s_dt).days
+                    age_years = age_days / 365.0
+                    
+                    if 2.5 <= age_years <= 3.5:
+                        base_stmt = stmt
+                        years_diff = age_years
+                        break
+                except:
+                    continue
+
+        if not base_stmt:
+            # Last resort: use oldest available if profitable
+            base_stmt = stmts[-1]
+            try:
+                s_date = base_stmt.std_period
+                if s_date.startswith("TTM-"):
+                    s_date = s_date[4:]
+                s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
+                years_diff = (latest_dt - s_dt).days / 365.0
+            except:
+                years_diff = len(stmts) / 4 # Rough estimate
+            
         try:
             current = stmts[0].std_net_income.value
-            oldest = stmts[-1].std_net_income.value
-            years = len(stmts) - 1
+            oldest = base_stmt.std_net_income.value
             
-            if current is None or oldest is None or oldest <= 0:
-                 # Check if we have positive NI in oldest
-                 # Attempt a shorter range if full range is invalid?
-                 # For now, strict.
-                 return None
-                 
-            # Simple CAGR
+            if current is None or oldest is None:
+                return None
+            
+            # If base year is negative, we can't calculate a meaningful CAGR directly.
+            # Lynch would look for a "normal" year.
+            # Strategy: if oldest < 0, move forward in time until positive (up to 3y lookback)
+            if oldest <= 0:
+                # Try to find a profitable year between base and current
+                idx = stmts.index(base_stmt)
+                while idx > 0:
+                    idx -= 1
+                    s = stmts[idx]
+                    val = s.std_net_income.value
+                    if val and val > 0:
+                        # Found a closer positive year
+                        oldest = val
+                        # Recalculate years
+                        try:
+                           s_date = s.std_period
+                           if s_date.startswith("TTM-"):
+                               s_date = s_date[4:]
+                           s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
+                           years_diff = (latest_dt - s_dt).days / 365.0
+                        except:
+                           pass # Keep old estimate or fail
+                        break
+                
+                if oldest <= 0:
+                    return None # Still negative, give up
+            
             if current <= 0:
-                # Negative current earnings -> undefined growth for Lynch
+                return None # Current loss = no P/E based valuation
+                
+            if years_diff < 1:
                 return None
                 
-            cagr = (current / oldest) ** (1/years) - 1
+            cagr = (current / oldest) ** (1/years_diff) - 1
             return cagr
         except Exception:
             return None

@@ -66,6 +66,7 @@ class StockDataLoader:
                     valid_stmts.append(stmt)
                 else:
                     dropped += 1
+                    # print(f"         > Dropped {stmt_type} [{getattr(stmt, 'std_period', 'Unknown')}]: Missing {res.missing_required}")
             if dropped > 0:
                 print(f"      [Sanitizer] Dropped {dropped} incomplete {stmt_type} periods (Missing Required Fields)")
             return valid_stmts
@@ -78,17 +79,73 @@ class StockDataLoader:
 
     def _construct_synthetic_ttm(self, data: StockData) -> StockData:
         """
-        Construct a Synthetic TTM (Trailing Twelve Months) period if the latest Annual report is outdated.
-        This provides a '2025' view even if only quarters are released.
+        Build TTM statements by summing the latest 4 quarters if they are newer than FY.
+        For Balance Sheet, it just takes the latest available snapshot.
         """
-        from datetime import datetime
+        import datetime
+        from utils.unified_schema import IncomeStatement, BalanceSheet, CashFlow, FieldWithSource, DataSource
         
-        # Helper: Get latest statement by type
-        def get_latest(stmts, p_type):
-            return next((s for s in stmts if getattr(s, 'std_period_type', 'FY') == p_type), None)
+        def to_dt(s):
+            try: return datetime.datetime.strptime(s, '%Y-%m-%d')
+            except: return None
             
+        def get_latest(stmts, period_type):
+            valid = [s for s in stmts if s.std_period_type == period_type and s.std_period]
+            if not valid: return None
+            return sorted(valid, key=lambda x: x.std_period, reverse=True)[0]
+
+        def find_valid(stmts, stmt_type, preferred_types=['Q', 'FY']):
+            for p_type in preferred_types:
+                for s in stmts:
+                    if s.std_period_type == p_type:
+                        # Validation check
+                        res = self.validator.validate_statement(s, stmt_type)
+                        if res.is_complete:
+                            return s
+            return None if not stmts else stmts[0]
+
         def sum_quarters(quarters, stmt_class):
             if len(quarters) < 4: return None
+            
+            # DETAILED LOGGING: Show what we're summing
+            logger.info(f"[TTM Builder] Attempting to sum {len(quarters)} quarters:")
+            for i, q in enumerate(quarters[:4]):
+                rev_val = q.std_revenue.value if q.std_revenue else None
+                logger.info(f"  [{i+1}] {q.std_period} ({q.std_period_type}): Revenue = {rev_val:,.0f}" if rev_val else f"  [{i+1}] {q.std_period}: No Revenue")
+            
+            # ENHANCED SANITY CHECK: Multi-condition validation to avoid false positives
+            # This prevents mislabeled annual data from being summed, while allowing seasonal variations
+            total_rev_sum = sum([q.std_revenue.value for q in quarters[:4] if q.std_revenue and q.std_revenue.value is not None])
+            if total_rev_sum > 0:
+                logger.info(f"[TTM Builder] Total revenue sum: {total_rev_sum:,.0f}")
+                
+                for q in quarters[:4]:
+                    if not q.std_revenue or not q.std_revenue.value:
+                        continue
+                    
+                    rev_ratio = q.std_revenue.value / total_rev_sum
+                    
+                    # Condition 1: Revenue ratio > 50% (very conservative - allows up to 50% seasonality)
+                    high_ratio = rev_ratio > 0.50
+                    
+                    # Condition 2: Period ends on 12-31 (typical year-end, likely annual report)
+                    is_year_end = q.std_period.endswith('-12-31')
+                    
+                    # Condition 3: Absolute value is unusually large for a quarter
+                    # If revenue > $50B, it's likely annual for most companies
+                    # (Only giants like Apple/Microsoft have $50B+ quarters)
+                    large_absolute_value = q.std_revenue.value > 50_000_000_000
+                    
+                    # Trigger warning if MULTIPLE conditions are met
+                    if high_ratio and (is_year_end or large_absolute_value):
+                        logger.warning(
+                            f"[TTM Builder] ⚠️ Detected likely Annual/YTD mislabeled as Quarter:\n"
+                            f"  Period: {q.std_period} | Revenue: {q.std_revenue.value:,.0f}\n"
+                            f"  Ratio: {rev_ratio*100:.1f}% | Year-end: {is_year_end} | Large value: {large_absolute_value}\n"
+                            f"  Skipping sum to prevent double-counting."
+                        )
+                        return None
+
             # Sum numeric fields
             fields = stmt_class.model_fields.keys()
             merged_kwargs = {
@@ -96,60 +153,151 @@ class StockDataLoader:
                 'std_period_type': 'TTM'
             }
             
-            from utils.unified_schema import FieldWithSource, DataSource
-            
             for field in fields:
                 if field in ['std_period', 'std_period_type']: continue
-                
-                # Check if field is numeric (FieldWithSource)
-                # We assume simple summation is valid for flow metrics (Income, CashFlow)
-                # NOT valid for Balance Sheet (Snapshot)
                 
                 total_val = 0.0
                 has_val = False
                 source = None
                 
-                for q in quarters:
+                SNAPSHOT_FIELDS = ['std_shares_outstanding']
+
+                for i, q in enumerate(quarters[:4]):
                     val_obj = getattr(q, field, None)
                     if val_obj and val_obj.value is not None:
+                         if field in SNAPSHOT_FIELDS:
+                              if i == 0:
+                                  total_val = val_obj.value
+                                  has_val = True
+                                  source = val_obj.source
+                              continue
+                         
                          total_val += val_obj.value
                          has_val = True
-                         source = val_obj.source # Take source from latest
+                         source = val_obj.source 
                 
                 if has_val:
                     merged_kwargs[field] = FieldWithSource(value=total_val, source=source or DataSource.YAHOO)
             
-            return stmt_class(**merged_kwargs)
+            result = stmt_class(**merged_kwargs)
+            if result.std_revenue:
+                logger.info(f"[TTM Builder] ✓ Sum completed. TTM Revenue: {result.std_revenue.value:,.0f}")
+            return result
 
+        # --- DATA PRE-PROCESSING ---
         # 1. Check Income Statement
         latest_fy = get_latest(data.income_statements, 'FY')
         latest_q = get_latest(data.income_statements, 'Q')
         
-        # Determine if we need TTM (Latest Q is fresher than Latest FY)
-        # Simple string comparison works for YYYY-MM-DD
+        need_synthetic = False
         if latest_q and latest_fy and latest_q.std_period > latest_fy.std_period:
-            # Find 4 consecutive quarters
-            # quarters list is already sorted Descending (Newest -> Oldest)
-            quarters = [s for s in data.income_statements if getattr(s, 'std_period_type', 'Q') == 'Q']
-            # We need the first 4
-            if len(quarters) >= 4:
-                ttm_inc = sum_quarters(quarters[:4], IncomeStatement)
+             fy_dt = to_dt(latest_fy.std_period)
+             q_dt = to_dt(latest_q.std_period)
+             
+             if q_dt and fy_dt and (q_dt - fy_dt).days > 20:
+                  need_synthetic = True
+        elif latest_q and not latest_fy:
+             need_synthetic = True
+        elif latest_fy:
+             ttm_inc = latest_fy.model_copy(deep=True)
+             ttm_inc.std_period_type = 'TTM'
+             ttm_inc.std_period = f"TTM-{latest_fy.std_period}"
+             data.income_statements.insert(0, ttm_inc)
+             print(f"      [TTM Builder] Use Latest FY as TTM (Ends {latest_fy.std_period})")
+             need_synthetic = False 
+
+        if need_synthetic:
+            quarters = [s for s in data.income_statements if s.std_period_type == 'Q']
+            seen_dates = set()
+            unique_q = []
+            for q in quarters:
+                if q.std_period not in seen_dates:
+                    unique_q.append(q)
+                    seen_dates.add(q.std_period)
+            
+            if len(unique_q) >= 4:
+                ttm_inc = sum_quarters(unique_q[:4], IncomeStatement)
                 if ttm_inc:
-                    # Insert at top
                     data.income_statements.insert(0, ttm_inc)
-                    print(f"      [TTM Builder] Constructed Synthetic TTM Income Statement (Ends {quarters[0].std_period})")
+                    print(f"      [TTM Builder] Constructed Synthetic TTM Income Statement (Sum of 4Q ends {unique_q[0].std_period})")
+                else:
+                    # Sanity check failed - the "latest Q" is likely a mislabeled FY
+                    # Use it directly as FY TTM
+                    logger.info(f"[TTM Builder] Sanity check failed. Using latest 'Q' ({unique_q[0].std_period}) as FY TTM.")
+                    detected_fy = unique_q[0].model_copy(deep=True)
+                    detected_fy.std_period_type = 'FY'  # Correct the mislabeling
+                    detected_fy.std_period = unique_q[0].std_period
+                    data.income_statements.insert(0, detected_fy)
+                    
+                    # Create TTM from this corrected FY
+                    ttm_inc = detected_fy.model_copy(deep=True)
+                    ttm_inc.std_period_type = 'TTM'
+                    ttm_inc.std_period = f"TTM-{detected_fy.std_period}"
+                    data.income_statements.insert(0, ttm_inc)
+                    print(f"      [TTM Builder] Used mislabeled Annual data as TTM (Ends {detected_fy.std_period})")
+        
+        if not any(s.std_period_type == 'TTM' for s in data.income_statements):
+            valid_fy = find_valid(data.income_statements, 'income', ['FY'])
+            if valid_fy:
+                ttm_inc = valid_fy.model_copy(deep=True)
+                ttm_inc.std_period_type = 'TTM'
+                ttm_inc.std_period = f"TTM-{valid_fy.std_period}"
+                data.income_statements.insert(0, ttm_inc)
+                print(f"      [TTM Builder] Using Latest Valid FY as TTM Income Statement (Ends {valid_fy.std_period})")
 
         # 2. Check Cash Flow
         latest_fy_cf = get_latest(data.cash_flows, 'FY')
         latest_q_cf = get_latest(data.cash_flows, 'Q')
         
+        need_synthetic_cf = False
         if latest_q_cf and latest_fy_cf and latest_q_cf.std_period > latest_fy_cf.std_period:
-            quarters = [s for s in data.cash_flows if getattr(s, 'std_period_type', 'Q') == 'Q']
-            if len(quarters) >= 4:
-                ttm_cf = sum_quarters(quarters[:4], CashFlow)
+             fy_dt = to_dt(latest_fy_cf.std_period)
+             q_dt = to_dt(latest_q_cf.std_period)
+             if q_dt and fy_dt and (q_dt - fy_dt).days > 20:
+                  need_synthetic_cf = True
+        elif latest_q_cf and not latest_fy_cf:
+             need_synthetic_cf = True
+        elif latest_fy_cf:
+             ttm_cf = latest_fy_cf.model_copy(deep=True)
+             ttm_cf.std_period_type = 'TTM'
+             ttm_cf.std_period = f"TTM-{latest_fy_cf.std_period}"
+             data.cash_flows.insert(0, ttm_cf)
+             print(f"      [TTM Builder] Use Latest FY as TTM Cash Flow (Ends {latest_fy_cf.std_period})")
+             need_synthetic_cf = False
+
+        if need_synthetic_cf:
+            quarters = [s for s in data.cash_flows if s.std_period_type == 'Q']
+            seen_dates = set()
+            unique_q = []
+            for q in quarters:
+                if q.std_period not in seen_dates:
+                    unique_q.append(q)
+                    seen_dates.add(q.std_period)
+                    
+            if len(unique_q) >= 4:
+                ttm_cf = sum_quarters(unique_q[:4], CashFlow)
                 if ttm_cf:
                     data.cash_flows.insert(0, ttm_cf)
-                    print(f"      [TTM Builder] Constructed Synthetic TTM Cash Flow (Ends {quarters[0].std_period})")
+                    print(f"      [TTM Builder] Constructed Synthetic TTM Cash Flow (Sum of 4Q ends {unique_q[0].std_period})")
+        
+        if not any(s.std_period_type == 'TTM' for s in data.cash_flows):
+             valid_fy = find_valid(data.cash_flows, 'cashflow', ['FY'])
+             if valid_fy:
+                ttm_cf = valid_fy.model_copy(deep=True)
+                ttm_cf.std_period_type = 'TTM'
+                ttm_cf.std_period = f"TTM-{valid_fy.std_period}"
+                data.cash_flows.insert(0, ttm_cf)
+                print(f"      [TTM Builder] Using Latest Valid FY as TTM Cash Flow (Ends {valid_fy.std_period})")
+
+        # 3. Check Balance Sheet
+        if not any(s.std_period_type == 'TTM' for s in data.balance_sheets):
+            valid_bs = find_valid(data.balance_sheets, 'balance')
+            if valid_bs:
+                ttm_bs = valid_bs.model_copy(deep=True)
+                ttm_bs.std_period_type = 'TTM'
+                ttm_bs.std_period = f"TTM-{valid_bs.std_period}"
+                data.balance_sheets.insert(0, ttm_bs)
+                print(f"      [TTM Builder] Using Latest Valid Snapshot as TTM Balance Sheet (Snapshot of {valid_bs.std_period})")
 
         return data
 
@@ -609,8 +757,25 @@ class StockDataLoader:
         # Phase 4: Alpha Vantage
         current_data = self._run_phase4_alphavantage(current_data)
         
+        # --- Phase 5: Currency & ADR Normalization ---
+        # Resolve currency mismatches (e.g. TWD vs USD) for international stocks
+        print("-> [Phase 5] Normalizing Currency & ADR Shares...")
+        from utils.currency_normalizer import CurrencyNormalizer
+        current_data = CurrencyNormalizer.normalize(current_data)
+        
+        # DEBUG: Verify conversion stuck
+        if current_data.income_statements:
+            sample = current_data.income_statements[0]
+            if sample.std_revenue:
+                logger.info(f"[Trace] Post-Normalization Revenue [{sample.std_period}]: {sample.std_revenue.value:,.0f} ({sample.std_revenue.source})")
+        
         # --- TTM Construction: Synthesize latest year if needed ---
         current_data = self._construct_synthetic_ttm(current_data)
+        
+        # DEBUG: Verify TTM result
+        ttm_inc = next((s for s in current_data.income_statements if s.std_period_type == 'TTM'), None)
+        if ttm_inc and ttm_inc.std_revenue:
+             logger.info(f"[Trace] Synthetic TTM Revenue: {ttm_inc.std_revenue.value:,.0f} ({ttm_inc.std_revenue.source})")
         
         # --- Sanitization: Remove Incomplete Periods ---
         current_data = self._sanitize_data(current_data)
