@@ -7,6 +7,7 @@ import pandas as pd
 from pathlib import Path
 from typing import Dict
 from utils.logger import setup_logger
+from config.constants import DATA_CACHE_BENCHMARK
 
 logger = setup_logger('damodaran_fetcher')
 
@@ -35,16 +36,17 @@ class DamodaranFetcher:
         'div_yield': 'divfund.htm',  # Dividend Yield, Payout Ratio (was divyield.htm)
     }
     
-    def __init__(self, cache_dir: str = 'user_config'):
+    def __init__(self, cache_dir: str = None):
         """
         Initialize fetcher.
         
         Args:
             cache_dir: Directory to cache downloaded data (CSV format)
+                       Defaults to DATA_CACHE_BENCHMARK constant
         """
-        self.cache_dir = Path(cache_dir)
+        self.cache_dir = Path(cache_dir) if cache_dir else Path(DATA_CACHE_BENCHMARK)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        logger.info(f"Damodaran fetcher initialized (cache: {cache_dir})")
+        logger.info(f"Damodaran fetcher initialized (cache: {self.cache_dir})")
     
     def fetch_html_table(self, file_key: str, force_refresh: bool = False) -> pd.DataFrame:
         """

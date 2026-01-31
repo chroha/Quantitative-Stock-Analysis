@@ -1,6 +1,5 @@
 """
 Run Macro Indicator Analysis - CLI entry point for generating macro reports
-运行宏观指标分析 - 生成分析报告
 """
 
 import sys
@@ -12,6 +11,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from fundamentals.macro_indicator.macro_report import MacroReportGenerator
+from config.constants import DATA_CACHE_MACRO
 from utils.logger import setup_logger
 from utils.console_utils import symbol
 
@@ -39,9 +39,9 @@ def main():
         if args.data:
             data_path = Path(args.data)
         else:
-            # Default location: data_acquisition/macro_data/data/macro_latest.json
+            # Default location: data/cache/macro/macro_latest.json
             project_root = Path(__file__).parent.parent.parent
-            data_path = project_root / 'data_acquisition' / 'macro_data' / 'data' / 'macro_latest.json'
+            data_path = project_root / DATA_CACHE_MACRO / 'macro_latest.json'
             
         logger.info(f"Loading data from: {data_path}")
         

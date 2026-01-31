@@ -1,5 +1,5 @@
 """
-FRED Data Fetcher - 从FRED获取宏观经济数据
+FRED Data Fetcher
 
 Fetches economic indicators from FRED (Federal Reserve Economic Data):
 - Yields: GS10, GS2
@@ -8,7 +8,7 @@ Fetches economic indicators from FRED (Federal Reserve Economic Data):
 - Sentiment: UMCSENT
 - Risk/Liquidity: STLFSI3, BAMLH0A0HYM2
 
-提供缓存机制和错误处理
+Provides caching mechanism and error handling.
 """
 
 import os
@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from typing import Optional, Dict, Any
 from pathlib import Path
 from utils.logger import setup_logger
+from config.constants import DATA_CACHE_MACRO
 
 logger = setup_logger('fred_fetcher')
 
@@ -71,8 +72,9 @@ class FREDFetcher:
         self.cache_ttl = self.config.get('cache_ttl_seconds', {}).get('fred_data', 3600)
         self.cpi_ttl = self.config.get('cache_ttl_seconds', {}).get('fred_cpi', 86400)
         
-        # Setup cache directory
-        self.cache_dir = Path(__file__).parent / 'data' / '.cache'
+        # Setup cache directory (use unified cache path)
+        project_root = Path(__file__).parent.parent.parent
+        self.cache_dir = project_root / DATA_CACHE_MACRO / '.cache'
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         
         # Reset daily request counter if needed
@@ -101,15 +103,20 @@ class FREDFetcher:
                 pass
     
     def _load_default_config(self) -> Dict:
-        """Load default configuration."""
-        config_path = Path(__file__).parent / 'macro_config.json'
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                return json.load(f)
-        return {
-            'lookback_periods': {'GS2_days': 60},
-            'cache_ttl_seconds': {'fred_data': 3600}
-        }
+        """Load default configuration from Python module."""
+        try:
+            from data_acquisition.macro_data.macro_config import (
+                LOOKBACK_PERIODS, CACHE_TTL
+            )
+            return {
+                'lookback_periods': LOOKBACK_PERIODS,
+                'cache_ttl_seconds': CACHE_TTL
+            }
+        except ImportError:
+            return {
+                'lookback_periods': {'GS2_days': 60},
+                'cache_ttl_seconds': {'fred_data': 3600}
+            }
     
     def _get_cache_path(self, series_id: str) -> Path:
         """Get cache file path for a series."""

@@ -30,6 +30,13 @@ EDGAR_USER_AGENT = "QuantitativeStockAnalysis/3.0 (contact@example.com)"
 DEFAULT_YEARS_HISTORY = 5
 DEFAULT_QUARTERS_HISTORY = 4
 
+# --- Data Directory Paths (relative to project root) ---
+# Unified data storage structure
+DATA_CACHE_STOCK = "data/cache/stock"         # Per-stock analysis outputs
+DATA_CACHE_MACRO = "data/cache/macro"         # Macro economic snapshots
+DATA_CACHE_BENCHMARK = "data/cache/benchmark" # Industry benchmark data
+DATA_REPORTS = "generated_reports"            # Human-readable reports
+
 # --- API Endpoints ---
 FMP_ENDPOINTS: Dict[str, str] = {
     'profile': 'profile',

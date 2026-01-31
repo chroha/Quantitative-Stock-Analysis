@@ -1,32 +1,21 @@
 """
-Macro AI Analyst - 宏观AI分析师 (V4.0 CIO Edition)
+Macro AI Analyst (V4.0 CIO Edition)
 
 Interprets macro data (Cycle, Risk, Valuation, Sectors) and generates a strategic commentary
 in both Chinese and English (Single-shot generation).
 """
 
 import json
-import math
 import requests
 import logging
 from typing import Dict, Any, Optional, List
+from pathlib import Path
 from config.settings import settings
+from config.constants import DATA_CACHE_MACRO
 from utils.logger import setup_logger
+from utils.numeric_utils import safe_format  # Centralized numeric formatting
 
 logger = setup_logger('macro_ai_analyst')
-
-def safe_format(value: Any, format_spec: str = ".2%") -> str:
-    """Safe formatting for values that might be None or NaN."""
-    if value is None:
-        return "N/A"
-    if isinstance(value, (float, int)):
-        if math.isnan(value):
-            return "N/A"
-        try:
-            return format(value, format_spec)
-        except ValueError:
-            return str(value)
-    return str(value)
 
 class MacroAIAnalyst:
     """
@@ -60,7 +49,8 @@ class MacroAIAnalyst:
         
         # DEBUG: Save context to file for user inspection
         try:
-            debug_path = "data_acquisition/macro_data/data/debug_ai_context.json"
+            project_root = Path(__file__).parent.parent.parent
+            debug_path = project_root / DATA_CACHE_MACRO / "debug_ai_context.json"
             with open(debug_path, 'w', encoding='utf-8') as f:
                 json.dump(ai_context, f, indent=2, ensure_ascii=False)
             print(f"  [AI] V4 Context saved to: {debug_path}")
@@ -202,9 +192,10 @@ class MacroAIAnalyst:
 
 ### OUTPUT FORMAT (Strict JSON)
 Return JSON with "cn" and "en". Content in Markdown.
+**IMPORTANT:** For the Chinese version ("cn"), use ONLY Chinese titles without any English in parentheses.
 
 {{
-  "cn": "### 🦅 首席视点 (CIO Memorandum)\\n\\n**📉 核心逻辑：{{Professional Title, e.g., 流动性压力与估值错配}}**\\n{{Paragraph: A cold, hard look at the macro regime.}}\\n\\n**🔍 结构性脆弱诊断 (Structural Vulnerabilities):**\\n- **信息时滞:** {{Discuss CPI latency objectively}}\\n- **抵押品压力:** {{Analyze Gold drop as a liquidity/collateral signal}}\\n- **信用背离:** {{Discuss Credit vs Equity gap}}\\n\\n**⚖️ 情景概率 (Scenario Probability):**\\n- 🔻 **去杠杆风险 (Prob: X%):** {{Mechanism: Margin calls -> Selling}}\\n- 🔼 **通胀交易 (Prob: Y%):** {{Mechanism: Real assets rally}}\\n\\n**🇦🇺 澳洲策略 (AUD/Commodity):**\\n{{Trade Idea based on Terms of Trade divergence}}\\n\\n**🛡️ 风险管理指令 (Actionable):**\\n1. {{Capital Preservation Step}}\\n2. {{Alpha Generation Step}}\\n3. {{Liquidity Management}}",
+  "cn": "### 🦅 首席视点\\n\\n**📉 核心逻辑：{{Professional Title in Chinese, e.g., 流动性压力与估值错配}}**\\n{{Paragraph: A cold, hard look at the macro regime.}}\\n\\n**🔍 结构性脆弱诊断:**\\n- **信息时滞:** {{Discuss CPI latency objectively}}\\n- **抵押品压力:** {{Analyze Gold drop as a liquidity/collateral signal}}\\n- **信用背离:** {{Discuss Credit vs Equity gap}}\\n\\n**⚖️ 情景概率:**\\n- 🔻 **去杠杆风险 (概率: X%):** {{Mechanism: Margin calls -> Selling}}\\n- 🔼 **通胀交易 (概率: Y%):** {{Mechanism: Real assets rally}}\\n\\n**🇦🇺 澳洲策略:**\\n{{Trade Idea based on Terms of Trade divergence}}\\n\\n**🛡️ 风险管理指令:**\\n1. {{Capital Preservation Step}}\\n2. {{Alpha Generation Step}}\\n3. {{Liquidity Management}}",
   "en": "..."
 }}
 """

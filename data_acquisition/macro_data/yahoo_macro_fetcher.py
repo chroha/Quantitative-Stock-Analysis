@@ -1,5 +1,5 @@
 """
-Yahoo Finance Macro Data Fetcher - 从Yahoo Finance获取宏观市场数据
+Yahoo Finance Macro Data Fetcher
 
 Fetches market indicators from Yahoo Finance using Batch Download.
 Assets:

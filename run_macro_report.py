@@ -1,6 +1,5 @@
 """
 Macro Strategy Report Orchestrator (System V3.0)
-宏观策略报告生成主程序
 """
 
 import sys
@@ -24,6 +23,7 @@ from fundamentals.macro_indicator.valuation_allocator import ValuationAllocator
 from fundamentals.macro_indicator.macro_report import MacroReportGenerator
 from fundamentals.macro_indicator.macro_markdown_report import MacroMarkdownReport
 from fundamentals.macro_indicator.macro_ai_analyst import MacroAIAnalyst
+from config.constants import DATA_CACHE_MACRO, DATA_REPORTS
 from utils.logger import setup_logger
 from utils.console_utils import symbol as ICON, print_step, print_separator
 
@@ -44,12 +44,12 @@ def safe_print(text):
 def main():
     print_header("MACRO STRATEGY ANALYSIS SYSTEM (Dashboard V2)")
     
-    # Paths
+    # Paths (using unified constants)
     current_dir = Path(__file__).parent.absolute()
-    data_dir = current_dir / 'data_acquisition' / 'macro_data' / 'data'
+    data_dir = current_dir / DATA_CACHE_MACRO
     json_path = data_dir / 'macro_latest.json'
     cache_dir = data_dir / '.cache'
-    reports_dir = current_dir / 'generated_reports'
+    reports_dir = current_dir / DATA_REPORTS
     
     # Check existing data
     existing_data = None

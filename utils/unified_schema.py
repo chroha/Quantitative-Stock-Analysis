@@ -1,15 +1,47 @@
 """
-Unified data schema - The system's "constitution".
-Defines standardized field names and data models using Pydantic for type safety.
+Unified Data Schema - The System's "Constitution"
+=================================================
 
-统一数据架构 - 系统的"宪法"。
-使用 Pydantic 定义标准化的字段名称和数据模型，以确保类型安全。
+This module defines the standardized field names, data models, and source mappings
+used throughout the entire Quantitative Stock Analysis system.
+
+Field Naming Convention
+-----------------------
+All standardized fields start with "std_" prefix to distinguish from raw source fields.
+
+Unit Conventions (CRITICAL for Accuracy)
+----------------------------------------
+- **Monetary Values** (revenue, net_income, debt, etc.):
+  - Unit: Raw USD value (NOT in millions/billions)
+  - Example: $1.5 billion = 1_500_000_000.0
+  
+- **Ratio Values** (margins, ROE, ROA, growth rates, yields):
+  - Unit: Decimal (NOT percentage)
+  - Example: 15% = 0.15, not 15.0
+  
+- **Per-Share Values** (EPS, book value per share):
+  - Unit: Raw USD per share
+  - Example: $5.50 per share = 5.50
+
+- **Multiplier Ratios** (PE, PB, PS, EV/EBITDA):
+  - Unit: Pure ratio (no conversion needed)
+  - Example: PE of 25x = 25.0
+
+Data Source Priority (4-Tier Cascade)
+-------------------------------------
+1. Yahoo Finance (primary, real-time)
+2. SEC EDGAR (official filings)
+3. FMP (supplementary)
+4. Alpha Vantage (fallback)
+
+Each FieldWithSource tracks both value and source for provenance.
+
+Define standardized field names and data models using Pydantic to ensure type safety.
 """
 
 from datetime import datetime
 from typing import Optional, Literal, Dict, Any
 from pydantic import BaseModel, Field
-
 
 # Data source types for provenance tracking
 # Extended to support 4-tier cascade: Yahoo > FMP > Alpha Vantage > SEC EDGAR
@@ -31,7 +63,7 @@ class TextFieldWithSource(BaseModel):
 class PriceData(BaseModel):
     """
     Price data model with unified field names.
-    价格数据模型，使用统一字段名。
+    Use standardized field names.
     """
     std_date: Optional[datetime] = Field(None, description="Date of price data")
     std_open: Optional[FieldWithSource] = Field(None, description="Opening price")
@@ -45,7 +77,7 @@ class PriceData(BaseModel):
 class IncomeStatement(BaseModel):
     """
     Income statement model with unified field names.
-    利润表模型，使用统一字段名。
+    Use standardized field names.
     """
     std_period: Optional[str] = Field(None, description="Period (e.g., '2024-Q4', '2024-FY')")
     std_period_type: Literal['FY', 'Q', 'TTM'] = Field('FY', description="Period type: Fiscal Year, Quarter, or TTM")
@@ -67,7 +99,7 @@ class IncomeStatement(BaseModel):
 class BalanceSheet(BaseModel):
     """
     Balance sheet model with unified field names.
-    资产负债表模型，使用统一字段名。
+    Use standardized field names.
     """
     std_period: Optional[str] = Field(None, description="Period (e.g., '2024-Q4', '2024-FY')")
     std_period_type: Literal['FY', 'Q', 'TTM'] = Field('FY', description="Period type: Fiscal Year, Quarter, or TTM")
@@ -85,7 +117,7 @@ class BalanceSheet(BaseModel):
 class CashFlow(BaseModel):
     """
     Cash flow statement model with unified field names.
-    现金流量表模型，使用统一字段名。
+    Use standardized field names.
     """
     std_period: Optional[str] = Field(None, description="Period (e.g., '2024-Q4', '2024-FY')")
     std_period_type: Literal['FY', 'Q', 'TTM'] = Field('FY', description="Period type: Fiscal Year, Quarter, or TTM")
@@ -183,10 +215,7 @@ class CompanyProfile(BaseModel):
     CRITICAL: This schema defines the allowed fields for company profile data.
     If you add new fields to YahooFetcher (or other fetchers), you MUST add them here.
     Otherwise, Pydantic will silently drop the extra fields during validation.
-    
-    关键提示: 此架构定义了公司概况数据的允许字段。
-    如果您在 YahooFetcher (或其他获取器) 中添加了新字段，必须同步添加到这里。
-    否则，Pydantic 在验证过程中会静默丢弃这些额外字段。
+
     """
     std_symbol: Optional[str] = Field(None, description="Stock ticker symbol")
     std_company_name: Optional[TextFieldWithSource] = Field(None, description="Company name")
@@ -218,9 +247,6 @@ class StockData(BaseModel):
     """
     Complete stock data model combining all categories.
     This is the primary data structure used throughout the system.
-
-    股票完整数据模型，包含所有类别的数据。
-    这是整个系统中使用的主要数据结构。
     """
     symbol: str = Field(..., description="Stock ticker symbol")
     last_updated: datetime = Field(default_factory=datetime.now, description="Last data update timestamp")
@@ -238,10 +264,20 @@ class StockData(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict, description="Auxiliary processing metadata")
 
 
-# Field mapping dictionaries
-# Yahoo Finance field names -> Unified schema names
+# =============================================================================
+# YAHOO FINANCE FIELD MAPPING
+# =============================================================================
+# Maps Yahoo Finance raw field names -> Unified schema field names
+#
+# Unit Reference:
+# - Price fields: USD per share
+# - Volume: Number of shares traded
+# - Revenue/Income/Expense fields: Raw USD (not millions)
+# - EPS fields: USD per share
+# - Cash flow fields: Raw USD
+# =============================================================================
 YAHOO_FIELD_MAPPING = {
-    # Price data
+    # Price data (Unit: USD per share, except Volume which is count)
     'Open': 'std_open',
     'High': 'std_high',
     'Low': 'std_low',
@@ -249,7 +285,7 @@ YAHOO_FIELD_MAPPING = {
     'Adj Close': 'std_adjusted_close',
     'Volume': 'std_volume',
     
-    # Income statement
+    # Income statement (Unit: Raw USD)
     'Total Revenue': 'std_revenue',
     'Cost Of Revenue': 'std_cost_of_revenue',
     'Gross Profit': 'std_gross_profit',
@@ -259,12 +295,12 @@ YAHOO_FIELD_MAPPING = {
     'Interest Expense': 'std_interest_expense',
     'Tax Provision': 'std_income_tax_expense',
     'Net Income': 'std_net_income',
-    'Basic EPS': 'std_eps',
-    'Diluted EPS': 'std_eps_diluted',
-    'Basic Average Shares': 'std_shares_outstanding',
+    'Basic EPS': 'std_eps',           # Unit: USD per share
+    'Diluted EPS': 'std_eps_diluted', # Unit: USD per share
+    'Basic Average Shares': 'std_shares_outstanding',  # Unit: Count
     'EBITDA': 'std_ebitda',
     
-    # Balance sheet
+    # Balance sheet (Unit: Raw USD)
     'Total Assets': 'std_total_assets',
     'Current Assets': 'std_current_assets',
     'Cash And Cash Equivalents': 'std_cash',
@@ -275,7 +311,7 @@ YAHOO_FIELD_MAPPING = {
     'Total Debt': 'std_total_debt',
     'Stockholders Equity': 'std_shareholder_equity',
     
-    # Cash flow
+    # Cash flow (Unit: Raw USD, negative = outflow)
     'Operating Cash Flow': 'std_operating_cash_flow',
     'Investing Cash Flow': 'std_investing_cash_flow',
     'Financing Cash Flow': 'std_financing_cash_flow',
@@ -283,7 +319,7 @@ YAHOO_FIELD_MAPPING = {
     'Free Cash Flow': 'std_free_cash_flow',
     'Stock Based Compensation': 'std_stock_based_compensation',
     'Repurchase Of Capital Stock': 'std_repurchase_of_stock',
-    'Common Stock Repurchased': 'std_repurchase_of_stock', # Alternative name
+    'Common Stock Repurchased': 'std_repurchase_of_stock',  # Alternative name
 }
 
 # FMP field names -> Unified schema names

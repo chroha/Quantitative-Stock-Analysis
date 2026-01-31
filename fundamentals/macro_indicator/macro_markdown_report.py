@@ -1,5 +1,5 @@
 """
-Macro Analysis Markdown Report Generator - 宏观分析报告生成器
+Macro Analysis Markdown Report Generator
 
 Generates a Markdown report with a "Macro Dashboard" layout, including:
 1. Cross-Asset Performance Table (1D, 1W, 1M, YTD, 52W Position)
@@ -8,8 +8,6 @@ Generates a Markdown report with a "Macro Dashboard" layout, including:
 4. Market Internals & Risk Analysis
 5. Algo Logic & Diagnostics (Deep Dive)
 6. AI Strategic Commentary (Bilingual)
-
-生成包含跨资产表现、经济指标、板块轮动、市场内部结构、模型逻辑诊断和AI深度解读的Markdown报告
 """
 
 import pandas as pd

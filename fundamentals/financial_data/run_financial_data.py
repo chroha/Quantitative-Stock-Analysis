@@ -22,6 +22,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from config.constants import DATA_CACHE_STOCK
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
 
 def main():
@@ -38,20 +39,16 @@ def main():
             print("[ERROR] Stock symbol cannot be empty.")
             sys.exit(1)
         
-        generator = FinancialDataGenerator()
+        # Use unified data cache path
+        data_dir = os.path.join(project_root, DATA_CACHE_STOCK)
+        generator = FinancialDataGenerator(data_dir=data_dir)
         
         # Try to find the latest file for this symbol
-        # Note: generator data_dir defaults to "generated_data" relative to CWD.
-        # When running from root, it works.
-        
-        # Accessing protected method _find_latest_file for check (or just run generate which checks internally)
-        # But we want to give good error messages.
-        
         latest_file = generator._find_latest_file(symbol)
         
         if not latest_file:
             print(f"\n[ERROR] No data found for {symbol}")
-            print(f"Looking for: generated_data/initial_data_{symbol}_*.json")
+            print(f"Looking for: {data_dir}/initial_data_{symbol}_*.json")
             print(f"\nPlease run data acquisition first:")
             print(f"  python data_acquisition/stock_data/run_stock_fetch.py")
             sys.exit(1)

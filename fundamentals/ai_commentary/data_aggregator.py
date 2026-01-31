@@ -10,7 +10,13 @@ from typing import Dict, Any, Optional
 class DataAggregator:
     """Aggregates data from various scoring and valuation outputs."""
     
-    def __init__(self, data_dir: str = "generated_data"):
+    def __init__(self, data_dir: str):
+        """
+        Initialize aggregator.
+        
+        Args:
+            data_dir: Directory containing data files (required)
+        """
         self.data_dir = Path(data_dir)
         
     def _load_json(self, file_path: Path) -> Dict[str, Any]:

@@ -1,7 +1,5 @@
 """
 Run Macro Data Fetch - CLI entry point for macro data acquisition
-
-运行宏观数据获取 - 命令行入口
 """
 
 import sys
@@ -14,6 +12,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from data_acquisition.macro_data.macro_aggregator import MacroAggregator
+from config.constants import DATA_CACHE_MACRO
 from utils.logger import setup_logger
 
 logger = setup_logger('run_macro_fetch')
@@ -59,7 +58,8 @@ def main():
         
         # Force Fetch: Clear cache directory
         if args.force_fetch:
-            cache_dir = Path(__file__).parent / 'data' / '.cache'
+            project_root = Path(__file__).parent.parent.parent
+            cache_dir = project_root / DATA_CACHE_MACRO / '.cache'
             if cache_dir.exists():
                 logger.info("Clearing cache for force fetch...")
                 shutil.rmtree(cache_dir, ignore_errors=True)

@@ -16,6 +16,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from config.constants import DATA_CACHE_STOCK, DATA_REPORTS
 from fundamentals.ai_commentary.data_aggregator import DataAggregator
 from fundamentals.ai_commentary.commentary_generator import CommentaryGenerator
 from utils.logger import setup_logger
@@ -45,7 +46,7 @@ def main():
             print("Operation cancelled.")
             return
 
-        output_dir = os.path.join(project_root, "generated_data")
+        output_dir = os.path.join(project_root, DATA_CACHE_STOCK)
         
         # Step 1: Aggregate Data
         print(f"\nStep 1: Aggregating data for {symbol}...")
@@ -79,9 +80,9 @@ def main():
         report_filename = f"ai_analysis_{symbol}_{date_str}.md"
         
         # Save to generated_reports
-        report_dir = os.path.join(project_root, "generated_reports")
+        report_dir = os.path.join(project_root, DATA_REPORTS)
         if not os.path.exists(report_dir):
-            os.makedirs(report_dir)
+            os.makedirs(report_dir, exist_ok=True)
             
         report_path = os.path.join(report_dir, report_filename)
         

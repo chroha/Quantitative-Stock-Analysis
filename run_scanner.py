@@ -28,6 +28,7 @@ from data_acquisition import StockDataLoader, BenchmarkDataLoader
 from fundamentals.financial_scorers.financial_scorers_output import FinancialScorerGenerator
 from fundamentals.technical_scorers.technical_scorers_output import TechnicalScorerGenerator
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
+from config.constants import DATA_CACHE_STOCK, DATA_CACHE_BENCHMARK, DATA_REPORTS
 from utils import setup_logger
 from utils.report_utils import (
     format_financial_score_report,
@@ -114,7 +115,8 @@ def analyze_stock(symbol, output_dir, force_update=True):
         # STEP 3: Financial Scoring
         print(f"\n[3/4] Calculating Financial Score...")
         # Silence logger for scorer
-        scorer = FinancialScorerGenerator(data_dir=output_dir)
+        benchmark_dir = os.path.join(current_dir, DATA_CACHE_BENCHMARK)
+        scorer = FinancialScorerGenerator(data_dir=output_dir, benchmark_dir=benchmark_dir)
         fin_score_path = scorer.generate(symbol, quiet=True)
         
         fin_score_val = 0
@@ -215,9 +217,9 @@ def main():
     print(f"\nScanning {len(symbols)} stocks...")
     print("-" * 60)
     
-    output_dir = os.path.join(current_dir, "generated_data")
+    output_dir = os.path.join(current_dir, DATA_CACHE_STOCK)
     if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
 
     # 0. Benchmark Data Check (Prevent crash)
     bench_loader = BenchmarkDataLoader()
@@ -284,9 +286,9 @@ def main():
     report_filename = f"stock_scan_{timestamp_str}.txt"
     
     # Save report to generated_reports/
-    report_dir = os.path.join(current_dir, "generated_reports")
+    report_dir = os.path.join(current_dir, DATA_REPORTS)
     if not os.path.exists(report_dir):
-        os.makedirs(report_dir)
+        os.makedirs(report_dir, exist_ok=True)
         
     report_path = os.path.join(report_dir, report_filename)
     

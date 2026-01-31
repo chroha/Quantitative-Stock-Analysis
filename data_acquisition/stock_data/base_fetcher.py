@@ -16,6 +16,7 @@ from typing import Optional, Any, List, Dict
 from utils.unified_schema import FieldWithSource, TextFieldWithSource
 from utils.field_registry import DataSource, get_source_field_name, get_merge_priority
 from utils.logger import setup_logger
+from utils.numeric_utils import clean_numeric  # Centralized numeric cleaning
 
 logger = setup_logger('base_fetcher')
 
@@ -102,6 +103,7 @@ class BaseFetcher(ABC):
     def _safe_float(self, value: Any) -> Optional[float]:
         """
         Safely convert a value to float.
+        Delegates to centralized clean_numeric utility.
         
         Args:
             value: Value to convert
@@ -109,16 +111,7 @@ class BaseFetcher(ABC):
         Returns:
             Float value or None if conversion fails
         """
-        if value is None:
-            return None
-        
-        try:
-            result = float(value)
-            if math.isnan(result) or math.isinf(result):
-                return None
-            return result
-        except (ValueError, TypeError):
-            return None
+        return clean_numeric(value)
 
     @abstractmethod
     def fetch_income_statements(self) -> list:

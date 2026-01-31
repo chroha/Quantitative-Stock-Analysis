@@ -34,12 +34,12 @@ class ValuationCalculator:
     to produce a weighted fair value estimate.
     """
     
-    def __init__(self, benchmark_data_path: str = "generated_data"):
+    def __init__(self, benchmark_data_path: str):
         """
         Initialize valuation calculator.
         
         Args:
-            benchmark_data_path: Directory containing benchmark_data.json
+            benchmark_data_path: Directory containing benchmark_data.json (required)
         """
         self.benchmark_data = self._load_benchmark_data(benchmark_data_path)
         self.models = self._initialize_models()

@@ -27,6 +27,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from config.constants import DATA_CACHE_STOCK, DATA_CACHE_BENCHMARK
 from fundamentals.valuation import ValuationCalculator
 from fundamentals.valuation.valuation_output import ValuationOutput
 from data_acquisition import StockDataLoader
@@ -51,14 +52,9 @@ def main():
         # Try to load existing data first to save time
         current_date = datetime.now().strftime("%Y-%m-%d")
         
-        # Note: We need to locate where generated_data is relative to CWD or Project Root
-        # If we run this script from its folder, generated_data is at ../../generated_data
-        # But our settings usually assume CWD is project root or we use absolute paths.
-        # StockDataLoader saves to "generated_data" by default, which is relative to CWD.
-        # If we run this script, we assume CWD is set correctly by user OR we need to force it.
-        # However, for simplicity, let's assume we want to write to project_root/generated_data
-        
-        output_dir = os.path.join(project_root, "generated_data")
+        # Use unified data cache paths
+        output_dir = os.path.join(project_root, DATA_CACHE_STOCK)
+        benchmark_dir = os.path.join(project_root, DATA_CACHE_BENCHMARK)
         data_path = os.path.join(output_dir, f"initial_data_{ticker}_{current_date}.json")
         
         if os.path.exists(data_path):
@@ -74,8 +70,8 @@ def main():
         
         # Step 2: Initialize valuation calculator
         print(f"\nStep 2: Initializing valuation calculator...")
-        # Calculator expects benchmark data in generated_data
-        calculator = ValuationCalculator(benchmark_data_path=output_dir)
+        # Calculator expects benchmark data in benchmark_dir
+        calculator = ValuationCalculator(benchmark_data_path=benchmark_dir)
         
         # Step 3: Calculate valuation
         print(f"\nStep 3: Calculating valuation...")

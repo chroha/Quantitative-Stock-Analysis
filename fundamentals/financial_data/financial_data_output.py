@@ -1,7 +1,7 @@
 """
 Financial Data Output Generator.
-Reads raw stock data from generated_data, runs fundamental calculators,
-and outputs calculated financial metrics to generated_data.
+Reads raw stock data, runs fundamental calculators,
+and outputs calculated financial metrics.
 """
 
 import sys
@@ -28,7 +28,13 @@ class FinancialDataGenerator:
     Orchestrates the calculation of fundamental metrics and saving of results.
     """
     
-    def __init__(self, data_dir: str = "generated_data"):
+    def __init__(self, data_dir: str):
+        """
+        Initialize generator.
+        
+        Args:
+            data_dir: Directory for reading/writing data files (required)
+        """
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(exist_ok=True)
         

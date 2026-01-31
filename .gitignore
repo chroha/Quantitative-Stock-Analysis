@@ -13,10 +13,9 @@ __pycache__/
 .vscode/
 *.swp
 *.swo
-generated_data/
+
+# Reports (optional: keep if you want to exclude)
 generated_reports/
 
-
-# Exceptions
-!**/macro_config.json
-!**/user_config.json
+# Unified data cache
+data/cache/

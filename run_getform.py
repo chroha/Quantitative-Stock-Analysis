@@ -18,6 +18,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from fundamentals.ai_commentary.data_aggregator import DataAggregator
+from config.constants import DATA_CACHE_STOCK, DATA_REPORTS
 from utils.logger import setup_logger
 
 logger = setup_logger('organize_data')
@@ -145,7 +146,7 @@ def main():
     print(f"Organizing data for {len(symbols)} stocks: {', '.join(symbols)}")
     
     # Initialize Aggregator
-    aggregator = DataAggregator(data_dir=os.path.join(project_root, "generated_data"))
+    aggregator = DataAggregator(data_dir=os.path.join(project_root, DATA_CACHE_STOCK))
     
     # Prepare Data Matrix
     # Columns: Metric Name, Symbol1, Symbol2, ...
@@ -206,9 +207,9 @@ def main():
 
     # Save CSV
     timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    report_dir = os.path.join(project_root, "generated_reports")
+    report_dir = os.path.join(project_root, DATA_REPORTS)
     if not os.path.exists(report_dir):
-        os.makedirs(report_dir)
+        os.makedirs(report_dir, exist_ok=True)
         
     filename = f"collated_scores_{timestamp}.csv"
     filepath = os.path.join(report_dir, filename)

@@ -15,6 +15,7 @@ from typing import Dict, Optional
 # Add project root to sys.path if running independently
 
 from utils.logger import setup_logger
+from config.constants import DATA_CACHE_BENCHMARK
 from data_acquisition.benchmark_data.damodaran_fetcher import DamodaranFetcher
 from data_acquisition.benchmark_data.industry_mapper import SECTOR_MAPPING, get_unmapped_industries
 from data_acquisition.benchmark_data.benchmark_calculator import BenchmarkCalculator
@@ -29,8 +30,8 @@ class BenchmarkDataLoader:
     
     def __init__(self):
         self.generated_at = datetime.now().strftime('%Y-%m-%d')
-        self.output_dir = Path('generated_data')
-        self.output_dir.mkdir(exist_ok=True)
+        self.output_dir = Path(DATA_CACHE_BENCHMARK)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
     
     def get_output_path(self) -> Path:
         """Get the expected output file path for today."""
@@ -50,7 +51,7 @@ class BenchmarkDataLoader:
         logger.info("Starting Benchmark Update Process")
         
         # 1. Fetch Data
-        fetcher = DamodaranFetcher(cache_dir='user_config') # Keep cache in user_config or move? User didn't specify. Keeping for now.
+        fetcher = DamodaranFetcher()  # Uses DATA_CACHE_BENCHMARK by default
         
         try:
             # Check cache logic if not forced

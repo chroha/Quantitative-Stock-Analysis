@@ -31,18 +31,25 @@ class FinancialScorerGenerator:
     Generates financial scores from pre-calculated financial data.
     """
     
-    def __init__(self, data_dir: str = "generated_data"):
+    def __init__(self, data_dir: str, benchmark_dir: str):
+        """
+        Initialize generator.
+        
+        Args:
+            data_dir: Directory containing financial_data files (required)
+            benchmark_dir: Directory containing benchmark_data files (required)
+        """
         self.data_dir = Path(data_dir)
+        self.benchmark_dir = Path(benchmark_dir)
         if not self.data_dir.exists():
             logger.warning(f"Data directory does not exist: {self.data_dir}")
         
-    def _find_latest_file(self, pattern: str) -> Optional[Path]:
-        """Find the most recent file matching a pattern."""
-        files = list(self.data_dir.glob(pattern))
+    def _find_latest_file(self, pattern: str, search_dir: Path = None) -> Optional[Path]:
+        """Find the most recent file matching a pattern in specified directory."""
+        target_dir = search_dir or self.data_dir
+        files = list(target_dir.glob(pattern))
         if not files:
             return None
-        # Sort by name (which includes date) usually works for YYYY-MM-DD
-        # But let's rely on string sort of the filename which puts dates in order
         files.sort(reverse=True)
         return files[0]
 
@@ -74,12 +81,10 @@ class FinancialScorerGenerator:
             print(f"[ERROR] No financial data file found for {symbol}")
             return None
             
-        # 2. Find latest benchmark data
+        # 2. Find latest benchmark data (in benchmark_dir)
         # Pattern: benchmark_data_{DATE}.json
-        # User mentioned: @benchmark_data_2026-01-16.json
-        # So pattern is benchmark_data_*.json
         bench_pattern = "benchmark_data_*.json"
-        bench_path = self._find_latest_file(bench_pattern)
+        bench_path = self._find_latest_file(bench_pattern, search_dir=self.benchmark_dir)
         
         if not bench_path:
             logger.error("No benchmark data found")

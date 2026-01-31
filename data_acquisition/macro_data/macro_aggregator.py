@@ -1,10 +1,8 @@
 """
-Macro Data Aggregator - 宏观数据聚合器
+Macro Data Aggregator
 
 Orchestrates fetching from FRED and Yahoo Finance, combines data,
 and saves to JSON (snapshot). Historical CSV logging is currently suspended due to schema changes.
-
-协调FRED和Yahoo数据获取，合并数据，并保存为JSON格式
 """
 
 import json
@@ -15,6 +13,7 @@ from datetime import datetime
 from typing import Optional, Dict, Any
 from pathlib import Path
 from utils.logger import setup_logger
+from config.constants import DATA_CACHE_MACRO
 import pytz
 
 from .fred_fetcher import FREDFetcher
@@ -51,19 +50,26 @@ class MacroAggregator:
         
         self.yahoo_fetcher = YahooMacroFetcher(config=self.config)
         
-        # Setup data directory
-        self.data_dir = Path(__file__).parent / 'data'
+        # Setup data directory (use unified cache path)
+        project_root = Path(__file__).parent.parent.parent
+        self.data_dir = project_root / DATA_CACHE_MACRO
         self.data_dir.mkdir(parents=True, exist_ok=True)
         
         self.json_path = self.data_dir / 'macro_latest.json'
 
     def _load_default_config(self) -> Dict:
-        """Load default configuration."""
-        config_path = Path(__file__).parent / 'macro_config.json'
-        if config_path.exists():
-            with open(config_path, 'r') as f:
-                return json.load(f)
-        return {}
+        """Load default configuration from Python module."""
+        try:
+            from data_acquisition.macro_data.macro_config import (
+                LOOKBACK_PERIODS, CACHE_TTL, TREND_THRESHOLDS
+            )
+            return {
+                'lookback_periods': LOOKBACK_PERIODS,
+                'cache_ttl_seconds': CACHE_TTL,
+                'trend_thresholds': TREND_THRESHOLDS
+            }
+        except ImportError:
+            return {}
 
     def fetch_all_data(self) -> Dict[str, Any]:
         """

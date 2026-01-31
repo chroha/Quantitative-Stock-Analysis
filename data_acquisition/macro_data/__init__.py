@@ -1,9 +1,7 @@
 """
-Macro Data Acquisition Module - 宏观数据获取模块
+Macro Data Acquisition Module
 
 Fetches macroeconomic indicators from FRED and Yahoo Finance.
-
-从FRED和Yahoo Finance获取宏观经济指标
 """
 
 from .fred_fetcher import FREDFetcher

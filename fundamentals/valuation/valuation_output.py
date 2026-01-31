@@ -126,13 +126,13 @@ class ValuationOutput:
         print("\n" + "="*80 + "\n")
     
     @staticmethod
-    def save_json(valuation_result: dict, output_dir: str = "generated_data") -> Path:
+    def save_json(valuation_result: dict, output_dir: str) -> Path:
         """
         Save valuation results to JSON file.
         
         Args:
             valuation_result: Dictionary from ValuationCalculator.calculate_valuation()
-            output_dir: Directory to save JSON file
+            output_dir: Directory to save JSON file (required)
             
         Returns:
             Path to saved file

@@ -16,6 +16,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from config.constants import DATA_CACHE_STOCK, DATA_CACHE_BENCHMARK
 from fundamentals.financial_scorers.financial_scorers_output import FinancialScorerGenerator
 
 def main():
@@ -29,11 +30,11 @@ def main():
             print("[ERROR] Symbol cannot be empty")
             return
             
-        # By default FinancialScorerGenerator uses "generated_data" in CWD.
-        # We might want to ensure it uses project's generated_data if run from anywhere.
-        output_dir = os.path.join(project_root, "generated_data")
+        # Use unified data cache paths
+        output_dir = os.path.join(project_root, DATA_CACHE_STOCK)
+        benchmark_dir = os.path.join(project_root, DATA_CACHE_BENCHMARK)
         
-        generator = FinancialScorerGenerator(data_dir=output_dir)
+        generator = FinancialScorerGenerator(data_dir=output_dir, benchmark_dir=benchmark_dir)
         result = generator.generate(symbol)
         
         if result:

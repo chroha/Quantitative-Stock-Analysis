@@ -18,12 +18,12 @@ class TechnicalScorerGenerator:
     Generates technical scores from initial stock data.
     """
     
-    def __init__(self, data_dir: str = "generated_data"):
+    def __init__(self, data_dir: str):
         """
         Initialize generator.
         
         Args:
-            data_dir: Directory containing initial_data files
+            data_dir: Directory containing initial_data files (required)
         """
         self.data_dir = Path(data_dir)
         if not self.data_dir.exists():

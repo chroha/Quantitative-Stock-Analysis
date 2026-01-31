@@ -25,6 +25,7 @@ from utils import LoggingContext, set_logging_mode
 set_logging_mode(LoggingContext.ORCHESTRATED)
 
 # Now import modules (their loggers will respect ORCHESTRATED mode)
+from config.constants import DATA_CACHE_STOCK, DATA_CACHE_BENCHMARK, DATA_REPORTS
 from data_acquisition import StockDataLoader, BenchmarkDataLoader
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
 from fundamentals.financial_scorers.financial_scorers_output import FinancialScorerGenerator
@@ -70,9 +71,9 @@ def main():
         print("[ERROR] Symbol is required.")
         return
 
-    output_dir = os.path.join(current_dir, "generated_data")
+    output_dir = os.path.join(current_dir, DATA_CACHE_STOCK)
     if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
+        os.makedirs(output_dir, exist_ok=True)
         
     current_date = datetime.now().strftime("%Y-%m-%d")
     
@@ -207,7 +208,8 @@ def main():
         # STEP 3: Financial Scoring
         # ==============================================================================
         print_step(3, 6, "Financial Scoring")
-        fin_gen = FinancialScorerGenerator(data_dir=output_dir)
+        benchmark_dir = os.path.join(current_dir, DATA_CACHE_BENCHMARK)
+        fin_gen = FinancialScorerGenerator(data_dir=output_dir, benchmark_dir=benchmark_dir)
         fin_score_path = fin_gen.generate(symbol, quiet=True)
         
         fin_score = None
@@ -278,7 +280,7 @@ def main():
         # STEP 5: Valuation
         # ==============================================================================
         print_step(5, 6, "Valuation Analysis")
-        val_calc = ValuationCalculator(benchmark_data_path=output_dir)
+        val_calc = ValuationCalculator(benchmark_data_path=benchmark_dir)
         val_result = val_calc.calculate_valuation(stock_data)
         
         if val_result:
@@ -362,9 +364,9 @@ This report is for informational and educational purposes only and does not cons
             if report:
                 report_file = f"ai_analysis_{symbol}_{current_date}.md"
                 # Save to generated_reports
-                report_dir = os.path.join(current_dir, "generated_reports")
+                report_dir = os.path.join(current_dir, DATA_REPORTS)
                 if not os.path.exists(report_dir):
-                    os.makedirs(report_dir)
+                    os.makedirs(report_dir, exist_ok=True)
                     
                 report_path = os.path.join(report_dir, report_file)
                 with open(report_path, 'w', encoding='utf-8') as f:

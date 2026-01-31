@@ -46,47 +46,57 @@
 
 ## 目录结构
 
-```
+```text
 .
 ├── data_acquisition/       # 数据获取模块 (Yahoo, EDGAR, FMP, Alpha Vantage)
 │   ├── benchmark_data/     # 行业基准数据获取
 │   ├── stock_data/         # 个股财务数据获取
-│   └── macro_data/         # [新增] 宏观经济数据 (FRED, Yahoo)
+│   └── macro_data/         # 宏观经济数据 (FRED, Yahoo)
 ├── fundamentals/           # 核心分析逻辑
 │   ├── financial_data/     # 财务指标计算 (Growth, Profitability, Capital)
 │   ├── financial_scorers/  # 财务评分引擎 (配置与权重)
 │   ├── technical_scorers/  # 技术指标评分
 │   ├── valuation/          # 估值模型集合
 │   ├── ai_commentary/      # AI 报告生成
-│   └── macro_indicator/    # [新增] 宏观策略分析 (周期, 风险, 资产配置)
-├── generated_data/         # 中间数据 (JSON 数据)
+│   └── macro_indicator/    # 宏观策略分析 (周期, 风险, 资产配置)
+├── data/                   # [统一数据目录]
+│   └── cache/              # 缓存数据 (gitignore)
+│       ├── stock/          # 个股分析数据 (JSON)
+│       ├── macro/          # 宏观经济快照
+│       └── benchmark/      # 行业基准数据 (JSON + CSV)
 ├── generated_reports/      # 最终报告 (AI 分析, 扫描汇总)
 ├── report_example/         # 报告样例 (Markdown Report Examples)
 ├── config/                 # 配置文件 (阈值与API设置)
-├── user_config/            # 用户配置和行业数据临时存放
+├── user_config/            # 用户私密配置 (.env)
 ├── utils/                  # 通用工具 (日志管理, 安全遮罩)
 ├── run_analysis.py         # 个股深度分析入口
 ├── run_scanner.py          # 批量扫描入口
 ├── run_getform.py          # 数据表单生成工具
-└── run_macro_report.py     # [新增] 宏观策略报告入口
+└── run_macro_report.py     # 宏观策略报告入口
 ```
 
 ## 数据存放与产物 (Data Storage & Artifacts)
 
-### 1. 用户配置与原始数据 (`user_config/`)
+### 1. 用户配置 (`user_config/`)
+
+仅存放用户私密配置，由 `.gitignore` 排除：
 
 - **`.env`**: 存放 API Key 的私密文件。
-- **`.csv` (xls)**: 从 Damodaran 下载的原始行业数据文件 (如 `wacc.csv`, `betas.csv`)。
-- **`sector_benchmarks.json`**: 静态行业基准数据文件 (由 Damodaran 的原始 CSV 数据处理生成，作为系统的默认基准)。
+- **`.env.example`**: 配置模板，帮助新用户快速设置。
 
-### 2. 生成数据 (`generated_data/`)
+### 2. 数据缓存 (`data/cache/`)
 
-系统运行过程中的中间数据存放于此：
+系统运行过程中的所有数据存放于此，由 `.gitignore` 排除：
 
-- **原始数据**: `initial_data_{SYMBOL}_{DATE}.json`
-- **行业基准**: `benchmark_data_{DATE}.json`
-- **计算结果**: `financial_data_{SYMBOL}_{DATE}.json`
-- **评分明细**: `financial_score_{SYMBOL}_{DATE}.json`
+- **`stock/`**: 个股分析数据
+  - `initial_data_{SYMBOL}_{DATE}.json` - 原始获取数据
+  - `financial_data_{SYMBOL}_{DATE}.json` - 计算后的财务指标
+  - `financial_score_{SYMBOL}_{DATE}.json` - 评分明细
+- **`macro/`**: 宏观经济数据
+  - `macro_latest.json` - 最新宏观数据快照
+- **`benchmark/`**: 行业基准数据
+  - `benchmark_data_{DATE}.json` - 行业评分基准
+  - `*_data.csv` - Damodaran 原始数据缓存
 
 ### 3. 分析报告 (`generated_reports/`)
 
@@ -94,6 +104,7 @@
 
 - **扫描报告**: `stock_scan_{DATE}.txt` (批量扫描结果汇总)
 - **AI 报告**: `ai_analysis_{SYMBOL}_{DATE}.md` (AI 深度分析报告)
+- **宏观报告**: `macro_report_{DATE}.md` (宏观策略分析报告)
 - **数据表格**: `collated_scores_{DATE}.csv` (run_getform生成的汇总表)
 
 ### 4. 报告样例 (Report Examples)

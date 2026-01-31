@@ -522,13 +522,13 @@ class StockDataLoader:
             analyst_targets=yahoo_data.analyst_targets if yahoo_data else None
         )
 
-    def save_stock_data(self, data: StockData, output_dir: str = "generated_data") -> str:
+    def save_stock_data(self, data: StockData, output_dir: str) -> str:
         """
         Save stock data to JSON file
         
         Args:
             data: StockData object
-            output_dir: Output directory
+            output_dir: Output directory (required)
             
         Returns:
             str: Saved file path

@@ -31,8 +31,13 @@ class CompanyScorer:
     Evaluates companies on 0-100 scale.
     """
     
-    def __init__(self, benchmarks_path: str = 'user_config/sector_benchmarks.json'):
-        """Initialize company scorer with industry benchmarks."""
+    def __init__(self, benchmarks_path: str):
+        """
+        Initialize company scorer with industry benchmarks.
+        
+        Args:
+            benchmarks_path: Path to sector_benchmarks.json file (required)
+        """
         with open(benchmarks_path, encoding='utf-8') as f:
             self.benchmarks = json.load(f)
         

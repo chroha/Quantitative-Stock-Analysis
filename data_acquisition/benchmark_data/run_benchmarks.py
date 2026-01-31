@@ -26,9 +26,7 @@ def main():
         
         if output_file.exists():
             print(f"File already exists: {output_file}")
-            # In automated/runner mode, maybe we default to overwrite or ask?
-            # User said: "不用参数... 还能看到相关日志"
-            # Interactive check is fine for a runner script.
+            # Interactive check for overwrite is appropriate for a runner script
             response = input("Overwrite? (y/N): ").strip().lower()
             if response != 'y':
                 print("Operation cancelled.")

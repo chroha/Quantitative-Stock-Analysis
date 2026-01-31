@@ -46,55 +46,66 @@ A completely new macroeconomic analysis module for top-down market strategy:
 
 ## Directory Structure
 
-```
+```text
 .
 ├── data_acquisition/       # Data Fetching Modules (Yahoo, EDGAR, FMP, Alpha Vantage)
 │   ├── benchmark_data/     # Industry Benchmark Data
 │   ├── stock_data/         # Stock Financial Data
-│   └── macro_data/         # [NEW] Macro Economic Data
+│   └── macro_data/         # Macro Economic Data (FRED, Yahoo)
 ├── fundamentals/           # Core Analysis Logic
-│   ├── financial_data/     # Metric Calculation (Growth, Profitability, Capital)
-│   ├── financial_scorers/  # Financial Scoring Engine (Config & Weights)
+│   ├── financial_data/     # Metric Calculation (Growth, Profitability)
+│   ├── financial_scorers/  # Financial Scoring Engine
 │   ├── technical_scorers/  # Technical Indicator Scoring
 │   ├── valuation/          # Valuation Models
 │   ├── ai_commentary/      # AI Report Generation
-│   └── macro_indicator/    # [NEW] Macro Strategy Logic
-├── generated_data/         # Intermediate Data (JSON)
-├── generated_reports/      # Final Reports (AI Analysis, Scan Summaries)
+│   └── macro_indicator/    # Macro Strategy Logic
+├── data/                   # [Unified Data Directory]
+│   └── cache/              # Cached data (gitignored)
+│       ├── stock/          # Per-stock analysis data (JSON)
+│       ├── macro/          # Macro economic snapshots
+│       └── benchmark/      # Industry benchmarks (JSON + CSV)
+├── generated_reports/      # Final Reports (AI, Scan Summaries)
 ├── report_example/         # Report Examples
 ├── config/                 # Configuration (Thresholds & Settings)
-├── user_config/            # User Config & Temp Industry Data
-├── utils/                  # Utilities (Logger, Masking, Schema)
+├── user_config/            # User Private Config (.env only)
+├── utils/                  # Utilities (Logger, Schema, Helpers)
 ├── run_analysis.py         # Single Stock Analysis Entry
 ├── run_scanner.py          # Batch Scanner Entry
 ├── run_getform.py          # Form Generation Tool
-└── run_macro_report.py     # [NEW] Macro Strategy Report Entry
+└── run_macro_report.py     # Macro Strategy Report Entry
 ```
 
 ## Data Storage & Artifacts
 
-### 1. User Config & Raw Data (`user_config/`)
+### 1. User Config (`user_config/`)
+
+Private user configuration only, excluded by `.gitignore`:
 
 - **`.env`**: Private file storing your API Keys.
-- **`.csv` (xls)**: Raw industry data files downloaded from Damodaran (e.g., `wacc.csv`, `betas.csv`).
-- **`sector_benchmarks.json`**: Static industry benchmark data (Generated from Damodaran's raw CSVs, serving as the system default).
+- **`.env.example`**: Template to help new users get started.
 
-### 2. Generated Data (`generated_data/`)
+### 2. Data Cache (`data/cache/`)
 
-Intermediate processing data is stored here:
+All runtime data is stored here, excluded by `.gitignore`:
 
-- **Raw Stock Data**: `initial_data_{SYMBOL}_{DATE}.json`
-- **Benchmarks**: `benchmark_data_{DATE}.json`
-- **Metrics**: `financial_data_{SYMBOL}_{DATE}.json`
-- **Scores**: `financial_score_{SYMBOL}_{DATE}.json`
+- **`stock/`**: Per-stock analysis data
+  - `initial_data_{SYMBOL}_{DATE}.json` - Raw fetched data
+  - `financial_data_{SYMBOL}_{DATE}.json` - Calculated metrics
+  - `financial_score_{SYMBOL}_{DATE}.json` - Score details
+- **`macro/`**: Macro economic data
+  - `macro_latest.json` - Latest macro snapshot
+- **`benchmark/`**: Industry benchmark data
+  - `benchmark_data_{DATE}.json` - Industry scoring benchmarks
+  - `*_data.csv` - Damodaran raw data cache
 
 ### 3. Analysis Reports (`generated_reports/`)
 
-Final human-readable reports are stored here:
+Final human-readable reports:
 
-- **Scanner Report**: `stock_scan_{DATE}.txt` (Summary of batch scan)
-- **AI Report**: `ai_analysis_{SYMBOL}_{DATE}.md` (Deep dive analysis by AI)
-- **Data Table**: `collated_scores_{DATE}.csv` (Aggregated CSV report from run_getform.py)
+- **Scanner Report**: `stock_scan_{DATE}.txt` (Batch scan summary)
+- **AI Report**: `ai_analysis_{SYMBOL}_{DATE}.md` (AI deep dive)
+- **Macro Report**: `macro_report_{DATE}.md` (Macro strategy analysis)
+- **Data Table**: `collated_scores_{DATE}.csv` (Aggregated CSV)
 
 ### 4. Report Examples
 

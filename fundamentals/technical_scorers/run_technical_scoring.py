@@ -16,6 +16,7 @@ project_root = os.path.dirname(os.path.dirname(current_dir))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
+from config.constants import DATA_CACHE_STOCK
 from fundamentals.technical_scorers.technical_scorers_output import TechnicalScorerGenerator
 
 def main():
@@ -29,8 +30,8 @@ def main():
             print("[ERROR] Symbol cannot be empty")
             return
             
-        # By default uses "generated_data" in CWD.
-        output_dir = os.path.join(project_root, "generated_data")
+        # Use unified data cache path
+        output_dir = os.path.join(project_root, DATA_CACHE_STOCK)
         
         generator = TechnicalScorerGenerator(data_dir=output_dir)
         result = generator.generate(symbol)
