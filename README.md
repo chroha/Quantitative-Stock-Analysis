@@ -192,6 +192,25 @@ python run_macro_report.py
 # Starts interactive menu to generate report or refresh data
 ```
 
+## Development & Debugging
+
+### Data Audit System (New)
+
+Troubleshoot data anomalies, missing fields, or DDM failures using the built-in audit tool:
+
+```bash
+python run_data_audit.py --symbol TSM
+```
+
+**What it does:**
+
+1. **Captures Raw Data**: Saves exact API responses from Yahoo/FMP/EDGAR to `debug_data/`.
+2. **Isolates Fetchers**: Runs each data source in isolation to verify parsing logic.
+3. **Traces Pipeline**: Snapshots data as it flows through merging and currency normalization steps.
+4. **Reports**:
+    - `yahoo_unmapped_fields.txt`: Identifies API fields not utilized by our schema.
+    - `final_provenance_report.txt`: Shows the exact source (Yahoo vs FMP) of every data point.
+
 ## Core Algorithms & Logic
 
 The system incorporates a structured quantitative evaluation engine.

@@ -45,7 +45,7 @@ from pydantic import BaseModel, Field
 
 # Data source types for provenance tracking
 # Extended to support 4-tier cascade: Yahoo > FMP > Alpha Vantage > SEC EDGAR
-DataSource = Literal['yahoo', 'fmp', 'alphavantage', 'sec_edgar', 'manual']
+DataSource = Literal['yahoo', 'fmp', 'alphavantage', 'sec_edgar', 'manual', 'normalized']
 
 
 class FieldWithSource(BaseModel):
@@ -325,6 +325,8 @@ YAHOO_FIELD_MAPPING = {
     'Stock Based Compensation': 'std_stock_based_compensation',
     'Repurchase Of Capital Stock': 'std_repurchase_of_stock',
     'Common Stock Repurchased': 'std_repurchase_of_stock',  # Alternative name
+    'Cash Dividends Paid': 'std_dividends_paid',
+    'Dividends Paid': 'std_dividends_paid',
 }
 
 # FMP field names -> Unified schema names
@@ -356,4 +358,6 @@ FMP_FIELD_MAPPING = {
     # Cash flow (FMP has this field)
     'stockBasedCompensation': 'std_stock_based_compensation',
     'commonStockRepurchased': 'std_repurchase_of_stock',
+    'dividendsPaid': 'std_dividends_paid',
 }
+

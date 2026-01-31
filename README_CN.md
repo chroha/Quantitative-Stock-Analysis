@@ -192,6 +192,25 @@ python run_macro_report.py
 # 启动交互式菜单，选择生成报告或刷新数据
 ```
 
+## 开发与调试 (Development & Debugging)
+
+### 数据审计系统 (Data Audit System)
+
+本项目内置了强大的数据审计工具，用于排查数据异常、字段缺失或 DDM 估值失败等问题：
+
+```bash
+python run_data_audit.py --symbol TSM
+```
+
+**功能说明:**
+
+1. **原始经过抓取 (Raw Capture)**: 将 Yahoo/FMP/EDGAR 的 API 原始响应保存至 `debug_data/`。
+2. **隔离测试 (Isolation)**: 独立运行每个数据源的解析器，验证解析逻辑是否正确。
+3. **链路追踪 (Pipeline Trace)**: 对数据合并、货币标准化等中间状态进行快照保存。
+4. **诊断报告 (Reports)**:
+    - `yahoo_unmapped_fields.txt`: 识别 API 返回了但我们 schema 未使用的字段。
+    - `final_provenance_report.txt`: 精确追踪每个数据点（如营收）的具体来源（Yahoo 还是 FMP）。
+
 ## 核心算法与逻辑 (Core Algorithms & Logic)
 
 本系统除了数据展示外，也包含了一套量化评估逻辑。

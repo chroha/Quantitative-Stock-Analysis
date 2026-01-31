@@ -120,7 +120,7 @@ class CurrencyNormalizer:
                         new_val = old_val * fx_rate
                         
                         # Use setattr with a fresh FieldWithSource
-                        new_obj = FieldWithSource(value=new_val, source='manual')
+                        new_obj = FieldWithSource(value=new_val, source='normalized')
                         setattr(stmt, field, new_obj)
                         
                         if count < 3: # Minimal trace

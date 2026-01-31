@@ -60,12 +60,20 @@ class DDMModel(BaseValuationModel):
             dividends_paid = 0
             latest_cf = None
             
-            for cf in sorted_cfs[:2]:  # Check latest 2 periods
+            for cf in sorted_cfs[:6]:  # Check latest 6 periods (TTM + FY + 4 Quarters)
                 if hasattr(cf, 'std_dividends_paid') and cf.std_dividends_paid and cf.std_dividends_paid.value:
                     if cf.std_dividends_paid.value != 0:
                         dividends_paid = abs(cf.std_dividends_paid.value)
+                        
+                        # Handle Period Type (Annualize if Quarter)
+                        period_type = getattr(cf, 'std_period_type', 'FY') # Default to FY if missing
+                        if period_type == 'Q':
+                            logger.info(f"{stock_data.symbol}: Found Quarterly dividend in {cf.std_period}. Annualizing (x4).")
+                            dividends_paid *= 4
+                        else:
+                            logger.info(f"{stock_data.symbol}: Found {period_type} dividend data in {cf.std_period}")
+                            
                         latest_cf = cf
-                        logger.info(f"{stock_data.symbol}: Found dividend data in period {cf.std_period}")
                         break
             
             if dividends_paid == 0:
