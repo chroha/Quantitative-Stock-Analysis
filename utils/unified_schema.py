@@ -247,6 +247,25 @@ class CompanyProfile(BaseModel):
     std_financial_currency: Optional[TextFieldWithSource] = Field(None, description="Currency used in financial statements (e.g., 'TWD')")
     std_listing_currency: Optional[TextFieldWithSource] = Field(None, description="Currency stock is listed in (e.g., 'USD')")
 
+    # New Fields Added 2026-02-01 (Ownership, Short Interest, Advanced Valuation)
+    std_held_percent_insiders: Optional[FieldWithSource] = Field(None, description="Percentage of shares held by insiders")
+    std_held_percent_institutions: Optional[FieldWithSource] = Field(None, description="Percentage of shares held by institutions")
+    std_short_ratio: Optional[FieldWithSource] = Field(None, description="Short ratio (days to cover)")
+    std_short_percent_of_float: Optional[FieldWithSource] = Field(None, description="Short percentage of float")
+    std_enterprise_value: Optional[FieldWithSource] = Field(None, description="Enterprise Value")
+    std_enterprise_to_ebitda: Optional[FieldWithSource] = Field(None, description="Enterprise Value to EBITDA")
+
+    # New Fields Added 2026-02-01 (Round 2: Analyst, Risk, Per Share)
+    std_recommendation_key: Optional[TextFieldWithSource] = Field(None, description="Analyst recommendation key (buy, hold, etc)")
+    std_52_week_change: Optional[FieldWithSource] = Field(None, description="52 Week Price Change (%)")
+    std_sandp_52_week_change: Optional[FieldWithSource] = Field(None, description="S&P 500 52 Week Change (%)")
+    std_current_ratio: Optional[FieldWithSource] = Field(None, description="Current Ratio (MRQ)")
+    std_quick_ratio: Optional[FieldWithSource] = Field(None, description="Quick Ratio (MRQ)")
+    std_audit_risk: Optional[FieldWithSource] = Field(None, description="Audit Risk Score")
+    std_board_risk: Optional[FieldWithSource] = Field(None, description="Board Risk Score")
+    std_total_cash_per_share: Optional[FieldWithSource] = Field(None, description="Total Cash Per Share")
+    std_revenue_per_share: Optional[FieldWithSource] = Field(None, description="Revenue Per Share")
+
 
 class StockData(BaseModel):
     """

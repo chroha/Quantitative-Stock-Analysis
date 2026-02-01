@@ -33,7 +33,27 @@ def build_analysis_prompt(data: Dict[str, Any]) -> str:
     stock_info = data.get('stock_info', {})
     latest_period = stock_info.get('latest_period', 'Unknown')
     history_years = stock_info.get('history_years', '?')
-        
+    
+    # Pre-calculate combined scores for headers
+    # Trend + Momentum
+    s1_score = tech_trend.get('score', 0) + tech_mom.get('score', 0)
+    s1_max = tech_trend.get('max', 0) + tech_mom.get('max', 0)
+    
+    # Volatility + Structure
+    s2_score = tech_vol.get('score', 0) + tech_struct.get('score', 0)
+    s2_max = tech_vol.get('max', 0) + tech_struct.get('max', 0)
+    
+    # Volume (already single)
+    s3_score = tech_volume.get('score', 0)
+    s3_max = tech_volume.get('max', 0)
+    
+    # Total Technical
+    tech_total = tech.get('total', {}).get('score', 0) # total_score wrapped in 'total'? check data_aggregator
+    # In data_aggregator: "total": {"score": ...}
+    
+    # Financial Scores (Just for completeness if needed, currently prompts refer to X/X)
+    # But let's fix Technical headers first as requested.
+
     return f"""
 <stock_data>
 {json_str}
@@ -93,35 +113,73 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | 资本支出 | X% | X/{g(cap, 'capex')} | [简评] |
 | 股权激励 | X | X/{g(cap, 'sbc')} | [简评] |
 
-## 二、技术面 (得分:X)
+### 4. 补充数据
+| 指标 | 数值 | 解读 |
+|---|---|---|
+| 企业价值 (Ent Value) | X | [Yahoo计算值] |
+| EV/EBITDA | X | [Yahoo计算值] |
+| 每股现金 | X | [每股流动性分析] |
+| 每股营收 | X | [每股创收能力分析] |
+| 流动比率 | X | [短期偿债能力 >1.5] |
+| 速动比率 | X | [即时偿债能力 >1.0] |
+| 审计风险 | X | [Yahoo审计评分] |
+| 董事会风险 | X | [Yahoo治理评分] |
+
+## 二、技术面 (得分:{tech_total})
 **评:** [总评]
 
-### 1. 趋势与动量 (X/X)
+### 1. 趋势强度 (X/X)
 | 指标 | 数值 | 得分 | 信号 | 解读 |
 |---|---|---|---|---|
 | ADX趋势 | X | X/{g(tech_trend, 'adx')} | [信号] | [简评] |
 | 均线系统 | - | X/{g(tech_trend, 'multi_ma')} | [信号] | [简评] |
 | 52周位置 | X% | X/{g(tech_trend, '52w_pos')} | [信号] | [简评] |
+
+### 2. 动量指标 (X/X)
+| 指标 | 数值 | 得分 | 信号 | 解读 |
+|---|---|---|---|---|
 | RSI指标 | X | X/{g(tech_mom, 'rsi')} | [信号] | [简评] |
 | MACD | X | X/{g(tech_mom, 'macd')} | [信号] | [简评] |
 | 变动率(ROC) | X | X/{g(tech_mom, 'roc')} | [信号] | [简评] |
 
-### 2. 波动与结构 (X/X)
+### 3. 波动分析 (X/X)
 | 指标 | 数值 | 得分 | 信号 | 解读 |
 |---|---|---|---|---|
 | ATR波动 | X% | X/{g(tech_vol, 'atr')} | [信号] | [简评] |
 | 布林带 | - | X/{g(tech_vol, 'bollinger')} | [信号] | [简评] |
+
+### 4. 价格结构 (X/X)
+| 指标 | 数值 | 得分 | 信号 | 解读 |
+|---|---|---|---|---|
 | 支撑/阻力 | - | X/{g(tech_struct, 'resistance')} | [信号] | [简评] |
 | 高低结构 | - | X/{g(tech_struct, 'high_low')} | [信号] | [简评] |
 
-### 3. 量价分析 (X/X)
+### 5. 量价分析 (X/X)
 | 指标 | 数值 | 得分 | 信号 | 解读 |
 |---|---|---|---|---|
 | OBV能量 | X | X/{g(tech_volume, 'obv')} | [信号] | [简评] |
 | 量能强度 | X | X/{g(tech_volume, 'vol_strength')} | [信号] | [简评] |
 
+### 6. 补充数据
+| 指标 | 数值 | 解读 |
+|---|---|---|
+| 52周涨幅 | X% | [个股绝对涨幅简评] |
+| 相对标普500 | X% | [相对强弱分析 (Alpha)] |
+| 机构持股 | X% | [分析机构持仓比例对其稳定性的影响] |
+| 内部持股 | X% | [分析内部人持股比例对管理层信心的体现] |
+| 做空比率 (Short Ratio) | X | [分析做空天数，判断轧空风险] |
+| 流通盘做空比 (Short % Float) | X% | [分析做空比例，市场看空情绪] |
+
 ## 三、估值分析 (加权估价:$X)
 **当前价:** $X | 上行空间:X%
+
+### 1. 华尔街预期
+| 指标 | 数值 | 解读 |
+|---|---|---|
+| 评级建议 | X | [如 Buy/Hold, 请结合评分关键字分析] |
+| 目标价 (High/Low) | $X - $X | [分析目标价范围与当前价的差距] |
+| 分析师数量 | X | [分析样本置信度] |
+> 注意: 在分析 EV/EBITDA 时，请对比 Yahoo 的 EV/EBITDA (在 advanced_metrics 中) 与我们计算值的差异。如果差异巨大，请在“解读”中指出。
 
 | 模型 | 公允价 | 权重 | 偏离度 | 解读 |
 |------|--------|------|--------|----|
@@ -180,35 +238,76 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | Capex | X% | X/{g(cap, 'capex')} | [Brief Comment] |
 | SBC | X | X/{g(cap, 'sbc')} | [Brief Comment] |
 
-## II. Technical Analysis (Score: X)
+### 4. Supplemental Data
+| Metric | Value | Comment |
+|---|---|---|
+| Enterprise Value | X | [Yahoo Value] |
+| EV/EBITDA | X | [Yahoo Value] |
+| Cash/Share | X | [Liquidity per share] |
+| Rev/Share | X | [Revenue per share] |
+| Current Ratio | X | [Solvency check >1.5] |
+| Quick Ratio | X | [Liquidity check >1.0] |
+| Audit Risk | X | [Yahoo audit score] |
+| Board Risk | X | [Yahoo board score] |
+
+## II. Technical Analysis (Score: {tech_total})
 **Comment:** [Overall Comment]
 
-### 1. Trend & Momentum (X/X)
+### 1. Trend Strength (X/X)
 | Indicator | Value | Score | Signal | Interpretation |
 |---|---|---|---|---|
 | ADX | {{ tech_trend.adx.val }} | {{ tech_trend.adx.score }}/{{ tech_trend.adx.max }} | {{ tech_trend.adx.signal }} | Trend Strength |
 | Multi MA | - | {{ tech_trend.multi_ma.score }}/{{ tech_trend.multi_ma.max }} | {{ tech_trend.multi_ma.signal }} | MA Arrangement |
 | 52W Position | {{ tech_trend.52w_pos.val }} | {{ tech_trend.52w_pos.score }}/{{ tech_trend.52w_pos.max }} | {{ tech_trend.52w_pos.signal }} | Price Position |
+
+### 2. Momentum (X/X)
+| Indicator | Value | Score | Signal | Interpretation |
+|---|---|---|---|---|
 | RSI | {{ tech_momentum.rsi.val }} | {{ tech_momentum.rsi.score }}/{{ tech_momentum.rsi.max }} | {{ tech_momentum.rsi.signal }} | Momentum State |
 | MACD | - | {{ tech_momentum.macd.score }}/{{ tech_momentum.macd.max }} | {{ tech_momentum.macd.signal }} | Trend Confirmation |
 | ROC | {{ tech_momentum.roc.val }} | {{ tech_momentum.roc.score }}/{{ tech_momentum.roc.max }} | {{ tech_momentum.roc.signal }} | Rate of Change |
 
-### 2. Volatility & Structure (X/X)
+### 3. Volatility (X/X)
 | Indicator | Value | Score | Signal | Interpretation |
 |---|---|---|---|---|
 | ATR | {{ tech_volatility.atr.val }} | {{ tech_volatility.atr.score }}/{{ tech_volatility.atr.max }} | {{ tech_volatility.atr.signal }} | Volatility Level |
 | Bollinger | - | {{ tech_volatility.bollinger.score }}/{{ tech_volatility.bollinger.max }} | {{ tech_volatility.bollinger.signal }} | Band Position |
+
+### 4. Price Structure (X/X)
+| Indicator | Value | Score | Signal | Interpretation |
+|---|---|---|---|---|
 | Resistance | {{ tech_structure.resistance.val }} | {{ tech_structure.resistance.score }}/{{ tech_structure.resistance.max }} | {{ tech_structure.resistance.signal }} | Dist to Res |
 | High/Low | - | {{ tech_structure.high_low.score }}/{{ tech_structure.high_low.max }} | {{ tech_structure.high_low.signal }} | Market Structure |
 
-### 3. Volume Analysis (X/X)
+### 5. Volume Analysis (X/X)
 | Indicator | Value | Score | Signal | Interpretation |
 |---|---|---|---|---|
 | OBV | {{ tech_volume.obv.val }} | {{ tech_volume.obv.score }}/{{ tech_volume.obv.max }} | {{ tech_volume.obv.signal }} | On-Balance Vol |
 | Vol Strength | {{ tech_volume.vol_strength.val }} | {{ tech_volume.vol_strength.score }}/{{ tech_volume.vol_strength.max }} | {{ tech_volume.vol_strength.signal }} | Relative Vol |
 
+
+### 6. Supplemental Data
+| Metric | Value | Interpretation |
+|---|---|---|
+| 52W Change | X% | [Absolute 1Y Performance] |
+| vs S&P 500 | X% | [Relative Strength (Alpha)] |
+| Institutions Held | X% | [Analyze institutional ownership stability] |
+| Insiders Held | X% | [Analyze insider confidence] |
+| Short Ratio | X | [Analyze day-to-cover and squeeze risk] |
+| Short % of Float | X% | [Analyze bearish sentiment] |
+
 ## III. Valuation Analysis (Weighted: $X)
 **Price:** $X | **Upside:** X%
+
+### 1. Analyst Consensus
+| Metric | Value | Comment |
+|---|---|---|
+| Recommendation | X | [Buy/Hold/Sell analysis] |
+| Target (High/Low) | $X - $X | [Compare target range with current price] |
+| Analyst Count | X | [Confidence level based on sample size] |
+
+> Note: For EV/EBITDA, compare Yahoo's provided EV/EBITDA (in advanced_metrics) with our calculated value. If difference is significant, mention it.
+
 
 | Model | Fair Value | Weight | Upside | Comment |
 |-------|------------|--------|--------|---------|

@@ -96,6 +96,26 @@ class YahooFetcher(BaseFetcher):
                 std_forward_pe=self._create_field_with_source(info.get('forwardPE')),
                 std_peg_ratio=self._create_field_with_source(info.get('trailingPegRatio')),
                 std_earnings_growth=self._create_field_with_source(info.get('earningsGrowth')),
+                
+                # New Fields (Ownership, Short Interest, EV)
+                std_held_percent_insiders=self._create_field_with_source(info.get('heldPercentInsiders')),
+                std_held_percent_institutions=self._create_field_with_source(info.get('heldPercentInstitutions')),
+                std_short_ratio=self._create_field_with_source(info.get('shortRatio')),
+                std_short_percent_of_float=self._create_field_with_source(info.get('shortPercentOfFloat')),
+                std_enterprise_value=self._create_field_with_source(info.get('enterpriseValue')),
+                std_enterprise_to_ebitda=self._create_field_with_source(info.get('enterpriseToEbitda')),
+
+                # New Fields (Round 2: Analyst, Risk, Per Share)
+                std_recommendation_key=self._create_field_with_source(info.get('recommendationKey')),
+                std_52_week_change=self._create_field_with_source(info.get('52WeekChange')),
+                std_sandp_52_week_change=self._create_field_with_source(info.get('SandP52WeekChange')),
+                std_current_ratio=self._create_field_with_source(info.get('currentRatio')),
+                std_quick_ratio=self._create_field_with_source(info.get('quickRatio')),
+                std_audit_risk=self._create_field_with_source(info.get('auditRisk')),
+                std_board_risk=self._create_field_with_source(info.get('boardRisk')),
+                std_total_cash_per_share=self._create_field_with_source(info.get('totalCashPerShare')),
+                std_revenue_per_share=self._create_field_with_source(info.get('revenuePerShare')),
+
                 # Currency Fields (CRITICAL for ADR/International Stock Currency Normalization)
                 std_financial_currency=TextFieldWithSource(value=info.get('financialCurrency', 'USD'), source='yahoo') if info.get('financialCurrency') else None,
                 std_listing_currency=TextFieldWithSource(value=info.get('currency', 'USD'), source='yahoo') if info.get('currency') else None,

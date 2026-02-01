@@ -67,8 +67,59 @@ class DataAggregator:
         history_years = 0
         latest_period = "Unknown"
         history_years = 0
+        advanced_metrics = {}
         if raw_path:
             raw_data = self._load_json(raw_path)
+            profile = raw_data.get('profile', {})
+            
+            # Helper to safely get value from field dict
+            def get_val(key):
+                obj = profile.get(key)
+                if isinstance(obj, dict): return obj.get('value')
+                return obj
+            
+            # Add advanced metrics
+            analyst_targets = raw_data.get('analyst_targets', {})
+            def get_target(key):
+                obj = analyst_targets.get(key)
+                if isinstance(obj, dict): return obj.get('value')
+                return obj
+
+            advanced_metrics = {
+                "ownership": {
+                    "insiders_pct": get_val('std_held_percent_insiders'),
+                    "institutions_pct": get_val('std_held_percent_institutions')
+                },
+                "short_interest": {
+                    "ratio": get_val('std_short_ratio'),
+                    "float_pct": get_val('std_short_percent_of_float')
+                },
+                "valuation_extended": {
+                    "enterprise_value": get_val('std_enterprise_value'),
+                    "ev_to_ebitda": get_val('std_enterprise_to_ebitda')
+                },
+                "analyst_details": {
+                    "rec_key": get_val('std_recommendation_key'),
+                    "target_high": get_target('std_price_target_high'),
+                    "target_low": get_target('std_price_target_low'),
+                    "num_analysts": get_target('std_number_of_analysts')
+                },
+                "relative_strength": {
+                    "stock_52w_change": get_val('std_52_week_change'),
+                    "sp500_52w_change": get_val('std_sandp_52_week_change')
+                },
+                "liquidity_risk": {
+                    "current_ratio": get_val('std_current_ratio'),
+                    "quick_ratio": get_val('std_quick_ratio'),
+                    "audit_risk": get_val('std_audit_risk'),
+                    "board_risk": get_val('std_board_risk')
+                },
+                "per_share_extended": {
+                    "cash_ps": get_val('std_total_cash_per_share'),
+                    "rev_ps": get_val('std_revenue_per_share')
+                }
+            }
+
             stmts = raw_data.get('income_statements', [])
             bs_stmts = raw_data.get('balance_sheets', [])
             
@@ -100,7 +151,7 @@ class DataAggregator:
                 latest_period = p2
 
         # Build simplified structure
-        aggregated = {
+        aggregated_base = {
             "stock_info": {
                 "symbol": symbol,
                 "sector": fin_data.get('metadata', {}).get('sector', 'Unknown'), # Sector moved to meta in fin data? Check structure
@@ -114,6 +165,12 @@ class DataAggregator:
             "technical_score": self._simplify_technical(tech_data.get('score', {})),
             "valuation": self._simplify_valuation(val_data)
         }
+        
+        # Merge advanced metrics if they exist
+        if advanced_metrics:
+            aggregated_base["advanced_metrics"] = advanced_metrics
+            
+        aggregated = aggregated_base
         
         # Cross-fill price/sector if missing
         if aggregated['stock_info']['sector'] == 'Unknown':
@@ -605,8 +662,51 @@ class DataAggregator:
             lines.append(f"| EPS (TTM) | 每股收益 | {format_val(eps, MetricFormat.CURRENCY)} | `profile.std_eps` |")
             lines.append(f"| Forward EPS | 前瞻每股收益 | {format_val(forward_eps, MetricFormat.CURRENCY)} | `profile.std_forward_eps` |")
             lines.append(f"| Book Value/Share | 每股账面价值 | {format_val(book_value, MetricFormat.CURRENCY)} | `std_book_value_per_share` |")
-            lines.append(f"| Earnings Growth | 盈利增长率 | {format_val(earnings_growth, MetricFormat.PERCENT)} | `profile.std_earnings_growth` |")
+            lines.append(f"| Earnings Growth | 盈利增长率 | {format_val(get_field_val(profile, 'std_earnings_growth'), MetricFormat.PERCENT)} | `profile.std_earnings_growth` |")
+            
+            # === Supplemental Data ===
+            
+            # Fetch analyst targets for display
+            analyst_targets = {}
+            if raw_path:
+                raw_d = self._load_json(raw_path)
+                analyst_targets = raw_d.get('analyst_targets', {})
+
+            def get_target(key):
+                obj = analyst_targets.get(key)
+                if isinstance(obj, dict): return obj.get('value')
+                return obj
+
+            lines.append("")
+            lines.append("### 4. 补充数据 (Supplemental Data)\n")
+            lines.append("| Category | English Name | 中文名称 | Value (数值) | Logic (逻辑) |")
+            lines.append("|---|---|---|---|---|")
+            
+            # Group 1: Analyst Consensus
+            lines.append(f"| **Analyst** | Recommendation | 评级建议 | {get_field_val(profile, 'std_recommendation_key')} | `recommendationKey` |")
+            lines.append(f"| | Target High | 目标价上限 | {format_val(get_target('std_price_target_high'), MetricFormat.CURRENCY)} | `targetHighPrice` |")
+            lines.append(f"| | Target Low | 目标价下限 | {format_val(get_target('std_price_target_low'), MetricFormat.CURRENCY)} | `targetLowPrice` |")
+            lines.append(f"| | Num Analysts | 分析师数量 | {get_target('std_number_of_analysts')} | `numberOfAnalystOpinions` |")
+
+            # Group 2: Relative Strength & Risk
+            lines.append(f"| **Risk/Trend** | 52W Change | 年涨跌幅 | {format_val(get_field_val(profile, 'std_52_week_change'), MetricFormat.PERCENT)} | `52WeekChange` |")
+            lines.append(f"| | vs S&P 500 | 标普同期 | {format_val(get_field_val(profile, 'std_sandp_52_week_change'), MetricFormat.PERCENT)} | `SandP52WeekChange` |")
+            lines.append(f"| | Audit Risk | 审计风险 | {get_field_val(profile, 'std_audit_risk')} | `auditRisk` |")
+            lines.append(f"| | Board Risk | 董事会风险 | {get_field_val(profile, 'std_board_risk')} | `boardRisk` |")
+
+            # Group 3: Liquidity & Per Share
+            lines.append(f"| **Liquidity** | Current Ratio | 流动比率 | {format_val(get_field_val(profile, 'std_current_ratio'), MetricFormat.DECIMAL)} | `currentRatio` |")
+            lines.append(f"| | Quick Ratio | 速动比率 | {format_val(get_field_val(profile, 'std_quick_ratio'), MetricFormat.DECIMAL)} | `quickRatio` |")
+            lines.append(f"| | Cash/Share | 每股现金 | {format_val(get_field_val(profile, 'std_total_cash_per_share'), MetricFormat.CURRENCY)} | `totalCashPerShare` |")
+            lines.append(f"| | Rev/Share | 每股营收 | {format_val(get_field_val(profile, 'std_revenue_per_share'), MetricFormat.CURRENCY)} | `revenuePerShare` |")
+
+            # Group 4: Ownership & Sentiment
+            lines.append(f"| **Sentiment** | Insiders Held | 内部持股 | {format_val(get_field_val(profile, 'std_held_percent_insiders'), MetricFormat.PERCENT)} | `heldPercentInsiders` |")
+            lines.append(f"| | Institutions | 机构持股 | {format_val(get_field_val(profile, 'std_held_percent_institutions'), MetricFormat.PERCENT)} | `heldPercentInstitutions` |")
+            lines.append(f"| | Short Ratio | 做空比率 | {format_val(get_field_val(profile, 'std_short_ratio'), MetricFormat.DECIMAL)} | `shortRatio` |")
+            lines.append(f"| | Short % Float | 做空流通比 | {format_val(get_field_val(profile, 'std_short_percent_of_float'), MetricFormat.PERCENT)} | `shortPercentOfFloat` |")
+            lines.append(f"| | Ent Value | 企业价值 | {format_val(get_field_val(profile, 'std_enterprise_value'), MetricFormat.CURRENCY_LARGE)} | `enterpriseValue` |")
+            lines.append(f"| | EV/EBITDA | EV/EBITDA | {format_val(get_field_val(profile, 'std_enterprise_to_ebitda'), MetricFormat.DECIMAL)} | `enterpriseToEbitda` |")
 
         lines.append("")
         return "\n".join(lines)
-

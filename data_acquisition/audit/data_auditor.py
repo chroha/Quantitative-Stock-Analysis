@@ -93,7 +93,13 @@ class DataAuditor:
                 'trailingPE', 'forwardPE', 'pegRatio', 'priceToBook', 
                 'trailingEps', 'forwardEps', 'currency', 'financialCurrency', 'exchange',
                 'regularMarketOpen', 'regularMarketDayHigh', 'regularMarketDayLow', 
-                'regularMarketPreviousClose', 'regularMarketVolume'
+                'regularMarketPreviousClose', 'regularMarketVolume',
+                'heldPercentInsiders', 'heldPercentInstitutions', 'shortRatio', 
+                'shortPercentOfFloat', 'enterpriseValue', 'enterpriseToEbitda',
+                'recommendationKey', '52WeekChange', 'SandP52WeekChange',
+                'currentRatio', 'quickRatio', 'auditRisk', 'boardRisk',
+                'totalCashPerShare', 'revenuePerShare',
+                'targetLowPrice', 'targetHighPrice', 'targetMeanPrice', 'targetMedianPrice', 'numberOfAnalystOpinions'
             }
             
             possible_unmapped = set(unmapped) - KNOWN_MANUAL_FIELDS

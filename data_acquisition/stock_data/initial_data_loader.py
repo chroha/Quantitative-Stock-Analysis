@@ -109,42 +109,50 @@ class StockDataLoader:
             
             # DETAILED LOGGING: Show what we're summing
             logger.info(f"[TTM Builder] Attempting to sum {len(quarters)} quarters:")
-            for i, q in enumerate(quarters[:4]):
-                rev_val = q.std_revenue.value if q.std_revenue else None
-                logger.info(f"  [{i+1}] {q.std_period} ({q.std_period_type}): Revenue = {rev_val:,.0f}" if rev_val else f"  [{i+1}] {q.std_period}: No Revenue")
             
-            # ENHANCED SANITY CHECK: Multi-condition validation to avoid false positives
-            # This prevents mislabeled annual data from being summed, while allowing seasonal variations
-            total_rev_sum = sum([q.std_revenue.value for q in quarters[:4] if q.std_revenue and q.std_revenue.value is not None])
-            if total_rev_sum > 0:
-                logger.info(f"[TTM Builder] Total revenue sum: {total_rev_sum:,.0f}")
-                
-                for q in quarters[:4]:
-                    if not q.std_revenue or not q.std_revenue.value:
-                        continue
+            # Check if this statement type has revenue (IncomeStatement only)
+            has_revenue = hasattr(quarters[0], 'std_revenue')
+
+            for i, q in enumerate(quarters[:4]):
+                rev_str = "N/A (Not Income)"
+                if has_revenue and q.std_revenue:
+                    rev_val = q.std_revenue.value
+                    rev_str = f"Revenue = {rev_val:,.0f}" if rev_val is not None else "Revenue = None"
+                logger.info(f"  [{i+1}] {q.std_period} ({q.std_period_type}): {rev_str}")
+            
+            # ENHANCED SANITY CHECK: Only applies if we have revenue to check against
+            if has_revenue:
+                total_rev_sum = sum([q.std_revenue.value for q in quarters[:4] if q.std_revenue and q.std_revenue.value is not None])
+                if total_rev_sum > 0:
+                    logger.info(f"[TTM Builder] Total revenue sum: {total_rev_sum:,.0f}")
                     
-                    rev_ratio = q.std_revenue.value / total_rev_sum
-                    
-                    # Condition 1: Revenue ratio > 50% (very conservative - allows up to 50% seasonality)
-                    high_ratio = rev_ratio > 0.50
-                    
-                    # Condition 2: Period ends on 12-31 (typical year-end, likely annual report)
-                    is_year_end = q.std_period.endswith('-12-31')
-                    
-                    # Condition 3: Absolute value is unusually large for a quarter
-                    # If revenue > $50B, it's likely annual for most companies
-                    # (Only giants like Apple/Microsoft have $50B+ quarters)
-                    large_absolute_value = q.std_revenue.value > 50_000_000_000
-                    
-                    # Trigger warning if MULTIPLE conditions are met
-                    if high_ratio and (is_year_end or large_absolute_value):
-                        logger.warning(
-                            f"[TTM Builder] ⚠️ Detected likely Annual/YTD mislabeled as Quarter:\n"
-                            f"  Period: {q.std_period} | Revenue: {q.std_revenue.value:,.0f}\n"
-                            f"  Ratio: {rev_ratio*100:.1f}% | Year-end: {is_year_end} | Large value: {large_absolute_value}\n"
-                            f"  Skipping sum to prevent double-counting."
-                        )
-                        return None
+                    for q in quarters[:4]:
+                        if not q.std_revenue or not q.std_revenue.value:
+                            continue
+                        
+                        rev_ratio = q.std_revenue.value / total_rev_sum
+                        
+                        # Condition 1: Revenue ratio > 50% (very conservative - allows up to 50% seasonality)
+                        high_ratio = rev_ratio > 0.50
+                        
+                        # Condition 2: Period ends on 12-31 (typical year-end, likely annual report)
+                        is_year_end = q.std_period.endswith('-12-31') if q.std_period else False
+                        
+                        # Condition 3: Absolute value is unusually large for a quarter
+                        # If revenue > $50B, it's likely annual for most companies
+                        large_absolute_value = q.std_revenue.value > 50_000_000_000
+                        
+                        # Trigger warning if MULTIPLE conditions are met
+                        if high_ratio and (is_year_end or large_absolute_value):
+                            logger.warning(
+                                f"[TTM Builder] ⚠️ Detected likely Annual/YTD mislabeled as Quarter:\n"
+                                f"  Period: {q.std_period} | Revenue: {q.std_revenue.value:,.0f}\n"
+                                f"  Ratio: {rev_ratio*100:.1f}% | Year-end: {is_year_end} | Large value: {large_absolute_value}\n"
+                                f"  Skipping sum to prevent double-counting."
+                            )
+                            return None
+            else:
+                logger.info("[TTM Builder] Not an Income Statement, skipping revenue seasonality check.")
 
             # Sum numeric fields
             fields = stmt_class.model_fields.keys()
@@ -180,7 +188,7 @@ class StockDataLoader:
                     merged_kwargs[field] = FieldWithSource(value=total_val, source=source or DataSource.YAHOO)
             
             result = stmt_class(**merged_kwargs)
-            if result.std_revenue:
+            if hasattr(result, 'std_revenue') and result.std_revenue:
                 logger.info(f"[TTM Builder] ✓ Sum completed. TTM Revenue: {result.std_revenue.value:,.0f}")
             return result
 
