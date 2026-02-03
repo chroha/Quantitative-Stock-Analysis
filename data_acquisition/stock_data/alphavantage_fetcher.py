@@ -96,7 +96,15 @@ class AlphaVantageFetcher(BaseFetcher):
             
             # Check for API errors
             if 'Error Message' in data:
-                logger.error(f"Alpha Vantage API error: {data['Error Message']}")
+                error_msg = data['Error Message']
+                logger.error(f"Alpha Vantage API error: {error_msg}")
+                
+                # Add specific hint for common "Invalid API call" error
+                if "Invalid API call" in error_msg:
+                    masked_key = settings.mask_api_key(self.api_key)
+                    logger.error(f"  -> Hint: Verify API Key is correct and has no spaces. Using Key: {masked_key}")
+                    logger.error(f"  -> Hint: Some endpoints (Income/Balance Sheet) are now Premium-only. Free tier keys may fail here.")
+                
                 return None
             
             if 'Note' in data:

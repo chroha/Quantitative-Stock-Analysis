@@ -18,6 +18,8 @@ class Settings:
     
     def __init__(self):
         self.FMP_API_KEY = os.getenv('FMP_API_KEY')
+        if self.FMP_API_KEY:
+            self.FMP_API_KEY = self.FMP_API_KEY.strip()
         
         # Validate required environment variables
         if not self.FMP_API_KEY:
@@ -27,10 +29,14 @@ class Settings:
             )
             
         self.GOOGLE_AI_KEY = os.getenv('GOOGLE_AI_KEY')
+        if self.GOOGLE_AI_KEY:
+            self.GOOGLE_AI_KEY = self.GOOGLE_AI_KEY.strip()
         # Google AI Key is optional for core functionality, but needed for commentary module
         # We won't raise error here to avoid breaking other modules if user doesn't have it
         
         self.ALPHAVANTAGE_API_KEY = os.getenv('ALPHAVANTAGE_API_KEY')
+        if self.ALPHAVANTAGE_API_KEY:
+            self.ALPHAVANTAGE_API_KEY = self.ALPHAVANTAGE_API_KEY.strip()
         # Alpha Vantage is optional - used as fallback data source
     
     @staticmethod
