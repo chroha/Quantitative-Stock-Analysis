@@ -176,17 +176,17 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 ### 1. 华尔街预期
 | 指标 | 数值 | 解读 |
 |---|---|---|
-| 评级建议 | X | [如 Buy/Hold, 请结合评分关键字分析] |
-| 目标价 (High/Low) | $X - $X | [分析目标价范围与当前价的差距] |
-| 分析师数量 | X | [分析样本置信度] |
-> 注意: 在分析 EV/EBITDA 时，请对比 Yahoo 的 EV/EBITDA (在 advanced_metrics 中) 与我们计算值的差异。如果差异巨大，请在“解读”中指出。
+> 注意: 
+> 1. Yahoo 提供的 EV/EBITDA 为事实上的当前比率。
+> 2. `valuation` 中的 EV/EBITDA 是模型推算的股价。
+> 3. 如果 `valuation.ev_ebitda.mult` 存在，请在解读中明确指出：“基于行业平均倍数 (即 valuation.ev_ebitda.mult)x 推算”。这是造成估值差异的主要原因，务必解释清楚。
 
 | 模型 | 公允价 | 权重 | 偏离度 | 解读 |
 |------|--------|------|--------|----|
 | PE估值 | $X | X% | X% | [简评] |
 | PS估值 | $X | X% | X% | [简评] |
 | PB估值 | $X | X% | X% | [简评] |
-| EV/EBITDA| $X | X% | X% | [简评] |
+| EV/EBITDA| $X | X% | X% | [如有行业倍数，请在此处注明] |
 | PEG估值 | $X | X% | X% | [简评] |
 | DDM模型 | $X | X% | X% | [简评] |
 | DCF模型 | $X | X% | X% | [简评] |
@@ -306,15 +306,17 @@ Task: Generate a comprehensive investment analysis report in TWO languages (Chin
 | Target (High/Low) | $X - $X | [Compare target range with current price] |
 | Analyst Count | X | [Confidence level based on sample size] |
 
-> Note: For EV/EBITDA, compare Yahoo's provided EV/EBITDA (in advanced_metrics) with our calculated value. If difference is significant, mention it.
-
+> Note:
+> 1. Yahoo's EV/EBITDA is the actual current ratio.
+> 2. The EV/EBITDA in `valuation` is the model-derived stock price.
+> 3. If `valuation.ev_ebitda.mult` exists, explicitly state in the Comment: "Based on industry avg multiple of (valuation.ev_ebitda.mult)x". This explains the valuation gap.
 
 | Model | Fair Value | Weight | Upside | Comment |
 |-------|------------|--------|--------|---------|
 | PE Val | $X | X% | X% | [Brief Comment] |
 | PS Val | $X | X% | X% | [Brief Comment] |
 | PB Val | $X | X% | X% | [Brief Comment] |
-| EV/EBITDA| $X | X% | X% | [Brief Comment] |
+| EV/EBITDA| $X | X% | X% | [Mention Industry Avg Multiple here if avail] |
 | PEG Val | $X | X% | X% | [Brief Comment] |
 | DDM Model | $X | X% | X% | [Brief Comment] |
 | DCF Model | $X | X% | X% | [Brief Comment] |

@@ -317,7 +317,8 @@ class DataAggregator:
             return {
                 "fair": m.get('fair_value', 0),
                 "wt": int(m.get('weight', 0) * 100),
-                "up": m.get('upside_pct', 0)
+                "up": m.get('upside_pct', 0),
+                "mult": m.get('industry_multiple') # Extract industry multiple if available
             }
             
         return {

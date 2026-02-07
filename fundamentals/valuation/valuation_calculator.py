@@ -160,6 +160,16 @@ class ValuationCalculator:
                         'status': 'success'
                     }
                     
+                    # Special handling for EV/EBITDA to include industry multiple
+                    if method_name == 'ev_ebitda':
+                        try:
+                            sector_benchmarks = self.benchmark_data.get('sectors', {}).get(sector, {})
+                            industry_multiple = sector_benchmarks.get('metrics', {}).get('valuation_multiples', {}).get('ev_ebitda')
+                            if industry_multiple:
+                                method_results[method_name]['industry_multiple'] = industry_multiple
+                        except Exception:
+                            pass # Fail silently if structure differs, not critical
+                    
                     if weight > 0:
                         weighted_sum += fair_value * weight
                         total_weight += weight
