@@ -22,7 +22,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 if current_dir not in sys.path:
     sys.path.insert(0, current_dir)
 
-from config.constants import DATA_CACHE_STOCK, DATA_CACHE_MACRO, DATA_CACHE_BENCHMARK
+from datetime import datetime
+from config.constants import DATA_CACHE_STOCK, DATA_CACHE_MACRO, DATA_CACHE_BENCHMARK, DATA_REPORTS
 from data_acquisition.benchmark_data.benchmark_data_loader import BenchmarkDataLoader
 from utils.console_utils import symbol as ICON, print_step, print_separator
 
@@ -131,6 +132,19 @@ def run_macro():
     """Runs run_macro_report.py."""
     print_step(5, 5, "Macro Analysis")
     
+    # Check if report for today already exists
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    report_filename = f"macro_report_{today_str}.md"
+    report_path = os.path.join(current_dir, DATA_REPORTS, report_filename)
+    
+    if os.path.exists(report_path):
+        print(f"  {ICON.INFO} Macro report for today found: {report_filename}")
+        # Default N means "Do not skip" -> "Run analysis"
+        choice = input(f"  Skip macro analysis? (y/N): ").strip().lower()
+        if choice == 'y':
+            print(f"  {ICON.OK} Skipped macro analysis.")
+            return
+
     try:
         # This will be interactive for Forward PE input
         cmd = [sys.executable, "run_macro_report.py"]
