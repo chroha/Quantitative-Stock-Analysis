@@ -19,6 +19,7 @@ from config.constants import DATA_CACHE_BENCHMARK
 from data_acquisition.benchmark_data.damodaran_fetcher import DamodaranFetcher
 from data_acquisition.benchmark_data.industry_mapper import SECTOR_MAPPING, get_unmapped_industries
 from data_acquisition.benchmark_data.benchmark_calculator import BenchmarkCalculator
+from utils.console_utils import symbol
 
 logger = setup_logger('benchmark_loader')
 
@@ -63,8 +64,6 @@ class BenchmarkDataLoader:
                     logger.info("Cache incomplete, fetching from web")
                     force_refresh = True
             
-from utils.console_utils import symbol
-
             dataframes = fetcher.fetch_all(force_refresh=force_refresh)
             logger.info(f"Fetched {len(dataframes)} datasets")
             print(f"  {symbol.OK} Raw files downloaded/verified ({len(dataframes)} datasets)")
