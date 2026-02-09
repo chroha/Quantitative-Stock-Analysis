@@ -65,7 +65,7 @@ class BenchmarkDataLoader:
             
             dataframes = fetcher.fetch_all(force_refresh=force_refresh)
             logger.info(f"Fetched {len(dataframes)} datasets")
-            print(f"  ✓ Raw files downloaded/verified ({len(dataframes)} datasets)")
+            print(f"  [OK] Raw files downloaded/verified ({len(dataframes)} datasets)")
             
         except Exception as e:
             logger.error(f"Failed to fetch data: {e}")
@@ -75,7 +75,7 @@ class BenchmarkDataLoader:
         if not dataframes:
             logger.error("No dataframes returned")
             return None
-
+            
         # 3. Initialize Calculator with all DataFrames
         try:
             calculator = BenchmarkCalculator(
@@ -123,7 +123,7 @@ class BenchmarkDataLoader:
         output_path = self.get_output_path()
         result = self._save_json(sector_data, output_path)
         if result:
-            print(f"  ✓ Benchmark JSON generated: {os.path.basename(result)}")
+            print(f"  [OK] Benchmark JSON generated: {os.path.basename(result)}")
         return result
 
     def _save_json(self, sector_data: Dict[str, Dict], output_path: Path) -> str:
