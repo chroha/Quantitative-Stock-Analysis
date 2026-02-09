@@ -8,7 +8,19 @@ This is a quantitative stock analysis and screening tool built for personal use.
 
 ## Core Features
 
-### 1. Stock Analysis (`run_analysis.py`)
+### 1. Automated Analysis Pipeline (`run_pipeline.py`)
+
+**New!** A "One-Stop Shop" script that orchestrates the entire workflow:
+
+- **Automated Workflow**:
+  1. **Clean Cache**: Clears old data (intelligently matches industry benchmark CSVs).
+  2. **Update Benchmarks**: Checks/Updates industry baselines.
+  3. **Batch Analysis**: Runs deep-dive analysis (`run_analysis.py`) for all input stocks.
+  4. **Report Generation**: Aggregates all scores into a Summary CSV (`run_getform.py`).
+  5. **Macro Strategy**: Runs the macro analysis module (`run_macro_report.py`).
+- **Usage**: `python run_pipeline.py AAPL MSFT`
+
+### 2. Stock Analysis (`run_analysis.py`)
 
 Performs a full-pipeline analysis for a single stock:
 
@@ -30,19 +42,21 @@ Performs a full-pipeline analysis for a single stock:
 
 ### 3. Macro Strategy Analysis (`run_macro_report.py`)
 
-A completely new macroeconomic analysis module for top-down market strategy:
-
-- **AI Macro Strategy**: Generates "Institutional Grade CIO" commentary by analyzing macro anomalies and divergences.
-- **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation) and Yahoo Finance (Global Markets).
-- **Quantitative Framework**: Includes Economic Cycle positioning, ERP extreme valuations, and Aussie Terms of Trade analysis.
-
-### 2. Batch Stock Scanner (`run_scanner.py`)
+### 3. Batch Stock Scanner (`run_scanner.py`)
 
 - **Batch Processing**: Scans a user-defined list of stocks in one go.
 - **Rapid Scoring**: Skips time-consuming valuation and AI steps to focus on rapid financial and technical scoring.
 - **Auto-Ranking**: Automatically ranks results by Financial Score.
 - **Graceful Degradation**: Intelligently detects and flags stocks with insufficient data (e.g., < 5 years history) in the final report with "reduced reliability" notes.
 - **Output**: Prints a summary to the console and generates a detailed text report file.
+
+### 4. Macro Strategy Analysis (`run_macro_report.py`)
+
+A completely new macroeconomic analysis module for top-down market strategy:
+
+- **AI Macro Strategy**: Generates "Institutional Grade CIO" commentary by analyzing macro anomalies and divergences.
+- **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation) and Yahoo Finance (Global Markets).
+- **Quantitative Framework**: Includes Economic Cycle positioning, ERP extreme valuations, and Aussie Terms of Trade analysis.
 
 ## Directory Structure
 
@@ -70,6 +84,7 @@ A completely new macroeconomic analysis module for top-down market strategy:
 ├── user_config/            # User Private Config (.env only)
 ├── utils/                  # Utilities (Logger, Schema, Helpers)
 ├── run_analysis.py         # Single Stock Analysis Entry
+├── run_pipeline.py         # Automated Analysis Pipeline [New]
 ├── run_scanner.py          # Batch Scanner Entry
 ├── run_getform.py          # Form Generation Tool
 └── run_macro_report.py     # Macro Strategy Report Entry
@@ -161,6 +176,13 @@ The system behavior is highly customizable via `config/analysis_config.py`.
 - **Metric Bounds**: Define valid ranges for financial metrics (e.g., ROIC, ROE) to filter outliers.
 
 ## Usage
+
+### Automated Pipeline (Recommended)
+
+```bash
+python run_pipeline.py AAPL MSFT
+# Runs the full workflow: Clean -> Benchmark -> Analysis -> Summary -> Macro
+```
 
 ### Run Single Stock Analysis (Analysis Mode)
 
