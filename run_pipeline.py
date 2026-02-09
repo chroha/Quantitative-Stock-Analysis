@@ -139,9 +139,9 @@ def run_macro():
     
     if os.path.exists(report_path):
         print(f"  {ICON.INFO} Macro report for today found: {report_filename}")
-        # Default N means "Do not skip" -> "Run analysis"
-        choice = input(f"  Skip macro analysis? (y/N): ").strip().lower()
-        if choice == 'y':
+        # Default Y means "Skip"
+        choice = input(f"  Skip macro analysis? (Y/n): ").strip().lower()
+        if choice != 'n':
             print(f"  {ICON.OK} Skipped macro analysis.")
             return
 
