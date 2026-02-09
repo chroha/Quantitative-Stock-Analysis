@@ -8,6 +8,7 @@ in both Chinese and English (Single-shot generation).
 import json
 import requests
 import logging
+import time
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from config.settings import settings
@@ -219,7 +220,7 @@ Return JSON with "cn" and "en". Content in Markdown.
             return {'cn': text, 'en': text}
 
     def _call_api(self, model_name: str, prompt: str) -> Optional[str]:
-        """Call Gemini API."""
+        """Call Gemini API with retry logic and graceful error handling."""
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
         headers = {"Content-Type": "application/json"}
         payload = {
@@ -227,29 +228,56 @@ Return JSON with "cn" and "en". Content in Markdown.
             "generationConfig": {"temperature": 0.5, "responseMimeType": "application/json"}
         }
         
-        try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=60)
-            if resp.status_code == 200:
-                result = resp.json()
+        max_retries = 1
+        for attempt in range(max_retries + 1):
+            try:
+                # Keep timeout at 60s
+                resp = requests.post(url, headers=headers, json=payload, timeout=60)
                 
-                # Print Token Usage
-                usage = result.get('usageMetadata', {})
-                if usage:
-                    prompt_tok = usage.get('promptTokenCount', 0)
-                    cand_tok = usage.get('candidatesTokenCount', 0)
-                    total_tok = usage.get('totalTokenCount', 0)
-                    print(f"  [AI] Token Usage: Input={prompt_tok}, Output={cand_tok}, Total={total_tok}")
+                if resp.status_code == 200:
+                    result = resp.json()
+                    
+                    # Print Token Usage
+                    usage = result.get('usageMetadata', {})
+                    if usage:
+                        prompt_tok = usage.get('promptTokenCount', 0)
+                        cand_tok = usage.get('candidatesTokenCount', 0)
+                        total_tok = usage.get('totalTokenCount', 0)
+                        print(f"  [AI] Token Usage: Input={prompt_tok}, Output={cand_tok}, Total={total_tok}")
+                    
+                    try:
+                        return result['candidates'][0]['content']['parts'][0]['text']
+                    except (KeyError, IndexError):
+                        print(f"  [AI] Parse Error: No candidates in {model_name} response.")
+                        return None
                 
-                try:
-                    return result['candidates'][0]['content']['parts'][0]['text']
-                except (KeyError, IndexError):
-                    print(f"  [AI] Parse Error: No candidates in {model_name} response. Full: {result}")
+                # Handle Rate Limits (429) or Server Overload (503)
+                elif resp.status_code in [429, 503]:
+                    code_msg = "Rate limit" if resp.status_code == 429 else "Server overloaded"
+                    wait_time = 3 * (attempt + 1)
+                    if attempt < max_retries:
+                        print(f"  [AI] {code_msg} ({resp.status_code}). Retrying in {wait_time}s...")
+                        time.sleep(wait_time)
+                        continue
+                    else:
+                        print(f"  [AI] {code_msg} ({resp.status_code}). Moving to next model.")
+                        return None
+                
+                # Handle 404
+                elif resp.status_code == 404:
+                    print(f"  [AI] Model {model_name} not found (404).")
                     return None
-            else:
-                logger.warning(f"AI Error {resp.status_code}: {resp.text}")
-                print(f"  [AI] HTTP Error {resp.status_code}: {resp.text[:100]}")
-        except Exception as e:
-            logger.error(f"AI Exception: {e}")
-            print(f"  [AI] Exception: {e}")
+                    
+                else:
+                    logger.warning(f"AI Error {resp.status_code}: {resp.text}")
+                    print(f"  [AI] HTTP Error {resp.status_code}")
+                    return None
+
+            except Exception as e:
+                logger.error(f"AI Exception: {e}")
+                print(f"  [AI] Connection failed: {e}")
+                if attempt < max_retries:
+                    time.sleep(2)
+                    continue
             
         return None
