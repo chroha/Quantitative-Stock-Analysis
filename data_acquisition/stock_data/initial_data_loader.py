@@ -189,7 +189,8 @@ class StockDataLoader:
             
             result = stmt_class(**merged_kwargs)
             if hasattr(result, 'std_revenue') and result.std_revenue:
-                logger.info(f"[TTM Builder] ✓ Sum completed. TTM Revenue: {result.std_revenue.value:,.0f}")
+                from utils.console_utils import symbol
+                logger.info(f"[TTM Builder] {symbol.OK} Sum completed. TTM Revenue: {result.std_revenue.value:,.0f}")
             return result
 
         # --- DATA PRE-PROCESSING ---

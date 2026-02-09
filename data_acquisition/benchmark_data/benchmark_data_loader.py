@@ -63,9 +63,11 @@ class BenchmarkDataLoader:
                     logger.info("Cache incomplete, fetching from web")
                     force_refresh = True
             
+from utils.console_utils import symbol
+
             dataframes = fetcher.fetch_all(force_refresh=force_refresh)
             logger.info(f"Fetched {len(dataframes)} datasets")
-            print(f"  [OK] Raw files downloaded/verified ({len(dataframes)} datasets)")
+            print(f"  {symbol.OK} Raw files downloaded/verified ({len(dataframes)} datasets)")
             
         except Exception as e:
             logger.error(f"Failed to fetch data: {e}")
@@ -123,7 +125,7 @@ class BenchmarkDataLoader:
         output_path = self.get_output_path()
         result = self._save_json(sector_data, output_path)
         if result:
-            print(f"  [OK] Benchmark JSON generated: {os.path.basename(result)}")
+            print(f"  {symbol.OK} Benchmark JSON generated: {os.path.basename(result)}")
         return result
 
     def _save_json(self, sector_data: Dict[str, Dict], output_path: Path) -> str:

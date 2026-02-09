@@ -22,7 +22,9 @@ if project_root not in sys.path:
 from data_acquisition.stock_data.initial_data_loader import StockDataLoader
 
 
-def print_validation_report(loader: StockDataLoader, symbol: str):
+from utils.console_utils import symbol
+
+def print_validation_report(loader: StockDataLoader, symbol_str: str):
     """Print detailed validation report."""
     result = loader.get_validation_report()
     if not result:
@@ -30,10 +32,11 @@ def print_validation_report(loader: StockDataLoader, symbol: str):
         return
     
     print(f"\n{'='*60}")
-    print(f"VALIDATION REPORT: {symbol}")
+    print(f"VALIDATION REPORT: {symbol_str}")
     print(f"{'='*60}")
     
-    print(f"\n  Overall Status: {'✓ COMPLETE' if result.is_complete else '⚠ INCOMPLETE'}")
+    status_overall = f"{symbol.OK} COMPLETE" if result.is_complete else f"{symbol.WARN} INCOMPLETE"
+    print(f"\n  Overall Status: {status_overall}")
     print(f"  Completeness:   {result.average_completeness:.1%}")
     print(f"  Periods Validated: {result.total_periods_validated}")
     print(f"  Incomplete Periods: {result.incomplete_periods}")
@@ -43,7 +46,7 @@ def print_validation_report(loader: StockDataLoader, symbol: str):
         print(f"  {'-'*15} {'-'*12} {'-'*10} {'-'*8}")
         
         for pr in result.period_results:
-            status = "✓ OK" if pr.is_complete else "⚠ MISSING"
+            status = f"{symbol.OK} OK" if pr.is_complete else f"{symbol.WARN} MISSING"
             print(f"  {pr.period:<15} {pr.statement_type:<12} {status:<10} {pr.completeness_score:.0%}")
             
             if pr.missing_required:
