@@ -166,6 +166,13 @@ class DataAggregator:
             "valuation": self._simplify_valuation(val_data)
         }
         
+        # Add forecast_data if available
+        if raw_path:
+            raw_data_for_forecast = self._load_json(raw_path)
+            forecast_data = raw_data_for_forecast.get('forecast_data', {})
+            if forecast_data:
+                aggregated_base["forecast"] = self._simplify_forecast(forecast_data, aggregated_base)
+        
         # Merge advanced metrics if they exist
         if advanced_metrics:
             aggregated_base["advanced_metrics"] = advanced_metrics
@@ -336,6 +343,65 @@ class DataAggregator:
             "dcf": fmt('dcf'),
             "graham": fmt('graham'),
             "lynch": fmt('peter_lynch')
+        }
+    
+    def _simplify_forecast(self, forecast_data: Dict, aggregated_base: Dict) -> Dict:
+        """Simplify forecast data for AI consumption."""
+        def get_val(field):
+            obj = forecast_data.get(field)
+            if isinstance(obj, dict):
+                return obj.get('value')
+            return obj
+        
+        # Get current values from aggregated data
+        profile_pe = 0
+        profile_eps = 0
+        # Try to get from tech_data or val_data if available
+        # For now, use simple extraction
+        
+        # Extract forward metrics
+        fwd_eps = get_val('std_forward_eps')
+        fwd_pe = get_val('std_forward_pe')
+        earnings_growth_cy = get_val('std_earnings_growth_current_year')
+        revenue_growth_ny = get_val('std_revenue_growth_next_year')
+        
+        # Extract price targets
+        pt_low = get_val('std_price_target_low')
+        pt_high = get_val('std_price_target_high')
+        pt_consensus = get_val('std_price_target_consensus')
+        
+        # Process earnings surprises
+        surprises = forecast_data.get('std_earnings_surprise_history', [])
+        surprise_summary = None
+        if surprises and isinstance(surprises, list):
+            # Calculate average surprise
+            avg_surprise = sum(s.get('surprise_percent', 0) for s in surprises) / len(surprises) if surprises else 0
+            positive_count = sum(1 for s in surprises if s.get('surprise_percent', 0) > 0)
+            
+            surprise_summary = {
+                "avg_surprise_pct": avg_surprise,
+                "positive_count": positive_count,
+                "total_count": len(surprises),
+                "latest_4": [
+                    {
+                        "period": s.get('period', 'N/A'),
+                        "actual": s.get('actual', 0),
+                        "estimate": s.get('estimate', 0),
+                        "surprise_pct": s.get('surprise_percent', 0)
+                    }
+                    for s in surprises[:4]
+                ]
+            }
+        
+        return {
+            "forward_eps": fwd_eps,
+            "forward_pe": fwd_pe,
+            "earnings_growth_current_year": earnings_growth_cy,
+            "revenue_growth_next_year": revenue_growth_ny,
+            "price_target_low": pt_low,
+            "price_target_high": pt_high,
+            "price_target_consensus": pt_consensus,
+            "surprises": surprise_summary
         }
     
     def get_raw_data_appendix(self, symbol: str) -> str:
@@ -667,8 +733,10 @@ class DataAggregator:
             
             # === NEW: Forward Estimates from forecast_data ===
             lines.append("")
-            lines.append("#### 前瞻预测数据 (Forward Estimates)\\n")
-            lines.append("\u003e 注:以下数据来自forecast_data,已通过智能合并(Yahoo→FMP→Finnhub)。部分字段可能与profile中的值不同。\\n")
+            lines.append("#### 前瞻预测数据 (Forward Estimates)")
+            lines.append("")
+            lines.append("\u003e 注:以下数据来自forecast_data,已通过智能合并(Yahoo→FMP→Finnhub)。部分字段可能与profile中的值不同。")
+            lines.append("")
             lines.append("| Category | English Name | 中文名称 | Value | Source | Field |")
             lines.append("|---|---|---|---|---|---|")
             
@@ -711,7 +779,8 @@ class DataAggregator:
                 
                 # Detailed Surprise Table
                 lines.append("")
-                lines.append("##### Earnings Surprise详细记录 (Latest 4 Quarters)\\n")
+                lines.append("##### Earnings Surprise详细记录 (Latest 4 Quarters)")
+                lines.append("")
                 lines.append("| Period | Actual EPS | Estimate EPS | Surprise | Surprise % |")
                 lines.append("|--------|-----------|-------------|----------|-----------|")
                 

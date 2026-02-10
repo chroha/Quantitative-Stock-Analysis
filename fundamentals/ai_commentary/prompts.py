@@ -188,7 +188,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 ## 三、估值分析 (加权估价:$X)
 **当前价:** $X | 上行空间:X%
 
-### 1. 前瞻估值指标 (Forward Metrics)
+### 1. 前瞻估值指标
 | 指标 | 当前值 | 前瞻值 | 变化 | 解读 |
 |------|-------|-------|------|------|
 | 市盈率 (P/E) | X | X | X% | [分析估值扩张/收缩,结合盈利增长预期解读] |
@@ -196,7 +196,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | 盈利增长 | X% (5年) | X% (本年预期) | X ppts | [历史vs预期增速对比,判断拐点] |
 | 营收增长 | X% (5年) | X% (明年预期) | X ppts | [分析业务扩张动能变化] |
 
-### 2. 盈利意外分析 (Earnings Surprises)
+### 2. 盈利意外分析
 **最近4季度表现:** [总结整体surprise趋势]
 | 期间 | 实际EPS | 预期EPS | 差额 | 超预期% |
 |------|---------|---------|------|--------|
@@ -332,7 +332,25 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 ## III. Valuation Analysis (Weighted: $X)
 **Price:** $X | **Upside:** X%
 
-### 1. Analyst Consensus
+### 1. Forward Metrics
+| Metric | Current | Forward | Change | Interpretation |
+|--------|---------|---------|--------|----------------|
+| P/E Ratio | X | X | X% | [Analyze valuation expansion/contraction vs growth] |
+| EPS | $X | $X | X% | [Compare to historical growth, assess acceleration] |
+| Earnings Growth | X% (5Y) | X% (CY Est) | X ppts | [Historical vs forward comparison, identify inflection] |
+| Revenue Growth | X% (5Y) | X% (NY Est) | X ppts | [Analyze business momentum shift] |
+
+### 2. Earnings Surprises
+**Recent 4 Quarters:** [Summarize overall surprise trend]
+| Period | Actual EPS | Estimate EPS | Difference | Surprise % |
+|--------|-----------|-------------|------------|-----------|
+| X | $X | $X | $X | X% |
+| X | $X | $X | $X | X% |
+| X | $X | $X | $X | X% |
+| X | $X | $X | $X | X% |
+**Avg Surprise:** X% | **Positive:** X/4 | **Interpretation:** [Analyze consistency, management guidance accuracy]
+
+### 3. Analyst Consensus
 | Metric | Value | Comment |
 |---|---|---|
 | Recommendation | X | [Buy/Hold/Sell analysis] |
