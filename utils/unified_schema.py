@@ -140,6 +140,141 @@ class AnalystTargets(BaseModel):
     std_number_of_analysts: Optional[FieldWithSource] = Field(None, description="Number of analysts")
 
 
+class ForecastData(BaseModel):
+    """
+    Forecast and Analyst Estimates Data Model
+    
+    Integrates forward-looking metrics from multiple sources:
+    - Yahoo Finance: forward_eps, forward_pe, earnings_growth
+    - FMP: analyst estimates, price targets, ratings
+    - Finnhub: earnings surprises, historical actuals vs estimates
+    
+    Data Source Priority:
+    - Forward EPS: Yahoo > FMP > Finnhub
+    - Price Targets: FMP > Yahoo
+    - Earnings Surprises: Finnhub (exclusive)
+    """
+    
+    # === Forward Metrics (Next Fiscal Year) ===
+    std_forward_eps: Optional[FieldWithSource] = Field(
+        None, 
+        description="Forward EPS - Next fiscal year analyst consensus (USD per share)"
+    )
+    std_forward_pe: Optional[FieldWithSource] = Field(
+        None,
+        description="Forward P/E ratio based on forward EPS"
+    )
+    std_forward_revenue: Optional[FieldWithSource] = Field(
+        None,
+        description="Forward revenue estimate - Next fiscal year (USD)"
+    )
+    
+    # === Analyst Price Targets ===
+    std_price_target_low: Optional[FieldWithSource] = Field(
+        None,
+        description="Analyst price target - Low (USD per share)"
+    )
+    std_price_target_high: Optional[FieldWithSource] = Field(
+        None,
+        description="Analyst price target - High (USD per share)"
+    )
+    std_price_target_avg: Optional[FieldWithSource] = Field(
+        None,
+        description="Analyst price target - Average (USD per share)"
+    )
+    std_price_target_consensus: Optional[FieldWithSource] = Field(
+        None,
+        description="Consensus price target (USD per share)"
+    )
+    std_number_of_analysts: Optional[FieldWithSource] = Field(
+        None,
+        description="Number of analysts covering the stock"
+    )
+    
+    # === Analyst Ratings Distribution ===
+    std_analyst_rating_strong_buy: Optional[FieldWithSource] = Field(
+        None,
+        description="Number of Strong Buy ratings"
+    )
+    std_analyst_rating_buy: Optional[FieldWithSource] = Field(
+        None,
+        description="Number of Buy ratings"
+    )
+    std_analyst_rating_hold: Optional[FieldWithSource] = Field(
+        None,
+        description="Number of Hold ratings"
+    )
+    std_analyst_rating_sell: Optional[FieldWithSource] = Field(
+        None,
+        description="Number of Sell ratings"
+    )
+    std_analyst_rating_strong_sell: Optional[FieldWithSource] = Field(
+        None,
+        description="Number of Strong Sell ratings"
+    )
+    
+    # === Earnings Estimates (Fiscal Years) ===
+    std_eps_estimate_current_year: Optional[FieldWithSource] = Field(
+        None,
+        description="EPS estimate for current fiscal year (USD per share)"
+    )
+    std_eps_estimate_next_year: Optional[FieldWithSource] = Field(
+        None,
+        description="EPS estimate for next fiscal year (USD per share)"
+    )
+    std_revenue_estimate_current_year: Optional[FieldWithSource] = Field(
+        None,
+        description="Revenue estimate for current fiscal year (USD)"
+    )
+    std_revenue_estimate_next_year: Optional[FieldWithSource] = Field(
+        None,
+        description="Revenue estimate for next fiscal year (USD)"
+    )
+    std_ebitda_estimate_next_year: Optional[FieldWithSource] = Field(
+        None,
+        description="EBITDA estimate for next fiscal year (USD)"
+    )
+    
+    # === Earnings Surprises (Historical Actuals vs Estimates) ===
+    # Finnhub-exclusive: Track how company performed vs analyst expectations
+    std_earnings_surprise_history: Optional[list[Dict[str, Any]]] = Field(
+        default_factory=list,
+        description="Historical earnings surprises - Actual vs Estimate comparison"
+    )
+    # Each dict contains:
+    # {
+    #   "period": "2025-12-31",
+    #   "quarter": 1,
+    #   "year": 2026,
+    #   "actual": 2.84,
+    #   "estimate": 2.7257,
+    #   "surprise": 0.1143,
+    #   "surprise_percent": 4.1934,
+    #   "symbol": "AAPL"
+    # }
+    
+    # === Growth Estimates ===
+    std_earnings_growth_current_year: Optional[FieldWithSource] = Field(
+        None,
+        description="Estimated earnings growth rate for current year (decimal, e.g., 0.15 = 15%)"
+    )
+    std_earnings_growth_next_year: Optional[FieldWithSource] = Field(
+        None,
+        description="Estimated earnings growth rate for next year (decimal)"
+    )
+    std_revenue_growth_next_year: Optional[FieldWithSource] = Field(
+        None,
+        description="Estimated revenue growth rate for next year (decimal)"
+    )
+    
+    # Metadata
+    last_updated: datetime = Field(
+        default_factory=datetime.now,
+        description="Last forecast data update timestamp"
+    )
+
+
+
 class ETFData(BaseModel):
     """ETF data model for sector benchmarks."""
     symbol: str = Field(..., description="ETF ticker symbol")
@@ -281,7 +416,14 @@ class StockData(BaseModel):
     income_statements: list[IncomeStatement] = Field(default_factory=list, description="Income statements")
     balance_sheets: list[BalanceSheet] = Field(default_factory=list, description="Balance sheets")
     cash_flows: list[CashFlow] = Field(default_factory=list, description="Cash flow statements")
-    analyst_targets: Optional[AnalystTargets] = None
+    
+    # Analyst & Forecast Data
+    analyst_targets: Optional[AnalystTargets] = None  # DEPRECATED: Use forecast_data instead (kept for compatibility)
+    forecast_data: Optional[ForecastData] = Field(
+        None,
+        description="Forward-looking metrics and analyst estimates (Yahoo/FMP/Finnhub)"
+    )
+    
     sector_benchmark: Optional[SectorBenchmark] = Field(None, description="Sector benchmark data for comparison")
     
     # Metadata for processing flags (e.g. source tracking)

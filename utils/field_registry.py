@@ -344,12 +344,204 @@ CASHFLOW_FIELDS: Dict[str, FieldDefinition] = {
 
 
 # =============================================================================
+# FORECAST DATA FIELDS
+# =============================================================================
+
+FORECAST_FIELDS: Dict[str, FieldDefinition] = {
+    # === Forward Metrics ===
+    'std_forward_eps': FieldDefinition(
+        unified_name='std_forward_eps',
+        description='Forward EPS (next fiscal year)',
+        important=True,
+        yahoo_names=['forwardEps'],  # From Yahoo Info
+        edgar_tags=None,
+        fmp_names=['estimatedEpsAvg'],  # From analyst-estimates endpoint
+        av_names=None,
+        priority=[DataSource.YAHOO, DataSource.FMP, DataSource.FINNHUB]
+    ),
+    'std_forward_pe': FieldDefinition(
+        unified_name='std_forward_pe',
+        description='Forward P/E ratio',
+        yahoo_names=['forwardPE'],
+        edgar_tags=None,
+        fmp_names=None,
+        av_names=None,
+        priority=[DataSource.YAHOO, DataSource.FMP]
+    ),
+    'std_forward_revenue': FieldDefinition(
+        unified_name='std_forward_revenue',
+        description='Forward revenue estimate',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['estimatedRevenueAvg'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.FINNHUB]
+    ),
+    
+    # === Price Targets ===
+    'std_price_target_low': FieldDefinition(
+        unified_name='std_price_target_low',
+        description='Analyst price target - low',
+        important=True,
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['targetLow'],  # From price-target-consensus
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.YAHOO]
+    ),
+    'std_price_target_high': FieldDefinition(
+        unified_name='std_price_target_high',
+        description='Analyst price target - high',
+        important=True,
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['targetHigh'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.YAHOO]
+    ),
+    'std_price_target_avg': FieldDefinition(
+        unified_name='std_price_target_avg',
+        description='Analyst price target - average',
+        important=True,
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['targetMean'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.YAHOO]
+    ),
+    'std_price_target_consensus': FieldDefinition(
+        unified_name='std_price_target_consensus',
+        description='Consensus price target',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['targetConsensus'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+    'std_number_of_analysts': FieldDefinition(
+        unified_name='std_number_of_analysts',
+        description='Number of analysts',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['numberOfAnalysts'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+    
+    # === Analyst Ratings ===
+    'std_analyst_rating_strong_buy': FieldDefinition(
+        unified_name='std_analyst_rating_strong_buy',
+        description='Strong buy ratings count',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['strongBuy'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+    'std_analyst_rating_buy': FieldDefinition(
+        unified_name='std_analyst_rating_buy',
+        description='Buy ratings count',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['buy'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+    'std_analyst_rating_hold': FieldDefinition(
+        unified_name='std_analyst_rating_hold',
+        description='Hold ratings count',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['hold'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+    'std_analyst_rating_sell': FieldDefinition(
+        unified_name='std_analyst_rating_sell',
+        description='Sell ratings count',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['sell'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+    
+    # === Earnings/Revenue Estimates ===
+    'std_eps_estimate_current_year': FieldDefinition(
+        unified_name='std_eps_estimate_current_year',
+        description='Current year EPS estimate',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['estimatedEpsAvg'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.FINNHUB]
+    ),
+    'std_eps_estimate_next_year': FieldDefinition(
+        unified_name='std_eps_estimate_next_year',
+        description='Next year EPS estimate',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['estimatedEpsAvg'],  # Need to specify year parameter
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.FINNHUB]
+    ),
+    'std_revenue_estimate_current_year': FieldDefinition(
+        unified_name='std_revenue_estimate_current_year',
+        description='Current year revenue estimate',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['estimatedRevenueAvg'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.FINNHUB]
+    ),
+    'std_revenue_estimate_next_year': FieldDefinition(
+        unified_name='std_revenue_estimate_next_year',
+        description='Next year revenue estimate',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['estimatedRevenueAvg'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.FINNHUB]
+    ),
+    
+    # === Growth Estimates === 
+    'std_earnings_growth_current_year': FieldDefinition(
+        unified_name='std_earnings_growth_current_year',
+        description='Current year earnings growth',
+        yahoo_names=['earningsGrowth'],
+        edgar_tags=None,
+        fmp_names=None,
+        av_names=None,
+        priority=[DataSource.YAHOO, DataSource.FMP]
+    ),
+    'std_earnings_growth_next_year': FieldDefinition(
+        unified_name='std_earnings_growth_next_year',
+        description='Next year earnings growth',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['earningsGrowth'],
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.YAHOO]
+    ),
+    'std_revenue_growth_next_year': FieldDefinition(
+        unified_name='std_revenue_growth_next_year',
+        description='Next year revenue growth',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=['revenueGrowth'],
+        av_names=None,
+        priority=[DataSource.FMP]
+    ),
+}
+
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
 def get_all_fields() -> Dict[str, FieldDefinition]:
     """Get all field definitions across all statement types."""
-    return {**INCOME_FIELDS, **BALANCE_FIELDS, **CASHFLOW_FIELDS}
+    return {**INCOME_FIELDS, **BALANCE_FIELDS, **CASHFLOW_FIELDS, **FORECAST_FIELDS}
 
 
 def get_required_fields(statement_type: str) -> List[str]:
@@ -358,6 +550,7 @@ def get_required_fields(statement_type: str) -> List[str]:
         'income': INCOME_FIELDS,
         'balance': BALANCE_FIELDS,
         'cashflow': CASHFLOW_FIELDS,
+        'forecast': FORECAST_FIELDS,
     }.get(statement_type, {})
     
     return [name for name, defn in fields.items() if defn.required]
@@ -369,6 +562,7 @@ def get_important_fields(statement_type: str) -> List[str]:
         'income': INCOME_FIELDS,
         'balance': BALANCE_FIELDS,
         'cashflow': CASHFLOW_FIELDS,
+        'forecast': FORECAST_FIELDS,
     }.get(statement_type, {})
     
     return [name for name, defn in fields.items() if defn.important]
