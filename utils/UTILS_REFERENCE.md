@@ -11,6 +11,11 @@ This document provides a comprehensive guide to the `utils/` directory, which co
   - `StockData`: The master object containing all data for a single stock.
   - `IncomeStatement`, `BalanceSheet`, `CashFlow`: Standardized financial statements.
   - `CompanyProfile`: Metadata like sector, industry, and description.
+  - `ForecastData`: **[NEW]** Forward-looking analyst data model containing:
+    - Forward EPS/PE (`std_forward_eps`, `std_forward_pe`)
+    - Growth estimates (`std_earnings_growth_current_year`, `std_revenue_growth_next_year`)
+    - Analyst price targets (`std_price_target_low/high/consensus`)
+    - Earnings Surprise History (`std_earnings_surprise_history`) - Latest 4 quarters
   - `FieldWithSource`: Tracking value provenance (e.g., source: 'yahoo').
 - **Usage**: All data fetching modules must conform to these schemas.
 

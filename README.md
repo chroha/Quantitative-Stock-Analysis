@@ -24,11 +24,16 @@ This is a quantitative stock analysis and screening tool built for personal use.
 
 Performs a full-pipeline analysis for a single stock:
 
-- **Data Acquisition**: Uses a 4-tier cascading data strategy:
+- **Data Acquisition**: Employs a 4-tier cascading data source strategy:
   - **T1 Yahoo Finance**: Primary source for real-time quotes and historical financials.
   - **T2 SEC EDGAR**: Official XBRL data directly from the U.S. Securities and Exchange Commission.
-  - **T3 FMP**: Supplements analyst estimates and structured financial data.
-  - **T4 Alpha Vantage**: Final fallback for obscure stocks with data gaps.
+  - **T3 FMP**: Supplements with analyst estimates and structured data.
+  - **T4 Alpha Vantage**: Final fallback to fill gaps for less-covered stocks.
+  - **Forecast Data**: Intelligent 3-source merge (Yahoo, FMP, Finnhub) for forward-looking metrics:
+    - Forward EPS/PE (next 12-month estimates)
+    - Earnings & revenue growth estimates (current/next year)
+    - Analyst price targets (low/high/consensus)
+    - Earnings Surprise History (latest 4 quarters)
   - **Completeness Scorecard**: Visualizes data health, history depth (Year-by-Year matrix), and missing fields in real-time.
 - **Financial Scoring**: Scores the company (0-100) based on 20+ weighted metrics including ROIC, ROE, margins, growth rates, benchmarked against industry standards.
 - **Technical Scoring**: Evaluates current trend and momentum using RSI, MACD, and Moving Averages (SMA/EMA).
@@ -38,7 +43,10 @@ Performs a full-pipeline analysis for a single stock:
   - Relative Valuation (PE/PB/PS/EV-EBITDA Multiples)
   - Value Investing (Graham Number, Peter Lynch, PEG Ratio)
   - Analyst Consensus Targets
-- **AI Investment Commentary**: Uses Google Gemini to generate an interpretative report based on all the above data.
+- **AI Investment Commentary**: Uses Google Gemini to generate bilingual analysis reports including:
+  - **Forward Metrics Analysis**: Current vs forward P/E, EPS comparison tables with auto-calculated changes
+  - **Earnings Surprise Analysis**: Detailed 4-quarter surprise table with average beat% and consistency metrics
+  - Integrated historical and forward-looking insights
 
 ### 3. Macro Strategy Analysis (`run_macro_report.py`)
 
