@@ -1,8 +1,8 @@
-# 工具与基础设施参考文档 (Utilities Reference)
+# 工具与基础设施参考文档
 
 本文档旨在帮助开发者了解 `utils/` 目录下的核心基础设施、数据架构和通用工具函数。
 
-## 1. 核心数据架构 (Core Data Infrastructure)
+## 1. 核心数据架构
 
 ### `unified_schema.py`
 
@@ -45,7 +45,7 @@
 
 ---
 
-## 2. 指标与定义 (Metrics & Definitions)
+## 2. 指标与定义
 
 ### `metric_registry.py`
 
@@ -63,7 +63,7 @@
 
 ---
 
-## 3. 辅助函数库 (Helper Libraries)
+## 3. 辅助函数库
 
 ### `numeric_utils.py`
 
@@ -91,7 +91,7 @@
 
 ---
 
-## 4. 日志与输出 (Logging & Output)
+## 4. 日志与输出
 
 ### `logger.py`
 
@@ -109,7 +109,7 @@
 
 ---
 
-## 5. 报告生成 (Reporting)
+## 5. 报告生成
 
 ### `report_utils.py`
 
