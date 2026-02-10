@@ -171,7 +171,7 @@ class DataAggregator:
             raw_data_for_forecast = self._load_json(raw_path)
             forecast_data = raw_data_for_forecast.get('forecast_data', {})
             if forecast_data:
-                aggregated_base["forecast"] = self._simplify_forecast(forecast_data, aggregated_base)
+                aggregated_base["forecast"] = self._simplify_forecast(forecast_data, aggregated_base, raw_data_for_forecast)
         
         # Merge advanced metrics if they exist
         if advanced_metrics:
@@ -345,7 +345,7 @@ class DataAggregator:
             "lynch": fmt('peter_lynch')
         }
     
-    def _simplify_forecast(self, forecast_data: Dict, aggregated_base: Dict) -> Dict:
+    def _simplify_forecast(self, forecast_data: Dict, aggregated_base: Dict, raw_data: Dict) -> Dict:
         """Simplify forecast data for AI consumption."""
         def get_val(field):
             obj = forecast_data.get(field)
@@ -353,11 +353,24 @@ class DataAggregator:
                 return obj.get('value')
             return obj
         
-        # Get current values from aggregated data
-        profile_pe = 0
-        profile_eps = 0
-        # Try to get from tech_data or val_data if available
-        # For now, use simple extraction
+        # Extract current values for comparison
+        profile = raw_data.get('profile', {})
+        
+        def get_profile_val(field):
+            obj = profile.get(field)
+            if isinstance(obj, dict):
+                return obj.get('value')
+            return obj
+        
+        # Current P/E, EPS from profile
+        current_pe = get_profile_val('std_pe_ratio')
+        current_eps = get_profile_val('std_eps')
+        
+        # Historical growth rates from aggregated financial_score
+        fin_score = aggregated_base.get('financial_score', {})
+        growth = fin_score.get('growth', {})
+        current_earnings_growth_5y = growth.get('ni_cagr', {}).get('val', 0) if growth.get('ni_cagr') else 0
+        current_revenue_growth_5y = growth.get('rev_cagr', {}).get('val', 0) if growth.get('rev_cagr') else 0
         
         # Extract forward metrics
         fwd_eps = get_val('std_forward_eps')
@@ -374,7 +387,6 @@ class DataAggregator:
         surprises = forecast_data.get('std_earnings_surprise_history', [])
         surprise_summary = None
         if surprises and isinstance(surprises, list):
-            # Calculate average surprise
             avg_surprise = sum(s.get('surprise_percent', 0) for s in surprises) / len(surprises) if surprises else 0
             positive_count = sum(1 for s in surprises if s.get('surprise_percent', 0) > 0)
             
@@ -394,13 +406,21 @@ class DataAggregator:
             }
         
         return {
+            # Current values
+            "current_pe": current_pe,
+            "current_eps": current_eps,
+            "current_earnings_growth_5y": current_earnings_growth_5y,
+            "current_revenue_growth_5y": current_revenue_growth_5y,
+            # Forward values
             "forward_eps": fwd_eps,
             "forward_pe": fwd_pe,
             "earnings_growth_current_year": earnings_growth_cy,
             "revenue_growth_next_year": revenue_growth_ny,
+            # Price targets
             "price_target_low": pt_low,
             "price_target_high": pt_high,
             "price_target_consensus": pt_consensus,
+            # Surprises
             "surprises": surprise_summary
         }
     
