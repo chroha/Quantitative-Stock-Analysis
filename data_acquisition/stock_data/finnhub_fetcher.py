@@ -217,6 +217,31 @@ class FinnhubFetcher(BaseFetcher):
         estimates = data.get('data', [])
         logger.info(f"Fetched {len(estimates)} EBITDA estimates from Finnhub")
         return estimates
+    
+    # ====== Required Abstract Methods (BaseFetcher Interface) ======
+    # Finnhub is primarily for forecast data, not historical statements
+    # These methods return empty lists to satisfy the interface
+    
+    def fetch_income_statements(self) -> list:
+        """
+        Not implemented for Finnhub (forecast-only data source).
+        Returns empty list to satisfy BaseFetcher interface.
+        """
+        return []
+    
+    def fetch_balance_sheets(self) -> list:
+        """
+        Not implemented for Finnhub (forecast-only data source).
+        Returns empty list to satisfy BaseFetcher interface.
+        """
+        return []
+    
+    def fetch_cash_flow_statements(self) -> list:
+        """
+        Not implemented for Finnhub (forecast-only data source).
+        Returns empty list to satisfy BaseFetcher interface.
+        """
+        return []
 
 
 # Register this fetcher
