@@ -18,6 +18,11 @@ ALPHAVANTAGE_TIMEOUT_SECONDS = 30
 ALPHAVANTAGE_MIN_REQUEST_INTERVAL = 1.5  # seconds
 ALPHAVANTAGE_RETRIES = 3
 
+# Finnhub
+FINNHUB_BASE_URL = "https://finnhub.io/api/v1"
+FINNHUB_TIMEOUT_SECONDS = 15
+FINNHUB_RETRIES = 3
+
 # Yahoo Finance (yfinance)
 YAHOO_TIMEOUT_SECONDS = 20
 
@@ -55,4 +60,13 @@ ALPHAVANTAGE_FUNCTIONS: Dict[str, str] = {
     'income_statement': 'INCOME_STATEMENT',
     'balance_sheet': 'BALANCE_SHEET',
     'cash_flow': 'CASH_FLOW',
+}
+
+FINNHUB_ENDPOINTS: Dict[str, str] = {
+    'profile': 'stock/profile2',
+    'earnings_calendar': 'calendar/earnings',
+    'earnings_estimates': 'stock/earnings',
+    'revenue_estimates': 'stock/revenue-estimates',
+    'eps_estimates': 'stock/eps-estimates',
+    'ebitda_estimates': 'stock/ebitda-estimates',
 }

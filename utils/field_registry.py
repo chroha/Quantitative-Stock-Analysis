@@ -15,12 +15,13 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-class DataSource(Enum):
-    """Enumeration of data sources in priority order."""
+class DataSource(str, Enum):
+    """Enum for data sources."""
     YAHOO = 'yahoo'
     SEC_EDGAR = 'sec_edgar'
     FMP = 'fmp'
     ALPHAVANTAGE = 'alphavantage'
+    FINNHUB = "finnhub"  # New forecast data source'
 
 
 @dataclass

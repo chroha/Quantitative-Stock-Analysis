@@ -23,6 +23,7 @@ from data_acquisition.stock_data.yahoo_fetcher import YahooFetcher
 from data_acquisition.stock_data.edgar_fetcher import EdgarFetcher
 from data_acquisition.stock_data.fmp_fetcher import FMPFetcher
 from data_acquisition.stock_data.alphavantage_fetcher import AlphaVantageFetcher
+from data_acquisition.stock_data.finnhub_fetcher import FinnhubFetcher  # NEW
 from data_acquisition.stock_data.initial_data_loader import StockDataLoader
 
 # Import Mappings
@@ -226,6 +227,54 @@ class DataAuditor:
             f.write("\n".join(lines))
         logger.info(f"Report: {path}")
 
+    def audit_finnhub(self):
+        """Audit Finnhub forecast/estimates data."""
+        logger.info(f"\n--- Auditing Finnhub ({self.symbol}) ---")
+        try:
+            fetcher = FinnhubFetcher(self.symbol)
+            
+            # Fetch all forecast endpoints
+            audit_data = {
+                'profile': None,
+                'earnings_estimates': None,
+                'revenue_estimates': None,
+                'eps_estimates': None,
+                'ebitda_estimates': None
+            }
+            
+            # Profile
+            profile = fetcher.fetch_profile()
+            if profile:
+                audit_data['profile'] = profile.model_dump()
+            
+            # Forecast data (raw format from API)
+            audit_data['earnings_estimates'] = fetcher.fetch_earnings_estimates()
+            audit_data['revenue_estimates'] = fetcher.fetch_revenue_estimates()
+            audit_data['eps_estimates'] = fetcher.fetch_eps_estimates()
+            audit_data['ebitda_estimates'] = fetcher.fetch_ebitda_estimates()
+            
+            self._save_json(audit_data, "finnhub_parsed.json", 'parsed')
+            
+            # Generate summary report
+            summary = []
+            summary.append(f"FINNHUB FORECAST DATA SUMMARY: {self.symbol}")
+            summary.append("=" * 50)
+            
+            for key, data in audit_data.items():
+                if key == 'profile':
+                    status = "✓ Available" if data else "✗ Not Available"
+                    summary.append(f"{key:20} : {status}")
+                elif data:
+                    count = len(data) if isinstance(data, list) else 0
+                    summary.append(f"{key:20} : {count} records")
+                else:
+                    summary.append(f"{key:20} : ✗ No data")
+            
+            self._save_txt(summary, "finnhub_summary.txt", 'reports')
+            
+        except Exception as e:
+            logger.warning(f"Failed to audit Finnhub (Check API Key): {e}")
+
     def run_full_audit(self):
         """Run all audit steps."""
         logger.info(f"Starting Data Audit for {self.symbol}...")
@@ -236,6 +285,7 @@ class DataAuditor:
         self.audit_edgar()
         self.audit_fmp()
         self.audit_alphavantage()
+        self.audit_finnhub()  # NEW: Audit forecast data
         
         # Phase 2: Integration
         self.run_pipeline_integration()
