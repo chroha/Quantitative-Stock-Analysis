@@ -45,7 +45,7 @@ from pydantic import BaseModel, Field
 
 # Data source types for provenance tracking
 # Extended to support 4-tier cascade: Yahoo > FMP > Alpha Vantage > SEC EDGAR
-DataSource = Literal['yahoo', 'fmp', 'alphavantage', 'sec_edgar', 'manual', 'normalized']
+DataSource = Literal['yahoo', 'fmp', 'alphavantage', 'sec_edgar', 'finnhub', 'manual', 'normalized']
 
 
 class FieldWithSource(BaseModel):

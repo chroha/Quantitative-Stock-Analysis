@@ -21,7 +21,7 @@ class DataSource(str, Enum):
     SEC_EDGAR = 'sec_edgar'
     FMP = 'fmp'
     ALPHAVANTAGE = 'alphavantage'
-    FINNHUB = "finnhub"  # New forecast data source'
+    FINNHUB = 'finnhub'  # New forecast data source
 
 
 @dataclass
