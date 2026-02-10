@@ -68,11 +68,12 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 - **Earnings Surprise History**: Latest 4 quarters showing actual vs. estimate with surprise %
 
 **How to use this data:**
-1. Reference analyst consensus price targets when discussing valuation (Section III)
-2. Mention earnings surprise trends when evaluating company performance consistency (Section I or IV)
-3. Use forward metrics (Forward EPS, Forward P/E) to complement historical analysis
-4. Compare historical growth rates with forward estimates to assess momentum
-5. All forecast data includes source attribution (Yahoo/FMP/Finnhub) - you may cite sources for credibility
+1. **REQUIRED in Section III (估值分析)**: Display Forward Metrics table comparing forward vs current multiples
+2. **REQUIRED**: Analyze earnings surprise trends when evaluating performance consistency. Calculate average surprise % and mention positive/negative pattern
+3. Reference analyst consensus price targets when discussing valuation
+4. Use forward metrics (Forward EPS, Forward P/E) to complement historical analysis
+5. Compare historical growth rates with forward estimates to assess momentum change
+6. All forecast data includes source attribution (Yahoo/FMP/Finnhub) - cite sources for credibility
 
 
 **Instructions:**
@@ -187,7 +188,25 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 ## 三、估值分析 (加权估价:$X)
 **当前价:** $X | 上行空间:X%
 
-### 1. 华尔街预期
+### 1. 前瞻估值指标 (Forward Metrics)
+| 指标 | 当前值 | 前瞻值 | 变化 | 解读 |
+|------|-------|-------|------|------|
+| 市盈率 (P/E) | X | X | X% | [分析估值扩张/收缩,结合盈利增长预期解读] |
+| EPS | $X | $X | X% | [对比历史增速,分析盈利加速/放缓] |
+| 盈利增长 | X% (5年) | X% (本年预期) | X ppts | [历史vs预期增速对比,判断拐点] |
+| 营收增长 | X% (5年) | X% (明年预期) | X ppts | [分析业务扩张动能变化] |
+
+### 2. 盈利意外分析 (Earnings Surprises)
+**最近4季度表现:** [总结整体surprise趋势]
+| 期间 | 实际EPS | 预期EPS | 差额 | 超预期% |
+|------|---------|---------|------|--------|
+| X | $X | $X | $X | X% |
+| X | $X | $X | $X | X% |
+| X | $X | $X | $X | X% |
+| X | $X | $X | $X | X% |
+**平均超预期:** X% | **正向次数:** X/4 | **解读:** [分析业绩稳定性、管理层指引准确性]
+
+### 3. 华尔街预期
 | 指标 | 数值 | 解读 |
 |---|---|---|
 > 注意: 
