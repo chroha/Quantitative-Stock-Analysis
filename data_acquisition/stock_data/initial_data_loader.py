@@ -865,7 +865,6 @@ class StockDataLoader:
             Updated StockData with forecast_data populated
         """
         logger.info("-> [Phase 2.5] Fetching Forecast Data (FMP + Finnhub)...")
-        print("-> [Phase 2.5] Fetching Forecast Data (FMP + Finnhub)...")
         
         symbol = current_data.profile.std_symbol if current_data.profile else "UNKNOWN"
         
@@ -905,4 +904,3 @@ class StockDataLoader:
             logger.info("   No forecast data available from any source")
         
         return current_data
-
