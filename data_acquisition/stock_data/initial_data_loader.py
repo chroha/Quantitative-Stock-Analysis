@@ -881,7 +881,10 @@ class StockDataLoader:
         
         # 4. Merge using IntelligentMerger
         if any([yahoo_forecast, fmp_forecast, finnhub_forecast]):
-            merged_forecast = self.merger.merge_forecast_data(
+            # Create merger instance (same pattern as other phases)
+            merger = IntelligentMerger(symbol)
+            
+            merged_forecast = merger.merge_forecast_data(
                 yahoo_forecast, fmp_forecast, finnhub_forecast
             )
             
