@@ -11,6 +11,11 @@
   - `StockData`: 包含单个股票所有数据的主对象。
   - `IncomeStatement`, `BalanceSheet`, `CashFlow`: 标准化三大财务报表。
   - `CompanyProfile`: 公司元数据（行业、板块、简介）。
+  - `ForecastData`: **[NEW]** 前瞻预测数据模型,包含：
+    - Forward EPS/PE (`std_forward_eps`, `std_forward_pe`)
+    - 增长预期 (`std_earnings_growth_current_year`, `std_revenue_growth_next_year`)
+    - 分析师目标价 (`std_price_target_low/high/consensus`)
+    - Earnings Surprise History (`std_earnings_surprise_history`) - 最近4季度盈利意外记录
   - `FieldWithSource`: 带有来源追踪的值对象（例如：来源='yahoo'）。
 - **规则**: 所有数据获取模块的输出必须符合此 schema 定义。
 
