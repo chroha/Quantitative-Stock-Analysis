@@ -10,7 +10,8 @@ Provides detailed logging of which source provided each field.
 
 from typing import Optional, List, Dict, Any, Tuple
 from utils.unified_schema import (
-    FieldWithSource, StockData, IncomeStatement, BalanceSheet, CashFlow, CompanyProfile
+    FieldWithSource, StockData, IncomeStatement, BalanceSheet, CashFlow, CompanyProfile,
+    ForecastData
 )
 from utils.field_registry import DataSource, get_merge_priority, get_all_fields
 from utils.logger import setup_logger
@@ -317,3 +318,96 @@ class IntelligentMerger:
                 if src_enum.value == source:
                     fields.add(field_name)
         return sorted(list(fields))
+    
+    def merge_forecast_data(
+        self,
+        yahoo_forecast: Optional[ForecastData],
+        fmp_forecast: Optional[ForecastData],
+        finnhub_forecast: Optional[ForecastData]
+    ) -> Optional[ForecastData]:
+        """
+        Merge forecast data from multiple sources using field-level priority.
+        
+        Args:
+            yahoo_forecast: Forward metrics from Yahoo (forward_eps, forward_pe, etc.)
+            fmp_forecast: Price targets, estimates, growth from FMP
+            finnhub_forecast: Earnings surprises and estimates from Finnhub
+            
+        Returns:
+            Merged ForecastData object or None if all sources are empty
+        
+        Special handling:
+            - earnings_surprise_history: Exclusive to Finnhub, take directly
+            - Other fields: Use merge_field() with FORECAST_FIELDS priority
+        """
+        # Early exit if all sources are None
+        if not any([yahoo_forecast, fmp_forecast, finnhub_forecast]):
+            return None
+        
+        merged_kwargs = {}
+        field_sources = {}
+        
+        # Get all forecast fields
+        all_fields = ForecastData.model_fields.keys()
+        
+        for field_name in all_fields:
+            # Skip last_updated (auto-generated)
+            if field_name == 'last_updated':
+                continue
+            
+            # Special handling for earnings_surprise_history (list, Finnhub-only)
+            if field_name == 'std_earnings_surprise_history':
+                if finnhub_forecast and finnhub_forecast.std_earnings_surprise_history:
+                    merged_kwargs[field_name] = finnhub_forecast.std_earnings_surprise_history
+                    field_sources[field_name] = DataSource.FINNHUB
+                else:
+                    merged_kwargs[field_name] = []
+                continue
+            
+            # Gather values from all sources
+            field_values = {}
+            
+            if yahoo_forecast:
+                val = getattr(yahoo_forecast, field_name, None)
+                if val is not None:
+                    field_values[DataSource.YAHOO] = val
+            
+            if fmp_forecast:
+                val = getattr(fmp_forecast, field_name, None)
+                if val is not None:
+                    field_values[DataSource.FMP] = val
+            
+            if finnhub_forecast:
+                val = getattr(finnhub_forecast, field_name, None)
+                if val is not None:
+                    field_values[DataSource.FINNHUB] = val
+            
+            # Merge using priority from field_registry
+            merged_value, winning_source = merge_field(field_values, field_name)
+            merged_kwargs[field_name] = merged_value
+            
+            if winning_source:
+                field_sources[field_name] = winning_source
+        
+        # Log merge decision
+        self.merge_log.append({
+            'period': 'Forecast',
+            'statement_type': 'ForecastData',
+            'field_sources': field_sources
+        })
+        
+        # Log summary
+        log_merge_summary(self.symbol, "ForecastData", field_sources)
+        
+        # Check if we have any actual data
+        has_data = any(
+            merged_kwargs.get(field) is not None 
+            for field in all_fields 
+            if field != 'last_updated'
+        )
+        
+        if not has_data:
+            logger.warning(f"{self.symbol}: No forecast data after merge")
+            return None
+        
+        return ForecastData(**merged_kwargs)

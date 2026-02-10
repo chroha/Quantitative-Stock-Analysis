@@ -757,10 +757,13 @@ class StockDataLoader:
         current_data.metadata = current_data.metadata or {}
         current_data.metadata['paid_api_used'] = False
         
-        # Phase 2: SEC EDGAR
+        # Phase 2: EDGAR (Official SEC Filings)
         current_data = self._run_phase2_edgar(current_data)
         
-        # Phase 3: FMP
+        # Phase 2.5: Forecast Data (Yahoo/FMP/Finnhub) - NEW
+        current_data = self._run_phase2_5_forecast(current_data)
+        
+        # Phase 3: Gap AnalysisFMP
         current_data = self._run_phase3_fmp(current_data)
         
         # Phase 4: Alpha Vantage
@@ -795,5 +798,107 @@ class StockDataLoader:
         # Display the visual scorecard
         from data_acquisition.stock_data.completeness_reporter import CompletenessReporter
         CompletenessReporter.generate_scorecard(symbol, current_data, self.validation_result)
+            
+        return current_data
+    
+    def _extract_yahoo_forecast(self, data: StockData) -> Optional['ForecastData']:
+        """
+        Extract forward-looking metrics from Yahoo profile to ForecastData format.
+        
+        Yahoo provides: forward_eps, forward_pe, earnings_growth in CompanyProfile.
+        We map these to ForecastData for unified forecast handling.
+        """
+        from utils.unified_schema import ForecastData
+        
+        if not data or not data.profile:
+            return None
+        
+        forecast = ForecastData()
+        has_data = False
+        
+        # Map forward metrics
+        if data.profile.std_forward_eps:
+            forecast.std_forward_eps = data.profile.std_forward_eps
+            has_data = True
+        
+        if data.profile.std_forward_pe:
+            forecast.std_forward_pe = data.profile.std_forward_pe
+            has_data = True
+        
+        if data.profile.std_earnings_growth:
+            # Map to current year growth estimate
+            forecast.std_earnings_growth_current_year = data.profile.std_earnings_growth
+            has_data = True
+        
+        return forecast if has_data else None
+    
+    def _fetch_fmp_forecast(self, symbol: str) -> Optional['ForecastData']:
+        """Fetch forecast data from FMP using FMPFetcher."""
+        try:
+            from data_acquisition.stock_data.fmp_fetcher import FMPFetcher
+            fetcher = FMPFetcher(symbol)
+            return fetcher.fetch_forecast_data()
+        except Exception as e:
+            logger.warning(f"FMP forecast fetch failed for {symbol}: {e}")
+            return None
+    
+    def _fetch_finnhub_forecast(self, symbol: str) -> Optional['ForecastData']:
+        """Fetch forecast data from Finnhub using FinnhubFetcher."""
+        try:
+            from data_acquisition.stock_data.finnhub_fetcher import FinnhubFetcher
+            fetcher = FinnhubFetcher(symbol)
+            return fetcher.fetch_forecast_data()
+        except Exception as e:
+            logger.warning(f"Finnhub forecast fetch failed for {symbol}: {e}")
+            return None
+    
+    def _run_phase2_5_forecast(self, current_data: StockData) -> StockData:
+        """
+        Phase 2.5: Fetch and merge forecast data from multiple sources.
+        
+        Sources:
+        - Yahoo: forward_eps, forward_pe, earnings_growth (from Phase 1)
+        - FMP: price targets, analyst estimates, growth estimates
+        - Finnhub: earnings surprise history, estimates
+        
+        Returns:
+            Updated StockData with forecast_data populated
+        """
+        logger.info("-> [Phase 2.5] Fetching Forecast Data (FMP + Finnhub)...")
+        
+        symbol = current_data.profile.std_symbol if current_data.profile else "UNKNOWN"
+        
+        # 1. Extract Yahoo forecast (from Phase 1 profile)
+        yahoo_forecast = self._extract_yahoo_forecast(current_data)
+        if yahoo_forecast:
+            logger.debug(f"  Extracted Yahoo forward metrics")
+        
+        # 2. Fetch FMP forecast
+        fmp_forecast = self._fetch_fmp_forecast(symbol)
+        
+        # 3. Fetch Finnhub forecast  
+        finnhub_forecast = self._fetch_finnhub_forecast(symbol)
+        
+        # 4. Merge using IntelligentMerger
+        if any([yahoo_forecast, fmp_forecast, finnhub_forecast]):
+            merged_forecast = self.merger.merge_forecast_data(
+                yahoo_forecast, fmp_forecast, finnhub_forecast
+            )
+            
+            if merged_forecast:
+                current_data.forecast_data = merged_forecast
+                
+                # Log summary
+                sources = []
+                if yahoo_forecast: sources.append("Yahoo")
+                if fmp_forecast: sources.append("FMP")
+                if finnhub_forecast: sources.append("Finnhub")
+                
+                logger.info(f"   ✓ Merged forecast data from: {', '.join(sources)}")
+            else:
+                logger.info("   No forecast data available after merge")
+        else:
+            logger.info("   No forecast data available from any source")
         
         return current_data
+
