@@ -228,52 +228,108 @@ class DataAuditor:
         logger.info(f"Report: {path}")
 
     def audit_finnhub(self):
-        """Audit Finnhub forecast/estimates data."""
-        logger.info(f"\n--- Auditing Finnhub ({self.symbol}) ---")
+        """Audit Finnhub forecast data using new fetch_forecast_data method."""
+        logger.info(f"\n--- Auditing Finnhub Forecast Data ({self.symbol}) ---")
         try:
             fetcher = FinnhubFetcher(self.symbol)
             
-            # Fetch all forecast endpoints
-            audit_data = {
-                'profile': None,
-                'earnings_estimates': None,
-                'revenue_estimates': None,
-                'eps_estimates': None,
-                'ebitda_estimates': None
-            }
+            # 1. Fetch using new unified method
+            forecast_data = fetcher.fetch_forecast_data()
             
-            # Profile
-            profile = fetcher.fetch_profile()
-            if profile:
-                audit_data['profile'] = profile.model_dump()
+            # 2. Save parsed forecast data
+            if forecast_data:
+                self._save_json(forecast_data.model_dump(), "finnhub_forecast.json", 'parsed')
             
-            # Forecast data (raw format from API)
-            audit_data['earnings_estimates'] = fetcher.fetch_earnings_estimates()
-            audit_data['revenue_estimates'] = fetcher.fetch_revenue_estimates()
-            audit_data['eps_estimates'] = fetcher.fetch_eps_estimates()
-            audit_data['ebitda_estimates'] = fetcher.fetch_ebitda_estimates()
-            
-            self._save_json(audit_data, "finnhub_parsed.json", 'parsed')
-            
-            # Generate summary report
+            # 3. Generate summary report
             summary = []
-            summary.append(f"FINNHUB FORECAST DATA SUMMARY: {self.symbol}")
+            summary.append(f"FINNHUB FORECAST DATA: {self.symbol}")
             summary.append("=" * 50)
             
-            for key, data in audit_data.items():
-                if key == 'profile':
-                    status = "✓ Available" if data else "✗ Not Available"
-                    summary.append(f"{key:20} : {status}")
-                elif data:
-                    count = len(data) if isinstance(data, list) else 0
-                    summary.append(f"{key:20} : {count} records")
+            if forecast_data:
+                # Earnings Surprises (Finnhub's unique feature)
+                surprises = forecast_data.std_earnings_surprise_history
+                if surprises and len(surprises) > 0:
+                    summary.append(f"\n✓ Earnings Surprise History: {len(surprises)} records")
+                    # Show latest 3
+                    for s in surprises[:3]:
+                        summary.append(f"  {s['period']}: Actual={s['actual']:.2f} vs Est={s['estimate']:.2f} (Surprise: {s['surprise_percent']:.1f}%)")
                 else:
-                    summary.append(f"{key:20} : ✗ No data")
+                    summary.append("\n✗ No earnings surprise data")
+                
+                # EPS/Revenue Estimates
+                summary.append("\nEstimates:")
+                if forecast_data.std_eps_estimate_current_year:
+                    summary.append(f"  ✓ EPS Estimate: {forecast_data.std_eps_estimate_current_year.value:.2f}")
+                else:
+                    summary.append(f"  ✗ EPS Estimate")
+                    
+                if forecast_data.std_revenue_estimate_current_year:
+                    summary.append(f"  ✓ Revenue Estimate: ${forecast_data.std_revenue_estimate_current_year.value:,.0f}")
+                else:
+                    summary.append(f"  ✗ Revenue Estimate")
+                    
+                if forecast_data.std_ebitda_estimate_next_year:
+                    summary.append(f"  ✓ EBITDA Estimate: ${forecast_data.std_ebitda_estimate_next_year.value:,.0f}")
+                else:
+                    summary.append(f"  ✗ EBITDA Estimate")
+            else:
+                summary.append("\n✗ No forecast data available from Finnhub")
             
             self._save_txt(summary, "finnhub_summary.txt", 'reports')
             
         except Exception as e:
-            logger.warning(f"Failed to audit Finnhub (Check API Key): {e}")
+            logger.warning(f"Failed to audit Finnhub: {e}")
+    
+    def audit_fmp_forecast(self):
+        """Audit FMP forecast data using new fetch_forecast_data method."""
+        logger.info(f"\n--- Auditing FMP Forecast Data ({self.symbol}) ---")
+        try:
+            fetcher = FMPFetcher(self.symbol)
+            
+            # Fetch forecast data
+            forecast_data = fetcher.fetch_forecast_data()
+            
+            if forecast_data:
+                self._save_json(forecast_data.model_dump(), "fmp_forecast.json", 'parsed')
+            
+            # Generate summary
+            summary = []
+            summary.append(f"FMP FORECAST DATA: {self.symbol}")
+            summary.append("=" * 50)
+            
+            if forecast_data:
+                # Price Targets
+                summary.append("\nPrice Targets:")
+                if forecast_data.std_price_target_low:
+                    summary.append(f"  Low:  ${forecast_data.std_price_target_low.value:.2f}")
+                if forecast_data.std_price_target_high:
+                    summary.append(f"  High: ${forecast_data.std_price_target_high.value:.2f}")
+                if forecast_data.std_price_target_avg:
+                    summary.append(f"  Avg:  ${forecast_data.std_price_target_avg.value:.2f}")
+                if forecast_data.std_number_of_analysts:
+                    summary.append(f"  Analysts: {forecast_data.std_number_of_analysts.value:.0f}")
+                
+                # Estimates
+                summary.append("\nEstimates:")
+                if forecast_data.std_eps_estimate_current_year:
+                    summary.append(f"  ✓ EPS: {forecast_data.std_eps_estimate_current_year.value:.2f}")
+                if forecast_data.std_revenue_estimate_current_year:
+                    summary.append(f"  ✓ Revenue: ${forecast_data.std_revenue_estimate_current_year.value:,.0f}")
+                
+                # Growth
+                summary.append("\nGrowth Estimates:")
+                if forecast_data.std_earnings_growth_current_year:
+                    summary.append(f"  ✓ Earnings Growth: {forecast_data.std_earnings_growth_current_year.value*100:.1f}%")
+                if forecast_data.std_revenue_growth_next_year:
+                    summary.append(f"  ✓ Revenue Growth: {forecast_data.std_revenue_growth_next_year.value*100:.1f}%")
+            else:
+                summary.append("\n✗ No forecast data available from FMP")
+            
+            self._save_txt(summary, "fmp_forecast_summary.txt", 'reports')
+            
+        except Exception as e:
+            logger.warning(f"Failed to audit FMP forecast: {e}")
+
 
     def run_full_audit(self):
         """Run all audit steps."""
@@ -285,7 +341,11 @@ class DataAuditor:
         self.audit_edgar()
         self.audit_fmp()
         self.audit_alphavantage()
-        self.audit_finnhub()  # NEW: Audit forecast data
+        
+        # Phase 1.5: Forecast Data (New - Phase 3)
+        logger.info("\n=== FORECAST DATA AUDIT ===")
+        self.audit_fmp_forecast()   # FMP forecast data
+        self.audit_finnhub()         # Finnhub forecast data
         
         # Phase 2: Integration
         self.run_pipeline_integration()
