@@ -665,6 +665,69 @@ class DataAggregator:
             lines.append(f"| Book Value/Share | 每股账面价值 | {format_val(book_value, MetricFormat.CURRENCY)} | `std_book_value_per_share` |")
             lines.append(f"| Earnings Growth | 盈利增长率 | {format_val(get_field_val(profile, 'std_earnings_growth'), MetricFormat.PERCENT)} | `profile.std_earnings_growth` |")
             
+            # === NEW: Forward Estimates from forecast_data ===
+            lines.append("")
+            lines.append("#### 前瞻预测数据 (Forward Estimates)\\n")
+            lines.append("\u003e 注:以下数据来自forecast_data,已通过智能合并(Yahoo→FMP→Finnhub)。部分字段可能与profile中的值不同。\\n")
+            lines.append("| Category | English Name | 中文名称 | Value | Source | Field |")
+            lines.append("|---|---|---|---|---|---|")
+            
+            # Load forecast_data
+            forecast_data = raw_data.get('forecast_data', {})
+            
+            def get_forecast_val(field):
+                """Extract value and source from forecast_data field."""
+                obj = forecast_data.get(field)
+                if isinstance(obj, dict):
+                    val = obj.get('value')
+                    src = obj.get('source', 'N/A')
+                    return val, src.title() if src != 'N/A' else 'N/A'
+                return None, 'N/A'
+            
+            # Estimates Section
+            fwd_eps, fwd_eps_src = get_forecast_val('std_forward_eps')
+            fwd_pe, fwd_pe_src = get_forecast_val('std_forward_pe')
+            eg_cy, eg_cy_src = get_forecast_val('std_earnings_growth_current_year')
+            rg_ny, rg_ny_src = get_forecast_val('std_revenue_growth_next_year')
+            
+            lines.append(f"| **Estimates** | Forward EPS | 前瞻每股收益 | {format_val(fwd_eps, MetricFormat.CURRENCY)} | {fwd_eps_src} | `forecast_data.std_forward_eps` |")
+            lines.append(f"| | Forward P/E | 前瞻市盈率 | {format_val(fwd_pe, MetricFormat.DECIMAL)} | {fwd_pe_src} | `forecast_data.std_forward_pe` |")
+            lines.append(f"| | Earnings Growth (CY) | 本年盈利增长 | {format_val(eg_cy, MetricFormat.PERCENT)} | {eg_cy_src} | `forecast_data.std_earnings_growth_current_year` |")
+            lines.append(f"| | Revenue Growth (NY) | 明年营收增长 | {format_val(rg_ny, MetricFormat.PERCENT)} | {rg_ny_src} | `forecast_data.std_revenue_growth_next_year` |")
+            
+            # Price Targets Section
+            pt_low, pt_low_src = get_forecast_val('std_price_target_low')
+            pt_high, pt_high_src = get_forecast_val('std_price_target_high')
+            pt_cons, pt_cons_src = get_forecast_val('std_price_target_consensus')
+            
+            lines.append(f"| **Price Targets** | Analyst Low | 分析师最低价 | {format_val(pt_low, MetricFormat.CURRENCY)} | {pt_low_src} | `forecast_data.std_price_target_low` |")
+            lines.append(f"| | Analyst High | 分析师最高价 | {format_val(pt_high, MetricFormat.CURRENCY)} | {pt_high_src} | `forecast_data.std_price_target_high` |")
+            lines.append(f"| | Analyst Consensus | 分析师共识价 | {format_val(pt_cons, MetricFormat.CURRENCY)} | {pt_cons_src} | `forecast_data.std_price_target_consensus` |")
+            
+            # Earnings Surprises Section
+            surprises = forecast_data.get('std_earnings_surprise_history', [])
+            if surprises and isinstance(surprises, list):
+                lines.append(f"| **Surprises** | Earnings Surprises | 盈利意外 | {len(surprises)} records | Finnhub | `forecast_data.std_earnings_surprise_history` |")
+                
+                # Detailed Surprise Table
+                lines.append("")
+                lines.append("##### Earnings Surprise详细记录 (Latest 4 Quarters)\\n")
+                lines.append("| Period | Actual EPS | Estimate EPS | Surprise | Surprise % |")
+                lines.append("|--------|-----------|-------------|----------|-----------|")
+                
+                for s in surprises[:4]:  # Latest 4 quarters
+                    period = s.get('period', 'N/A')
+                    actual = s.get('actual', 0)
+                    estimate = s.get('estimate', 0)
+                    surprise = actual - estimate if (actual and estimate) else 0
+                    surprise_pct = s.get('surprise_percent', 0)
+                    sign = "+" if surprise >= 0 else ""
+                    lines.append(f"| {period} | ${actual:.2f} | ${estimate:.2f} | {sign}${surprise:.2f} | {sign}{surprise_pct:.2f}% |")
+                
+                lines.append("")
+            
+            # === End of forecast_data section ===
+            
             # === Supplemental Data ===
             
             # Fetch analyst targets for display

@@ -61,6 +61,20 @@ def build_analysis_prompt(data: Dict[str, Any]) -> str:
 
 Task: Generate a comprehensive investment analysis report in TWO languages (Chinese and English) based on the provided data.
 
+**IMPORTANT DATA AVAILABILITY:**
+The appendix (raw data section) now includes "前瞻预测数据 (Forward Estimates)" as a subsection under Section 3. This contains:
+- **Forward Estimates**: Forward EPS, Forward P/E, Earnings Growth (Current Year), Revenue Growth (Next Year)
+- **Analyst Price Targets**: Low/High/Consensus from analyst coverage
+- **Earnings Surprise History**: Latest 4 quarters showing actual vs. estimate with surprise %
+
+**How to use this data:**
+1. Reference analyst consensus price targets when discussing valuation (Section III)
+2. Mention earnings surprise trends when evaluating company performance consistency (Section I or IV)
+3. Use forward metrics (Forward EPS, Forward P/E) to complement historical analysis
+4. Compare historical growth rates with forward estimates to assess momentum
+5. All forecast data includes source attribution (Yahoo/FMP/Finnhub) - you may cite sources for credibility
+
+
 **Instructions:**
 1.  **Part 1: Chinese Report**
     *   Language: Simplified Chinese
