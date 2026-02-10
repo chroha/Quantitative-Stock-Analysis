@@ -21,7 +21,7 @@ import logging
 from config import constants
 from utils.logger import setup_logger
 from utils.unified_schema import (
-    CompanyProfile, FieldWithSource, TextFieldWithSource
+    CompanyProfile, FieldWithSource, TextFieldWithSource, ForecastData
 )
 from data_acquisition.stock_data.base_fetcher import BaseFetcher, DataSource, FetcherRegistry
 
@@ -217,6 +217,103 @@ class FinnhubFetcher(BaseFetcher):
         estimates = data.get('data', [])
         logger.info(f"Fetched {len(estimates)} EBITDA estimates from Finnhub")
         return estimates
+    
+    def fetch_forecast_data(self) -> Optional[ForecastData]:
+        """
+        Fetch comprehensive forecast data from Finnhub.
+        
+        Primary focus: Earnings surprise history (unique to Finnhub)
+        Secondary: EPS/Revenue/EBITDA estimates (may fail on free tier)
+        
+        Returns:
+            ForecastData object with earnings surprises or None
+        """
+        forecast = ForecastData()
+        has_data = False
+        
+        # 1. Fetch earnings surprises (PRIMARY - this is Finnhub's unique value)
+        logger.info(f"Fetching earnings surprises for {self.symbol}...")
+        earnings_data = self.fetch_earnings_estimates()
+        
+        if earnings_data and len(earnings_data) > 0:
+            # Parse earnings surprise history
+            surprise_history = []
+            for record in earnings_data:
+                try:
+                    surprise_entry = {
+                        "period": record.get('period'),
+                        "quarter": record.get('quarter'),
+                        "year": record.get('year'),
+                        "actual": record.get('actual'),
+                        "estimate": record.get('estimate'),
+                        "surprise": record.get('surprise'),
+                        "surprise_percent": record.get('surprisePercent'),
+                        "symbol": self.symbol
+                    }
+                    # Only add if has meaningful data
+                    if surprise_entry['actual'] is not None and surprise_entry['estimate'] is not None:
+                        surprise_history.append(surprise_entry)
+                except Exception as e:
+                    logger.warning(f"Failed to parse earnings record: {e}")
+                    continue
+            
+            if surprise_history:
+                forecast.std_earnings_surprise_history = surprise_history
+                has_data = True
+                logger.info(f"  ✓ Got {len(surprise_history)} earnings surprise records")
+        
+        # 2. Fetch EPS estimates (SECONDARY - may fail on free tier)
+        logger.info(f"Fetching EPS estimates for {self.symbol}...")
+        eps_estimates = self.fetch_eps_estimates()
+        if eps_estimates and len(eps_estimates) > 0:
+            try:
+                # Take most recent estimate
+                latest = eps_estimates[0]
+                if eps_mean := latest.get('epsAvg'):
+                    forecast.std_eps_estimate_current_year = FieldWithSource(
+                        value=float(eps_mean), source='finnhub'
+                    )
+                    has_data = True
+                    logger.info(f"  ✓ Got EPS estimate")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse EPS estimates: {e}")
+        
+        # 3. Fetch Revenue estimates (SECONDARY - may fail on free tier)
+        logger.info(f"Fetching revenue estimates for {self.symbol}...")
+        rev_estimates = self.fetch_revenue_estimates()
+        if rev_estimates and len(rev_estimates) > 0:
+            try:
+                latest = rev_estimates[0]
+                if rev_mean := latest.get('revenueAvg'):
+                    forecast.std_revenue_estimate_current_year = FieldWithSource(
+                        value=float(rev_mean), source='finnhub'
+                    )
+                    has_data = True
+                    logger.info(f"  ✓ Got revenue estimate")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse revenue estimates: {e}")
+        
+        # 4. Fetch EBITDA estimates (SECONDARY - may fail on free tier)
+        logger.info(f"Fetching EBITDA estimates for {self.symbol}...")
+        ebitda_estimates = self.fetch_ebitda_estimates()
+        if ebitda_estimates and len(ebitda_estimates) > 0:
+            try:
+                latest = ebitda_estimates[0]
+                if ebitda_mean := latest.get('ebitdaAvg'):
+                    forecast.std_ebitda_estimate_next_year = FieldWithSource(
+                        value=float(ebitda_mean), source='finnhub'
+                    )
+                    has_data = True
+                    logger.info(f"  ✓ Got EBITDA estimate")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse EBITDA estimates: {e}")
+        
+        if has_data:
+            logger.info(f"Successfully fetched forecast data for {self.symbol} from Finnhub")
+            return forecast
+        else:
+            logger.warning(f"No forecast data available for {self.symbol} from Finnhub")
+            return None
     
     # ====== Required Abstract Methods (BaseFetcher Interface) ======
     # Finnhub is primarily for forecast data, not historical statements

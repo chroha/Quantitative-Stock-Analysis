@@ -15,7 +15,8 @@ from config.settings import settings
 from config import constants
 from utils.logger import setup_logger
 from utils.unified_schema import (
-    AnalystTargets, CompanyProfile, FieldWithSource, TextFieldWithSource, FMP_FIELD_MAPPING
+    AnalystTargets, CompanyProfile, FieldWithSource, TextFieldWithSource, FMP_FIELD_MAPPING,
+    ForecastData
 )
 from utils.field_registry import DataSource
 from data_acquisition.stock_data.base_fetcher import BaseFetcher
@@ -372,30 +373,135 @@ class FMPFetcher(BaseFetcher):
              logger.warning(f"Failed to parse FMP key metrics: {e}")
              return None
 
-    def fetch_financial_growth(self) -> Optional[CompanyProfile]:
-        """Fetch financial growth metrics."""
-        data = self._make_request(constants.FMP_ENDPOINTS['financial_growth'], {'limit': 1})
-        if not data: return None
+    def fetch_forecast_data(self) -> Optional[ForecastData]:
+        """
+        Fetch comprehensive forecast data from FMP.
         
-        try:
-            item = data[0]
-            return CompanyProfile(
-                 std_earnings_growth=FieldWithSource(value=float(item.get('epsgrowth') or 0), source='fmp')
-            )
-        except (ValueError, IndexError, KeyError) as e:
-             logger.warning(f"Failed to parse FMP growth: {e}")
-             return None
-
+        Combines:
+        - Analyst estimates (EPS/Revenue)
+        - Price targets
+        - Analyst ratings distribution
+        - Growth estimates
+        
+        Returns:
+            ForecastData object or None if all fetches fail
+        """
+        forecast = ForecastData()
+        has_data = False
+        
+        # 1. Fetch analyst estimates (EPS/Revenue estimates)
+        logger.info(f"Fetching analyst estimates for {self.symbol}...")
+        estimates_data = self._make_request(constants.FMP_ENDPOINTS['analyst_estimates'], {'limit': 1})
+        if estimates_data and len(estimates_data) > 0:
+            try:
+                item = estimates_data[0]
+                
+                # EPS estimates
+                if eps_avg := item.get('estimatedEpsAvg'):
+                    forecast.std_eps_estimate_current_year = FieldWithSource(
+                        value=float(eps_avg), source='fmp'
+                    )
+                    has_data = True
+                
+                # Revenue estimates
+                if rev_avg := item.get('estimatedRevenueAvg'):
+                    forecast.std_revenue_estimate_current_year = FieldWithSource(
+                        value=float(rev_avg), source='fmp'
+                    )
+                    has_data = True
+                    
+                # Number of analysts
+                if num_analysts := item.get('numberAnalystEstimatedRevenue'):
+                    forecast.std_number_of_analysts = FieldWithSource(
+                        value=float(num_analysts), source='fmp'
+                    )
+                    has_data = True
+                    
+                logger.info(f"  ✓ Got analyst estimates for {self.symbol}")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse analyst estimates: {e}")
+        
+        # 2. Fetch price targets
+        logger.info(f"Fetching price targets for {self.symbol}...")
+        targets_data = self._make_request(constants.FMP_ENDPOINTS['price_target'])
+        if targets_data and len(targets_data) > 0:
+            try:
+                target = targets_data[0]
+                
+                if target_low := target.get('targetLow'):
+                    forecast.std_price_target_low = FieldWithSource(value=float(target_low), source='fmp')
+                    has_data = True
+                    
+                if target_high := target.get('targetHigh'):
+                    forecast.std_price_target_high = FieldWithSource(value=float(target_high), source='fmp')
+                    has_data = True
+                    
+                if target_mean := target.get('targetMean'):
+                    forecast.std_price_target_avg = FieldWithSource(value=float(target_mean), source='fmp')
+                    has_data = True
+                    
+                if target_consensus := target.get('targetConsensus'):
+                    forecast.std_price_target_consensus = FieldWithSource(value=float(target_consensus), source='fmp')
+                    has_data = True
+                    
+                logger.info(f"  ✓ Got price targets for {self.symbol}")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse price targets: {e}")
+        
+        # 3. Fetch analyst ratings distribution (if endpoint exists)
+        # Note: FMP may have this in 'grade' or 'rating' endpoints - check API docs
+        # For now, skip if not available in free tier
+        
+        # 4. Fetch financial growth (for growth estimates)
+        logger.info(f"Fetching growth estimates for {self.symbol}...")
+        growth_data = self._make_request(constants.FMP_ENDPOINTS['financial_growth'], {'limit': 1})
+        if growth_data and len(growth_data) > 0:
+            try:
+                item = growth_data[0]
+                
+                # EPS growth
+                if eps_growth := item.get('epsgrowth'):
+                    forecast.std_earnings_growth_current_year = FieldWithSource(
+                        value=float(eps_growth), source='fmp'
+                    )
+                    has_data = True
+                    
+                # Revenue growth
+                if rev_growth := item.get('revenueGrowth'):
+                    forecast.std_revenue_growth_next_year = FieldWithSource(
+                        value=float(rev_growth), source='fmp'
+                    )
+                    has_data = True
+                    
+                logger.info(f"  ✓ Got growth estimates for {self.symbol}")
+            except (ValueError, KeyError) as e:
+                logger.warning(f"Failed to parse growth estimates: {e}")
+        
+        if has_data:
+            logger.info(f"Successfully fetched forecast data for {self.symbol} from FMP")
+            return forecast
+        else:
+            logger.warning(f"No forecast data available for {self.symbol} from FMP")
+            return None
+    
+    
+    # DEPRECATED: Old methods kept for backward compatibility
     def fetch_analyst_estimates(self) -> Optional[CompanyProfile]:
-        """Fetch analyst estimates (Forward EPS)."""
-        data = self._make_request(constants.FMP_ENDPOINTS['analyst_estimates'], {'limit': 1})
-        if not data: return None
-        
-        try:
-            item = data[0]
-            return CompanyProfile(
-                std_forward_eps=FieldWithSource(value=float(item.get('estimatedEpsAvg') or 0), source='fmp')
-            )
-        except (ValueError, IndexError, KeyError) as e:
-             logger.warning(f"Failed to parse FMP estimates: {e}")
-             return None
+        """DEPRECATED: Use fetch_forecast_data() instead."""
+        forecast = self.fetch_forecast_data()
+        if not forecast or not forecast.std_eps_estimate_current_year:
+            return None
+        # Convert to old format for compatibility
+        return CompanyProfile(
+            std_forward_eps=forecast.std_eps_estimate_current_year
+        )
+    
+    def fetch_financial_growth(self) -> Optional[CompanyProfile]:
+        """DEPRECATED: Use fetch_forecast_data() instead."""
+        forecast = self.fetch_forecast_data()
+        if not forecast or not forecast.std_earnings_growth_current_year:
+            return None
+        # Convert to old format
+        return CompanyProfile(
+            std_earnings_growth=forecast.std_earnings_growth_current_year
+        )
