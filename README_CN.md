@@ -29,12 +29,12 @@
   - **T2 SEC EDGAR**: 官方 XBRL 数据源,直接从美国证监会获取原始财务报表。
   - **T3 FMP**: 补充分析师预期和其他结构化数据。
   - **T4 Alpha Vantage**: 最终后备源，填补冷门股票的数据空缺。
-  - **前瞻数据 (Forecast Data)**: 智能合并 Yahoo, FMP, Finnhub 三源分析师预期数据：
+  - **前瞻数据**: 智能合并 Yahoo, FMP, Finnhub 三源分析师预期数据：
     - Forward EPS/PE (前瞻每股收益/市盈率)
     - 盈利与营收增长预期 (本年/明年)
     - 分析师目标价 (最低/最高/共识)
     - Earnings Surprise History (最近4季度盈利意外)
-  - **数据完整性评分卡 (Scorecard)**: 实时可视化数据健康度、历史深度（逐年矩阵）及缺失字段。
+  - **数据完整性评分卡**: 实时可视化数据健康度、历史深度（逐年矩阵）及缺失字段。
 - **财务评分**: 基于 ROIC, ROE, 利润率, 增长率, 资本配置等 20+ 个指标进行加权打分 (0-100)。评分考虑了行业基准。
 - **技术评分**: 结合 RSI, MACD, 均线系统 (SMA/EMA) 评估当前趋势与动能。
 - **估值模型**:
@@ -98,7 +98,7 @@
 └── run_macro_report.py     # 宏观策略报告入口
 ```
 
-## 数据存放与产物 (Data Storage & Artifacts)
+## 数据存放与产物
 
 ### 1. 用户配置 (`user_config/`)
 
@@ -130,7 +130,7 @@
 - **宏观报告**: `macro_report_{DATE}.md` (宏观策略分析报告)
 - **数据表格**: `collated_scores_{DATE}.csv` (run_getform生成的汇总表)
 
-### 4. 报告样例 (Report Examples)
+### 4. 报告样例
 
 如果您想查看生成的 AI 分析报告长什么样，可以参考以下样例：
 
@@ -174,7 +174,7 @@ FRED_API_KEY=your_key_here
 - **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - 免费使用。
 - **FRED**: [获取 Key (免费)](https://fred.stlouisfed.org/) - 免费使用。
 
-### 4. 高级配置 (Advanced Configuration)
+### 4. 高级配置
 
 系统行为高度可定制，所有关键阈值均在 `config/analysis_config.py` 中定义。
 
@@ -222,9 +222,9 @@ python run_macro_report.py
 # 启动交互式菜单，选择生成报告或刷新数据
 ```
 
-## 开发与调试 (Development & Debugging)
+## 开发与调试
 
-### 数据审计系统 (Data Audit System)
+### 数据审计系统
 
 本项目内置了强大的数据审计工具，用于排查数据异常、字段缺失或 DDM 估值失败等问题：
 
@@ -241,11 +241,11 @@ python run_data_audit.py --symbol TSM
     - `yahoo_unmapped_fields.txt`: 识别 API 返回了但我们 schema 未使用的字段。
     - `final_provenance_report.txt`: 精确追踪每个数据点（如营收）的具体来源（Yahoo 还是 FMP）。
 
-## 核心算法与逻辑 (Core Algorithms & Logic)
+## 核心算法与逻辑
 
 本系统除了数据展示外，也包含了一套量化评估逻辑。
 
-### 1. 合成统计学基准 (Synthetic Benchmarking Algorithm)
+### 1. 合成统计学基准
 
 当行业数据缺乏详细分布（即只有平均值而无 P90/P10 分位点）时，系统采用核心算法重构分布：
 
@@ -255,7 +255,7 @@ python run_data_audit.py --symbol TSM
   - 基于合成 Z-Score 公式反推关键分位点：$P_{xx} = \mu \pm Z \times (\mu \times CV \times Damping)$。
 - **意义**: 实现了**“行业相对公平”**。在公用事业等低波动行业，稍高于平均即可能被评为优秀；而在生物科技等高波动行业，需大幅超越平均值才能获得高分。
 
-### 2. 动态权重评分 (Dynamic Sector Scoring)
+### 2. 动态权重评分
 
 系统不采用“一刀切”的评分标准，而是针对 GICS 11 个一级行业定制了权重配置 (`scoring_config.py`)：
 
@@ -272,7 +272,7 @@ python run_data_audit.py --symbol TSM
 ![scoring_weights_detailed](scoring_weights_detailed.png)
 *估值权重具体情况*
 
-### 3. 综合估值模型 (Valuation Blender)
+### 3. 综合估值模型
 
 为了避免单一视角的偏见，系统融合了 **10 种主流估值方法**，并根据行业特性进行加权求和 (`valuation_config.py`)：
 
@@ -301,7 +301,7 @@ python run_data_audit.py --symbol TSM
 
 ---
 
-## 问题反馈 (Feedback & Issues)
+## 问题反馈
 
 本系统涉及与多个数据源（Yahoo/EDGAR/FMP/Alpha Vantage）的交互及复杂的财务计算。
 
