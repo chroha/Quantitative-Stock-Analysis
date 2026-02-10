@@ -864,6 +864,7 @@ class StockDataLoader:
         Returns:
             Updated StockData with forecast_data populated
         """
+        print("-> [Phase 2.5] Fetching Forecast Data (FMP + Finnhub)...")
         logger.info("-> [Phase 2.5] Fetching Forecast Data (FMP + Finnhub)...")
         
         symbol = current_data.profile.std_symbol if current_data.profile else "UNKNOWN"
@@ -897,6 +898,7 @@ class StockDataLoader:
                 if fmp_forecast: sources.append("FMP")
                 if finnhub_forecast: sources.append("Finnhub")
                 
+                print(f"   ✓ Merged forecast data from: {', '.join(sources)}")
                 logger.info(f"   ✓ Merged forecast data from: {', '.join(sources)}")
             else:
                 logger.info("   No forecast data available after merge")
