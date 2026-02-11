@@ -2,6 +2,18 @@
 
 本文档旨在帮助开发者了解 `utils/` 目录下的核心基础设施、数据架构和通用工具函数。
 
+> **⚠️ 开发者须知**
+>
+> 在编写新模块或修改现有代码前，请确保：
+>
+> 1. **数值计算** → 使用 `numeric_utils.py` 中的 `clean_numeric()` / `safe_divide()`，禁止裸用 Python 除法
+> 2. **HTTP 请求** → 使用 `http_utils.py` 中的 `make_request()`，禁止直接用 `requests.get()`（内置重试和错误处理）
+> 3. **日志输出** → 使用 `logger.py` 中的 `setup_logger()`，避免用 `print()` 做调试
+> 4. **新增数据字段** → 必须同步更新 `unified_schema.py` + `field_registry.py`
+> 5. **格式化输出** → 使用 `safe_format()` 和 `format_large_number()` 确保 None/NaN 不会崩溃
+>
+> 快速入口: `utils/__init__.py` 中有完整的工具速查表
+
 ## 1. 核心数据架构
 
 ### `unified_schema.py`

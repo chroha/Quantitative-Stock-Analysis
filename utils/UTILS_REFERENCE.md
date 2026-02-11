@@ -2,6 +2,18 @@
 
 This document provides a comprehensive guide to the `utils/` directory, which contains the system's core infrastructure, data schemas, and helper functions.
 
+> **⚠️ Developer Notice**
+>
+> Before writing new modules or modifying existing code, ensure you:
+>
+> 1. **Numeric calculations** → Use `clean_numeric()` / `safe_divide()` from `numeric_utils.py`. Never use raw Python division.
+> 2. **HTTP requests** → Use `make_request()` from `http_utils.py`. Never use `requests.get()` directly (built-in retry & error handling).
+> 3. **Logging** → Use `setup_logger()` from `logger.py`. Avoid using `print()` for debugging.
+> 4. **New data fields** → Must update both `unified_schema.py` AND `field_registry.py`.
+> 5. **Display formatting** → Use `safe_format()` and `format_large_number()` to safely handle None/NaN values.
+>
+> Quick Reference: See `utils/__init__.py` for a complete tool lookup table.
+
 ## 1. Core Data Infrastructure
 
 ### `unified_schema.py`
