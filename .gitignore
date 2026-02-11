@@ -19,3 +19,4 @@ generated_reports/
 
 # Unified data cache
 data/cache/
+debug_data/
