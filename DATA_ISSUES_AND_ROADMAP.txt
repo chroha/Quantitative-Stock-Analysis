@@ -1,0 +1,376 @@
+================================================================================
+  数据获取与处理 - 问题总结与优化路线图
+  Data Acquisition & Processing - Issues Summary & Optimization Roadmap
+================================================================================
+  Created: 2026-02-11
+  Context: Phase 5 Forecast Data Integration 完成后的全面回顾
+  Purpose: 记录已知缺陷,为后续重构提供方向
+================================================================================
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+一、当前架构概览
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Pipeline入口: initial_data_loader.py → get_stock_data()
+
+  Phase 1  [Yahoo Finance]      免费·无限额·主数据源 (~95%字段覆盖大盘股)
+  Phase 2  [SEC EDGAR]          免费·官方·XBRL原始报表 (历史深度优势)
+  Phase 2.5 [Forecast三源合并]   Yahoo→FMP→Finnhub 智能合并前瞻数据 [NEW]
+  Phase 3  [FMP]               付费·按需(Gap触发) · 250次/日免费额度
+  Phase 4  [Alpha Vantage]      付费·按需(Gap触发) · 25次/日免费额度
+  Phase 5  [币种/ADR标准化]     自动检测非美元报告,换算ADR股数
+  Phase 6  [TTM合成]           取最新4季度构建TTM
+  Phase 7  [数据清洗]           移除不完整期间
+  Phase 8  [验证+评分卡]        生成Completeness Scorecard
+
+数据合并核心: intelligent_merger.py
+  - 按period对齐各源的同期报表
+  - 字段级优先级: Yahoo > EDGAR > FMP > AV
+  - 字段级兜底: 如果Yahoo某字段为None,依次尝试其他源
+
+涉及文件(data_acquisition/stock_data/):
+  - initial_data_loader.py  (909行, 主控制器)
+  - yahoo_fetcher.py        (主源)
+  - edgar_fetcher.py        (官方源)
+  - fmp_fetcher.py          (补充源)
+  - alphavantage_fetcher.py (后备源)
+  - finnhub_fetcher.py      (预测源, 346行) [NEW]
+  - intelligent_merger.py   (字段级合并)
+  - field_validator.py      (验证逻辑)
+  - completeness_reporter.py(评分卡展示)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+二、已发现的问题 (Issues Found)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+============================================================
+问题1 [中等]: Gap Analysis只检查最新一期,遗漏历史缺失
+============================================================
+
+位置: initial_data_loader.py → _run_phase3_fmp() (Line 410-424)
+
+现状:
+  latest_inc = current_data.income_statements[0]  # 只看最新期!
+  has_tax = latest_inc.std_income_tax_expense is not None
+
+问题:
+  - 如果2025年有tax字段但2023年缺失,不会触发FMP补充
+  - 导致历史期间分析不完整(如5年增长率计算受影响)
+
+影响范围:
+  - 大盘股: 低 (Yahoo通常各期数据完整)
+  - 小盘股/冷门股: 中-高 (可能多个历史期间缺失关键字段)
+
+建议修复:
+  遍历所有periods检查每个字段,不仅最新期
+  可设置"至少N年完整"的阈值
+
+============================================================
+问题2 [中等]: Gap检测基于预定义字段组,非critical字段被忽略
+============================================================
+
+位置: initial_data_loader.py → _run_phase3_fmp() (Line 386-426)
+
+现状: 只检测5组预定义字段:
+  1. missing_valuation  (PE/PB/PS)
+  2. missing_basic      (market_cap, sector)
+  3. missing_estimates  (analyst targets)
+  4. missing_growth     (earnings_growth)
+  5. missing_profitability_inputs (tax/equity/debt/SBC/capex)
+
+问题:
+  - unified_schema有100+个标准字段
+  - 不在这5组中的字段(如std_repurchase_of_stock, std_ebitda等)
+    即使FMP/AV有数据,也永远不会被获取
+  - 只有IntelligentMerger在合并时做字段级填补,但前提是该源被调用过
+
+影响范围:
+  - AAPL: 缺少std_ebitda(所有periods)
+  - 其他股票: 可能缺少更多"重要但非critical"字段
+
+建议修复:
+  方案A(渐进): 逐步扩展预定义字段组(如添加ebitda检测)
+  方案B(彻底): 动态检测所有unified_schema字段的缺失情况
+  推荐: 方案B,但作为独立重构任务
+
+============================================================
+问题3 [低-中]: Finnhub多个端点在免费tier下失败
+============================================================
+
+位置: finnhub_fetcher.py → fetch_forecast_data()
+
+现状 (AAPL审计结果):
+  ✅ /stock/earnings        → 成功(4条surprise记录)
+  ❌ /stock/revenue-estimates → JSON解析失败
+  ❌ /stock/eps-estimates    → JSON解析失败
+  ❌ /stock/ebitda-estimates → JSON解析失败
+  ❌ /stock/profile2        → Schema验证失败(已修复)
+
+问题:
+  - 免费tier可能不包含estimates端点(需验证)
+  - 或API版本/参数问题
+  - 当前代码已做graceful降级(失败不影响主流程)
+
+影响范围:
+  - 低: 当前仅earnings surprise依赖Finnhub,且工作正常
+  - 中: 如未来需要EBITDA/Revenue estimates,则需修复
+
+建议:
+  - 测试其他股票确认是否为AAPL特有问题
+  - 查阅Finnhub文档确认免费tier端点范围
+  - 如需扩展,考虑升级Finnhub plan
+
+============================================================
+问题4 [低]: std_ebitda全periods缺失
+============================================================
+
+位置: AAPL Completeness Scorecard
+
+现状:
+  - std_ebitda被标记为"important"级别
+  - Yahoo, EDGAR, FMP, AV 四源均未提供
+  - Completeness Score: 97.6% (仅因此损失完整性)
+
+根因:
+  - Yahoo不直接提供EBITDA字段
+  - Gap Analysis无"missing_ebitda"检测组
+  - FMP有EBITDA数据但未被触发获取(因为走的是missing_profitability_inputs路径)
+
+影响范围:
+  - EV/EBITDA估值: 当前从profile获取enterprise_to_ebitda比率,间接可用
+  - 历史EBITDA趋势分析: 不可用
+
+建议修复:
+  - 在Phase 3添加missing_ebitda检测
+  - 或在计算层从(营业利润+折旧摊销)推导EBITDA
+
+============================================================
+问题5 [信息]: Phase 2.5 Forecast数据的智能合并顺序
+============================================================
+
+位置: initial_data_loader.py → _run_phase2_5_forecast()
+
+现状:
+  合并优先级: Yahoo → FMP → Finnhub
+  - Yahoo: forward_eps, forward_pe, earnings_growth (3个字段)
+  - FMP: price_targets, revenue_growth_next_year (4个字段)  
+  - Finnhub: earnings_surprise_history (1个字段,独有数据)
+
+注意事项:
+  - Yahoo值已在profile中,Phase 2.5提取到forecast_data
+  - FMP值需要额外API调用(消耗免费额度)
+  - Finnhub earnings是独有数据(其他源没有surprise history)
+  - 当FMP API失败时,revenue_growth等字段会缺失(已有fallback但值为None)
+
+============================================================
+问题6 [信息]: 数据审计工具(data_auditor.py)可揭示更多问题
+============================================================
+
+位置: data_acquisition/audit/data_auditor.py
+
+说明:
+  - 工具可逐源隔离获取数据并对比
+  - 生成详细的字段覆盖对比报告
+  - 建议定期对多股票运行审计,发现新的数据源覆盖差异
+
+用法: python -m data_acquisition.audit.data_auditor SYMBOL
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+三、API Key使用与成本优化
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+当前策略: "免费优先,按需付费"
+
+  数据源          | 费用   | 每日限额  | 调用条件
+  ────────────────┼────────┼──────────┼──────────────────────────
+  Yahoo Finance   | 免费   | 无限制   | 总是调用 (Phase 1)
+  SEC EDGAR       | 免费   | 10次/秒  | 总是调用 (Phase 2)
+  Finnhub         | 免费   | 60次/分  | 总是调用 forecast (Phase 2.5)
+  FMP             | 免费   | 250次/日 | Gap触发才调用 (Phase 3)
+  Alpha Vantage   | 免费   | 25次/日  | Gap触发才调用 (Phase 4)
+
+已知优化点:
+  1. Phase 3 FMP: 大盘股通常不需要(Yahoo已完整),正确跳过
+  2. Phase 4 AV: 额度极少(25次/日),应严格控制触发条件
+  3. Phase 2.5: Finnhub每次运行至少消耗1-3次API调用
+     (earnings必调, revenue/eps/ebitda-estimates可能调但常失败)
+
+优化建议:
+  - 缓存forecast数据,非每次全量重刷(如24小时内复用)
+  - FMP按字段批量获取而非分次调用(减少API次数)
+  - 记录每次运行的API调用计数(已有daily counter for FRED,可扩展)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+四、后续优化路线图 (Roadmap)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+────────────────────────────────
+Phase A: 短期快速修复 (1-2小时)
+────────────────────────────────
+
+优先级: 高 | 风险: 低
+
+  A1. 添加EBITDA Gap检测
+      - 在_run_phase3_fmp()添加missing_ebitda检查
+      - 如果EBITDA全缺失,调用FMP获取
+      - 或者通过计算推导: EBITDA = Operating Income + D&A
+      
+  A2. 扩展Gap检测覆盖更多字段
+      - 添加std_repurchase_of_stock检测
+      - 添加std_dividends_paid检测
+      - 添加std_interest_expense检测
+
+  A3. Finnhub失败端点诊断
+      - 用5个不同股票测试revenue/eps/ebitda-estimates
+      - 确认是免费tier限制还是代码问题
+      - 记录结果到本文件
+
+────────────────────────────────
+Phase B: 中期架构优化 (1-2天)
+────────────────────────────────
+
+优先级: 中 | 风险: 中
+
+  B1. 全时间序列Gap检测
+      - 修改Gap Analysis检查所有historical periods(不仅latest)
+      - 设定阈值: "最近N年必须有完整数据"
+      - 超出阈值才触发付费API
+      
+  B2. 动态Gap检测机制
+      - 从unified_schema自动提取所有字段列表
+      - 按重要性分级: required/important/optional
+      - 逐级检测,按需触发对应tier
+      
+  B3. Forecast数据缓存策略
+      - 设计forecast数据的缓存过期机制(如24h/7d)
+      - earnings surprise: 季度更新(季报后刷新)
+      - price targets: 可日更或周更
+      - forward EPS: 随profile更新
+
+  B4. API调用计数器增强
+      - 统一各源的调用计数(FRED已有,扩展到FMP/AV/Finnhub)
+      - 报告中展示"本次分析消耗XX次API调用"
+      - 接近日限额时自动降级
+
+────────────────────────────────
+Phase C: 长期重构 (数天+)
+────────────────────────────────
+
+优先级: 低 | 风险: 高
+
+  C1. 重构initial_data_loader.py
+      - 当前909行,职责过重
+      - 拆分: DataOrchestrator(调度) + GapAnalyzer(检测) + PhaseRunner(执行)
+      - 每个Phase作为独立Strategy对象
+
+  C2. 配置化字段优先级
+      - 将"哪些字段走到哪个tier"配置化(YAML/JSON)
+      - 不同股票类型可有不同配置(大盘/小盘/国际/ADR)
+      - 示例:
+        field_priority:
+          std_ebitda:
+            tiers: [yahoo, fmp, alphavantage]
+            importance: important
+          std_earnings_surprise:
+            tiers: [finnhub]
+            importance: optional
+
+  C3. 增量更新机制
+      - 目前每次运行都全量重新获取
+      - 如果缓存中有昨日数据,只增量更新变化部分
+      - 大幅减少API调用(对scan多股票特别有效)
+      
+  C4. 数据质量评分
+      - 不仅考虑"有无"(completeness),还考虑"准不准"(accuracy)
+      - 多源对比: 同一字段不同源的值差异超过X%时告警
+      - 自动标记可疑数据(如revenue同比下降99%)
+
+  C5. 添加更多数据源(可选)
+      - Seeking Alpha: 盈利预期, 分析师评级
+      - Macrotrends: 历史数据深度(20年+)
+      - Bloomberg Terminal API: 如有订阅
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+五、多股票验证计划
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+建议对以下股票运行data_auditor验证当前覆盖度:
+
+  类型         | 股票    | 预期覆盖度 | 重点验证
+  ─────────────┼────────┼───────────┼──────────────────────
+  大盘科技     | MSFT   | >95%      | 所有forecast字段正常
+  大盘金融     | JPM    | >90%      | 金融行业特有字段
+  中盘成长     | CRWD   | >85%      | 上市时间短,历史深度
+  小盘/冷门    | (选一支)| >70%      | Gap Analysis是否有效触发
+  ADR/国际     | TSM    | >80%      | 币种转换+forecast
+  澳股/港股   | (如有)  | >60%      | 非美股数据源覆盖
+
+验证命令:
+  python -m data_acquisition.audit.data_auditor SYMBOL
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+六、本次任务(Forecast Integration)中的关键决策记录
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+决策1: Forecast数据存储位置
+  选择: 存储在StockData.forecast_data字段(而非单独文件)
+  原因: 与主数据同生命周期,方便聚合和报告生成
+
+决策2: Forecast合并策略
+  选择: Yahoo→FMP→Finnhub 字段级合并
+  原因: Yahoo免费且稳定(forward_eps/pe), FMP补充(targets), Finnhub独有(surprise)
+
+决策3: Phase 2.5插入位置
+  选择: EDGAR之后、FMP Gap检测之前执行
+  原因: FMP forecast调用可复用FMP Gap检测的API会话
+
+决策4: AI报告中展示forecast数据
+  选择: 正文Section III(估值分析)中展示Forward Metrics+Earnings Surprise表
+  原因: 用户要求同步展示在正文(不仅附表),便于AI分析引用
+
+决策5: 数据完整性 vs API节约
+  原则: 数据准确和健全优先,API Key节约为次要考量
+  实践: 免费源(Yahoo/EDGAR)总是调用; 付费源按需触发; 但不因省Key而跳过必要数据
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+七、相关文件索引
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+核心数据获取:
+  data_acquisition/stock_data/initial_data_loader.py    主控制器(5+Phase)
+  data_acquisition/stock_data/intelligent_merger.py     字段级合并
+  data_acquisition/stock_data/field_validator.py        验证逻辑
+  data_acquisition/stock_data/completeness_reporter.py  评分卡
+
+数据源Fetcher:
+  data_acquisition/stock_data/yahoo_fetcher.py          T1 Yahoo
+  data_acquisition/stock_data/edgar_fetcher.py          T2 EDGAR
+  data_acquisition/stock_data/fmp_fetcher.py            T3 FMP
+  data_acquisition/stock_data/alphavantage_fetcher.py   T4 Alpha Vantage
+  data_acquisition/stock_data/finnhub_fetcher.py        T5 Finnhub [NEW]
+
+Schema与映射:
+  utils/unified_schema.py      数据模型定义
+  utils/field_registry.py      字段映射注册表
+  utils/schema_mapper.py       JSON→Schema转换
+
+配置:
+  config/constants.py          API端点与常量
+  config/analysis_config.py    Gap检测阈值(GAP_THRESHOLDS)
+
+审计工具:
+  data_acquisition/audit/data_auditor.py  多源对比审计
+
+================================================================================
+  文档维护说明:
+  - 每次发现新问题,添加到"二、已发现的问题"
+  - 每次修复问题,在对应条目标记[已修复]并注明日期和commit
+  - 每个Phase完成后,在"四、路线图"中标记[完成]
+================================================================================
