@@ -102,17 +102,29 @@ def update_benchmarks():
         sys.exit(1)
 
 def run_stock_analysis(symbols: List[str]):
-    """Runs run_analysis.py for each symbol."""
+    """Runs run_analysis.py for each symbol with API Key rotation."""
     print_step(3, 5, "Stock Analysis Batch")
     
+    # Auto-detect number of API key sets from FMP_API_KEY (primary source)
+    fmp_keys = os.getenv('FMP_API_KEY', '')
+    num_key_sets = len([k for k in fmp_keys.split(',') if k.strip()])
+    num_key_sets = max(num_key_sets, 1)
+    
+    if num_key_sets > 1:
+        print(f"  {ICON.INFO} API Key Rotation Active: {num_key_sets} key sets available")
+    
     for i, symbol in enumerate(symbols):
-        print(f"\n  --- Analyzing {symbol} ({i+1}/{len(symbols)}) ---")
+        # Rotate key set index for each stock (Round-Robin)
+        key_index = i % num_key_sets
+        
+        print(f"\n  --- Analyzing {symbol} ({i+1}/{len(symbols)}) [Key Set {key_index}] ---")
         try:
-            # We call run_analysis.py as a subprocess.
-            # Passing the symbol ensures it runs in non-interactive mode where appropriate (or we rely on its args)
-            # Note: The user said "run_analysis.py logic defaults to generating AI reports when arguments are provided"
+            # Pass the key set index to the subprocess via environment variable
+            env = os.environ.copy()
+            env['_KEY_SET_INDEX'] = str(key_index)
+            
             cmd = [sys.executable, "run_analysis.py", symbol]
-            subprocess.run(cmd, check=True)
+            subprocess.run(cmd, check=True, env=env)
         except subprocess.CalledProcessError as e:
             print(f"  {ICON.FAIL} Analysis failed for {symbol}")
         except Exception as e:

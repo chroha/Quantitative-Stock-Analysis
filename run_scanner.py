@@ -30,6 +30,7 @@ from fundamentals.technical_scorers.technical_scorers_output import TechnicalSco
 from fundamentals.financial_data.financial_data_output import FinancialDataGenerator
 from config.constants import DATA_CACHE_STOCK, DATA_CACHE_BENCHMARK, DATA_REPORTS
 from utils import setup_logger
+from config.settings import settings
 from utils.report_utils import (
     format_financial_score_report,
     format_technical_score_report
@@ -244,7 +245,10 @@ def main():
     results = []
     
     for i, symbol in enumerate(symbols):
-        print(f"\n>>> Analyzing {symbol} ({i+1}/{len(symbols)}) <<<")
+        # Rotate API keys for load balancing
+        settings.rotate_keys()
+        
+        print(f"\n>>> Analyzing {symbol} ({i+1}/{len(symbols)}) [Key Set {settings.manager.current_index}] <<<")
         res = analyze_stock(symbol, output_dir)
         if res:
             results.append(res)

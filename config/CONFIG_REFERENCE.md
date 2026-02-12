@@ -6,8 +6,11 @@ This document lists all configuration files in the project that users can custom
 
 ### `config/settings.py`
 
-- **Purpose**: API keys and environment settings
+- **Purpose**: API keys and environment settings. Integrated with `APIKeyManager` for rotation.
 - **Loads from**: `user_config/.env`
+- **Key Capabilities**:
+  - `rotate_keys()`: Manually rotates to the next key set.
+  - Property access (e.g., `FMP_API_KEY`) dynamically returns the active key.
 - **Key Variables**:
   - `GOOGLE_AI_KEY`: Gemini API key for AI commentary
   - `FMP_API_KEY`: Financial Modeling Prep API key
@@ -22,6 +25,15 @@ This document lists all configuration files in the project that users can custom
   - `DATA_CACHE_MACRO`: Macro data cache directory
   - `DATA_CACHE_BENCHMARK`: Benchmark data cache directory
   - `DATA_REPORTS`: Generated reports directory
+
+### `config/api_key_manager.py` (New)
+
+- **Purpose**: Unified API Key Management (Parsing, Rotation, Masking)
+- **Functions**:
+  - `get()`: Get current key from rotation group
+  - `rotate()`: Switch to next key group
+  - `register()`: Parse comma-separated config
+- **Integration**: Used internally by `config/settings.py`
 
 ### `config/analysis_config.py`
 
@@ -94,9 +106,11 @@ This document lists all configuration files in the project that users can custom
 - **Purpose**: API keys (sensitive data, git-ignored)
 - **Required Keys**:
 
+  **Supports Multi-Key Rotation**: Use comma-separated values.
+
   ```env
-  FMP_API_KEY=your_fmp_key
-  FRED_API_KEY=your_fred_key
+  FMP_API_KEY=key1,key2,key3
+  FRED_API_KEY=key_a,key_b
   GOOGLE_AI_KEY=your_gemini_key
   ALPHA_VANTAGE_KEY=your_av_key
   ```

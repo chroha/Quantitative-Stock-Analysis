@@ -1,11 +1,13 @@
 """
 Configuration settings loader with secure API key management.
 Loads environment variables from .env file and provides masked logging.
+Now supports multiple API keys via APIKeyManager for rotation.
 """
 
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from .api_key_manager import APIKeyManager
 
 # Load environment variables from user_config/.env
 project_root = Path(__file__).parent.parent
@@ -14,31 +16,62 @@ load_dotenv(dotenv_path=env_path)
 
 
 class Settings:
-    """Application settings with secure API key handling."""
+    """Application settings with secure API key handling and rotation support."""
     
     def __init__(self):
-        self.FMP_API_KEY = os.getenv('FMP_API_KEY')
-        if self.FMP_API_KEY:
-            self.FMP_API_KEY = self.FMP_API_KEY.strip()
+        self.manager = APIKeyManager()
+        
+        # Register keys from environment variables
+        # The manager handles parsing comma-separated strings
+        self.manager.register('FMP', os.getenv('FMP_API_KEY'))
+        self.manager.register('GOOGLE', os.getenv('GOOGLE_AI_KEY'))
+        self.manager.register('ALPHAVANTAGE', os.getenv('ALPHAVANTAGE_API_KEY'))
+        self.manager.register('FRED', os.getenv('FRED_API_KEY'))
+        self.manager.register('FINNHUB', os.getenv('FINNHUB_API_KEY'))
         
         # Validate required environment variables
-        if not self.FMP_API_KEY:
+        if not self.manager.validate_has_key('FMP'):
             raise ValueError(
                 "FMP_API_KEY not found in environment variables. "
                 "Please create a .env file with FMP_API_KEY=your_key"
             )
             
-        self.GOOGLE_AI_KEY = os.getenv('GOOGLE_AI_KEY')
-        if self.GOOGLE_AI_KEY:
-            self.GOOGLE_AI_KEY = self.GOOGLE_AI_KEY.strip()
-        # Google AI Key is optional for core functionality, but needed for commentary module
-        # We won't raise error here to avoid breaking other modules if user doesn't have it
-        
-        self.ALPHAVANTAGE_API_KEY = os.getenv('ALPHAVANTAGE_API_KEY')
-        if self.ALPHAVANTAGE_API_KEY:
-            self.ALPHAVANTAGE_API_KEY = self.ALPHAVANTAGE_API_KEY.strip()
-        # Alpha Vantage is optional - used as fallback data source
+        # Other keys are optional/fallback, so we don't strictly raise error
+        # but the manager will return None if they are missing.
     
+    # --- Dynamic Properties for Key Rotation ---
+    
+    @property
+    def FMP_API_KEY(self) -> str | None:
+        return self.manager.get('FMP')
+
+    @property
+    def GOOGLE_AI_KEY(self) -> str | None:
+        return self.manager.get('GOOGLE')
+
+    @property
+    def ALPHAVANTAGE_API_KEY(self) -> str | None:
+        return self.manager.get('ALPHAVANTAGE')
+
+    @property
+    def FRED_API_KEY(self) -> str | None:
+        return self.manager.get('FRED')
+
+    @property
+    def FINNHUB_API_KEY(self) -> str | None:
+        return self.manager.get('FINNHUB')
+
+    # --- Rotation Control ---
+
+    def rotate_keys(self):
+        """
+        Manually rotate to the next set of keys.
+        Useful for long-running batch processes like run_scanner.py.
+        """
+        return self.manager.rotate()
+
+    # --- Helpers ---
+
     @staticmethod
     def mask_api_key(api_key: str) -> str:
         """
@@ -57,6 +90,8 @@ class Settings:
     
     def get_masked_fmp_key(self) -> str:
         """Get masked FMP API key for logging."""
+        # Note: calling self.FMP_API_KEY triggers the property getter
+        # so this always logs the CURRENT active key
         return self.mask_api_key(self.FMP_API_KEY)
 
 

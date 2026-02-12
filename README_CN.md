@@ -64,6 +64,7 @@
 
 - **AI 宏观策略解读**: 模拟“机构级 CIO”视角，自动识别市场异常与背离信号，生成包含深度诊断与行动建议的双语研报。
 - **全量数据整合**: 聚合 FRED (利率/通胀) 与 Yahoo Finance (全球市场/板块) 数据，构建完整宏观拼图。
+- **智能 API 轮替**: 支持在 `.env` 中配置多组 Key (逗号分隔)，系统自动负载均衡以突破频率限制。
 - **量化风险模型**: 包含经济周期定位、ERP 估值极值预警及澳洲市场贸易条件分析。
 
 ## 目录结构
@@ -158,7 +159,8 @@ pip install yfinance requests pydantic python-dotenv pandas numpy python-dateuti
 ALPHAVANTAGE_API_KEY=your_key_here
 
 # [必填] Financial Modeling Prep (FMP): 用于获取分析师一致预期、WACC 和补充财务数据
-FMP_API_KEY=your_key_here
+# 支持多Key轮替 (逗号分隔)
+FMP_API_KEY=key1,key2
 
 # [必填] Google Gemini: 用于生成 AI 分析报告
 GEMINI_API_KEY=your_key_here

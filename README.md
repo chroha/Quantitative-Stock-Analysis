@@ -65,6 +65,7 @@ A completely new macroeconomic analysis module for top-down market strategy:
 - **AI Macro Strategy**: Generates "Institutional Grade CIO" commentary by analyzing macro anomalies and divergences.
 - **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation) and Yahoo Finance (Global Markets).
 - **Quantitative Framework**: Includes Economic Cycle positioning, ERP extreme valuations, and Aussie Terms of Trade analysis.
+- **Smart API Rotation**: Supports multi-key configuration in `.env` (comma-separated), automatically load-balancing requests to bypass rate limits.
 
 ## Directory Structure
 
@@ -158,7 +159,8 @@ This system relies on external APIs to ensure data integrity. Create a `.env` fi
 ALPHAVANTAGE_API_KEY=your_key_here
 
 # [Required] Financial Modeling Prep (FMP): For analyst targets, WACC, and supplementary financials
-FMP_API_KEY=your_key_here
+# Supports multiple keys (comma-separated) for rotation
+FMP_API_KEY=key1,key2
 
 # [Required] Google Gemini: For generating AI analysis reports
 GEMINI_API_KEY=your_key_here

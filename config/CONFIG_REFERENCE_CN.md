@@ -6,8 +6,11 @@
 
 ### `config/settings.py`
 
-- **用途**: API 密钥和环境设置
+- **用途**: API 密钥管理和环境设置。集成 `APIKeyManager` 以支持多 Key 轮替。
 - **数据来源**: `user_config/.env`
+- **主要能力**:
+  - `rotate_keys()`: 手动轮替至下一组 Key
+  - 属性访问 (如 `FMP_API_KEY`) 会根据轮替状态动态返回当前 Key
 - **主要变量**:
   - `GOOGLE_AI_KEY`: Gemini API 密钥（用于 AI 评论）
   - `FMP_API_KEY`: Financial Modeling Prep API 密钥
@@ -22,6 +25,15 @@
   - `DATA_CACHE_MACRO`: 宏观数据缓存目录
   - `DATA_CACHE_BENCHMARK`: 基准数据缓存目录
   - `DATA_REPORTS`: 生成报告目录
+
+### `config/api_key_manager.py` (New)
+
+- **用途**: 统一 API Key 管理（解析、轮替、掩码）
+- **功能**:
+  - `get()`: 获取当前轮替组的 Key
+  - `rotate()`: 切换到下一组 Key
+  - `register()`: 解析逗号分隔的配置
+- **集成**: 被 `config/settings.py` 内部使用，不直接暴露给业务逻辑
 
 ### `config/analysis_config.py`
 
@@ -94,11 +106,13 @@
 - **用途**: API 密钥（敏感数据，已被 git 忽略）
 - **必需的密钥**:
 
+  **支持多 Key 轮替**：使用逗号分隔多个 Key。
+
   ```env
-  FMP_API_KEY=你的_fmp_密钥
-  FRED_API_KEY=你的_fred_密钥
-  GOOGLE_AI_KEY=你的_gemini_密钥
-  ALPHA_VANTAGE_KEY=你的_av_密钥
+  FMP_API_KEY=key1,key2,key3
+  FRED_API_KEY=key_a,key_b
+  GOOGLE_AI_KEY=your_gemini_key
+  ALPHA_VANTAGE_KEY=your_av_key
   ```
 
 ### `.env.example`
@@ -118,7 +132,7 @@
 | `scoring_config.py` | `fundamentals/technical_scorers/` | 技术评分参数 |
 | `valuation_config.py` | `fundamentals/valuation/` | 行业估值权重 |
 | `macro_config.py` | `data_acquisition/macro_data/` | 宏观数据设置 |
-| `.env` | `user_config/` | API 密钥（从 .env.example 创建）|
+| `.env` | `user_config/` | API 密钥（从 .env.example 创建） |
 
 ---
 
