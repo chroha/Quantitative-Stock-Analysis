@@ -3,8 +3,8 @@
   Data Acquisition & Processing - Issues Summary & Optimization Roadmap
 ================================================================================
   Created: 2026-02-11
-  Context: Phase 5 Forecast Data Integration 完成后的全面回顾
-  Purpose: 记录已知缺陷,为后续重构提供方向
+  Context: Phase 5 Forecast Data Integration & Phase C Refactoring 完成后的全面回顾
+  Purpose: 记录已知缺陷,为后续优化提供方向 (架构重构已完成)
 ================================================================================
 
 
@@ -111,7 +111,8 @@ Pipeline入口: initial_data_loader.py → get_stock_data()
 问题:
   - 免费tier可能不包含estimates端点(需验证)
   - 或API版本/参数问题
-  - 当前代码已做graceful降级(失败不影响主流程)
+  - [已解决]: Refactored FinnhubFetcher to use http_utils with smart 403 handling.
+  - [已解决]: Confirmed Earnings Surprises (critical) work fine; Estimates (optional) fail gracefully.
 
 影响范围:
   - 低: 当前仅earnings surprise依赖Finnhub,且工作正常
@@ -173,6 +174,9 @@ Pipeline入口: initial_data_loader.py → get_stock_data()
 说明:
   - 工具可逐源隔离获取数据并对比
   - 生成详细的字段覆盖对比报告
+  - [已增强]: 支持交互式输入代码
+  - [已增强]: 新增 "Data Provenance" 报告,追踪每一条数据的来源
+  - [已增强]: 集成 Finnhub Forecast 审计功能
   - 建议定期对多股票运行审计,发现新的数据源覆盖差异
 
 用法: python -m data_acquisition.audit.data_auditor SYMBOL
@@ -263,9 +267,10 @@ Phase C: 长期重构 (数天+)
 优先级: 低 | 风险: 高
 
   C1. 重构initial_data_loader.py
-      - 当前909行,职责过重
-      - 拆分: DataOrchestrator(调度) + GapAnalyzer(检测) + PhaseRunner(执行)
-      - 每个Phase作为独立Strategy对象
+      [COMPLETED 2026-02-13]
+      - 已拆分为: DataOrchestrator(调度) + GapAnalyzer(检测) + Strategy模式
+      - initial_data_loader.py 已被废弃并移除
+      - 实现了职责分离: Flow(Orchestrator) vs Quality(GapAnalyzer) vs Execution(Strategies)
 
   C2. 配置化字段优先级
       - 将"哪些字段走到哪个tier"配置化(YAML/JSON)
@@ -344,9 +349,10 @@ Phase C: 长期重构 (数天+)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 核心数据获取:
-  data_acquisition/stock_data/initial_data_loader.py    主控制器(5+Phase)
-  data_acquisition/stock_data/intelligent_merger.py     字段级合并
-  data_acquisition/stock_data/field_validator.py        验证逻辑
+  data_acquisition/orchestration/data_orchestrator.py   [NEW] 主控制器 (替代 initial_data_loader.py)
+  data_acquisition/orchestration/gap_analyzer.py        [NEW] 缺口分析与质量检测
+  data_acquisition/orchestration/data_processor.py      [NEW] 数据处理与合并
+  data_acquisition/orchestration/strategies/*.py        [NEW] 各数据源策略 (Yahoo, FMP, Edgar等)
   data_acquisition/stock_data/completeness_reporter.py  评分卡
 
 数据源Fetcher:
