@@ -41,8 +41,9 @@
   - 现金流折现 (DCF)
   - 股利折现 (DDM)
   - 相对估值 (PE/PB/PS/EV-EBITDA 倍数)
-  - 价值投资模型 (Graham Number, Peter Lynch, PEG Ratio)
+  - 价值投资模型 (格雷厄姆数, 彼得林奇公允价值, PEG比率)
   - 分析师一致预期
+- **数据溯源**: 最终报告中每个数据点都会追踪确切来源 (Yahoo, FMP, Finnhub, Edgar).
 - **AI 投资点评**: 调用 Google Gemini 模型，基于上述所有数据生成解读报告。AI报告现包含:
   - **前瞻估值指标**: 当前 vs 前瞻 P/E, EPS对比表,自动计算变化百分比
   - **盈利意外分析**: 最近4季度Earnings Surprise详细表,包含平均超预期%和正向次数统计
@@ -231,7 +232,9 @@ python run_macro_report.py
 本项目内置了强大的数据审计工具，用于排查数据异常、字段缺失或 DDM 估值失败等问题：
 
 ```bash
-python run_data_audit.py --symbol TSM
+# 交互式模式（提示输入代码）或者直接传参：
+python data_acquisition/audit/data_auditor.py
+# python data_acquisition/audit/data_auditor.py TSM
 ```
 
 **功能说明:**
@@ -242,6 +245,23 @@ python run_data_audit.py --symbol TSM
 4. **诊断报告 (Reports)**:
     - `yahoo_unmapped_fields.txt`: 识别 API 返回了但我们 schema 未使用的字段。
     - `final_provenance_report.txt`: 精确追踪每个数据点（如营收）的具体来源（Yahoo 还是 FMP）。
+    - `data_gap_report.json`: 由 **Gap Analyzer** 生成，详细列出哪些字段缺失及其原因。
+
+## 系统架构重构
+
+数据获取模块已完成重构，从单一的 `initial_data_loader.py` 演进为职责分离（流程 vs 质量 vs 执行）的详细架构。
+
+### 1. 数据编排器 (Data Orchestrator) `data_acquisition/orchestration/`
+
+- **角色**: “总指挥”。
+- **功能**: 管理 5 层数据获取策略的执行流程。它不直接获取数据，而是根据蓝图指挥各个 Fetcher 工作。
+- **价值**: 将业务逻辑（流程控制）与实现细节（API 调用）解耦，使数据管道更加健壮且易于维护。
+
+### 2. 缺口分析器 (Gap Analyzer)
+
+- **角色**: “质检员”。
+- **功能**: 独立的质量检测组件。在每一层数据获取后生成《质量报告》，识别关键缺失字段（如“缺少研发费用”、“历史数据不足5年”）。
+- **价值**: 集中管理数据质量标准。修改数据要求（如“必须包含 EBITDA”）只需在一处调整，即可同时应用于所有数据获取和审计流程。
 
 ## 核心算法与逻辑
 

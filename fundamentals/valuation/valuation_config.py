@@ -63,6 +63,20 @@ SECTOR_WEIGHTS = {
         "pb": 0.00             # Mostly asset-light
     },
     
+    "Consumer Cyclical": {  # Alias for Consumer Discretionary (Yahoo Finance convention)
+        # Note: TSLA, NIO, etc. are classified as Consumer Cyclical by Yahoo Finance
+        "pe": 0.20,            # Primary valuation metric
+        "peter_lynch": 0.15,   # Lynch's favorite sector ("buy what you know")
+        "ps": 0.15,            # Revenue growth important
+        "ev_ebitda": 0.15,     # Enterprise value assessment
+        "peg": 0.10,           # Growth reference
+        "dcf": 0.10,           # Cash flow affected by economic cycle
+        "graham": 0.05,        # Applicable for traditional retail
+        "analyst": 0.05,       # Consumer trend forecasting
+        "ddm": 0.05,           # Some mature companies pay dividends
+        "pb": 0.00             # Mostly asset-light
+    },
+    
     "Consumer Staples": {
         # Core logic: Stable dividends + Value investing + Defensive
         "pe": 0.20,            # Primary metric

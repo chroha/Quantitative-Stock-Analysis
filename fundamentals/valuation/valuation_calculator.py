@@ -25,6 +25,18 @@ from .valuation_models.peter_lynch_model import PeterLynchModel
 
 logger = setup_logger('valuation_calculator')
 
+# Sector name normalization (same as company_scorer)
+# Different data sources use different sector naming conventions
+SECTOR_ALIASES = {
+    'Consumer Cyclical': 'Consumer Discretionary',  # Yahoo Finance convention
+    'Consumer Defensive': 'Consumer Staples',        # Yahoo Finance convention
+}
+
+def normalize_sector(sector: str) -> str:
+    """Normalize sector name to GICS standard classification."""
+    return SECTOR_ALIASES.get(sector, sector)
+
+
 
 class ValuationCalculator:
     """
@@ -103,6 +115,9 @@ class ValuationCalculator:
             
             sector = stock_data.profile.std_sector.value
             
+            # Normalize sector name (e.g., "Consumer Cyclical" -> "Consumer Discretionary")
+            normalized_sector = normalize_sector(sector)
+            
             if not stock_data.price_history:
                 logger.error(f"{stock_data.symbol}: No price history")
                 return self._error_result(stock_data.symbol, "No price history", sector=sector)
@@ -110,14 +125,14 @@ class ValuationCalculator:
             current_price = stock_data.price_history[-1].std_close.value
             
             logger.info(f"\n{'='*80}")
-            logger.info(f"Calculating valuation for {stock_data.symbol} ({sector})")
+            logger.info(f"Calculating valuation for {stock_data.symbol} ({sector} -> {normalized_sector})")
             logger.info(f"Current Price: ${current_price:.2f}")
             logger.info(f"{'='*80}")
             
-            # Get sector-specific weights
-            weights = get_sector_weights(sector)
+            # Get sector-specific weights (use normalized sector)
+            weights = get_sector_weights(normalized_sector)
             if not weights:
-                logger.error(f"No valuation weights defined for sector: {sector}")
+                logger.error(f"No valuation weights defined for sector: {sector} (normalized: {normalized_sector})")
                 return self._error_result(stock_data.symbol, f"Unsupported sector: {sector}", 
                                          sector=sector, current_price=current_price)
             
@@ -137,10 +152,11 @@ class ValuationCalculator:
                 failure_reason = 'Unable to calculate'
                 
                 try:
+                    # Pass normalized sector to valuation models for benchmark lookup
                     fair_value = model.calculate_fair_value(
                         stock_data, 
                         self.benchmark_data, 
-                        sector
+                        normalized_sector  # Use normalized sector for benchmark queries
                     )
                 except ValueError as e:
                     failure_reason = str(e)

@@ -47,13 +47,14 @@ class FREDFetcher:
                 "fredapi library is required. Install it with: pip install fredapi"
             )
         
-        # Get API key
-        self.api_key = api_key or os.getenv('FRED_API_KEY')
+        # Get API key from settings (supports rotation)
+        from config.settings import settings
+        self.api_key = api_key or settings.FRED_API_KEY
+        
         if not self.api_key:
             raise ValueError(
-                "FRED API key is required. Set FRED_API_KEY environment variable "
-                "or pass api_key parameter. Get a free key at: "
-                "https://fred.stlouisfed.org/"
+                "FRED API key is required. Set FRED_API_KEY in .env file. "
+                "Get a free key at: https://fred.stlouisfed.org/"
             )
         
         # Initialize FRED client

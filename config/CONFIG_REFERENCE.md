@@ -111,6 +111,7 @@ This document lists all configuration files in the project that users can custom
   ```env
   FMP_API_KEY=key1,key2,key3
   FRED_API_KEY=key_a,key_b
+  FINNHUB_API_KEY=your_finnhub_key
   GOOGLE_AI_KEY=your_gemini_key
   ALPHA_VANTAGE_KEY=your_av_key
   ```

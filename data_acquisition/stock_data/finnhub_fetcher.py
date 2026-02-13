@@ -1,345 +1,200 @@
 """
-Finnhub Data Fetcher - Fifth-tier data source for forecast/estimates data.
-Used to supplement FMP forecast data and provide broader coverage.
-
-API Documentation: https://finnhub.io/docs/api
-
-Key Endpoints:
-- /stock/earnings: Earnings surprises and estimates
-- /stock/revenue-estimates: Revenue forecasts
-- /stock/eps-estimates: EPS forecasts  
-- /stock/ebitda-estimates: EBITDA forecasts
+Finnhub Data Fetcher (Forecasts & Sentiment)
 """
-
-import os
 import requests
 import time
-from typing import Dict, Any, List, Optional
-from datetime import datetime
-import logging
-
-from config import constants
+from typing import Optional, Dict, Any, List
+from .base_fetcher import BaseFetcher
 from utils.logger import setup_logger
+from config.settings import settings
+from utils.http_utils import make_request
 from utils.unified_schema import (
-    CompanyProfile, FieldWithSource, TextFieldWithSource, ForecastData
+    ForecastData, AnalystTargets, CompanyProfile, 
+    FieldWithSource, TextFieldWithSource
 )
-from data_acquisition.stock_data.base_fetcher import BaseFetcher, DataSource, FetcherRegistry
 
 logger = setup_logger('finnhub_fetcher')
 
-
 class FinnhubFetcher(BaseFetcher):
     """
-    Fetches forecast/estimates data from Finnhub API.
-    Used as fifth-tier data source primarily for forward-looking estimates.
+    Fetches forecast data from Finnhub API.
     """
-    
-    BASE_URL = constants.FINNHUB_BASE_URL
-    _last_request_time = 0
-    _min_request_interval = 1.0  # Rate limit: 60 calls/minute (free tier)
-    
     def __init__(self, symbol: str):
-        self.symbol = symbol.upper()
-        self.api_key = os.getenv('FINNHUB_API_KEY')
-        
-        if not self.api_key:
-            logger.warning("FINNHUB_API_KEY not found in environment variables")
-    
-    def _rate_limit(self):
-        """Enforce rate limiting between API calls (60 calls/minute for free tier)."""
-        elapsed = time.time() - FinnhubFetcher._last_request_time
-        if elapsed < self._min_request_interval:
-            sleep_time = self._min_request_interval - elapsed
-            logger.debug(f"Rate limiting: sleeping {sleep_time:.2f}s")
-            time.sleep(sleep_time)
-        FinnhubFetcher._last_request_time = time.time()
-    
-    def _make_request(self, endpoint: str, params: Dict[str, Any] = None) -> Optional[Dict]:
-        """
-        Make API request with rate limiting and error handling.
-        
-        Args:
-            endpoint: Finnhub endpoint path (e.g., 'stock/profile2')
-            params: Additional query parameters
-            
-        Returns:
-            JSON response dict or None on failure
-        """
-        if not self.api_key:
-            logger.error("Cannot make Finnhub request: API key not configured")
-            return None
-        
-        self._rate_limit()
-        
-        url = f"{self.BASE_URL}/{endpoint}"
-        request_params = {'token': self.api_key}
-        
-        if params:
-            request_params.update(params)
-        
-        try:
-            logger.debug(f"Finnhub request: {endpoint} with params {params}")
-            response = requests.get(
-                url,
-                params=request_params,
-                timeout=constants.FINNHUB_TIMEOUT_SECONDS
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                
-                # Finnhub returns empty dict {} or list [] when no data available
-                if not data or (isinstance(data, dict) and not data) or (isinstance(data, list) and not data):
-                    logger.warning(f"Finnhub returned empty data for {endpoint}")
-                    return None
-                
-                logger.info(f"Successfully fetched {endpoint} from Finnhub")
-                return data
-                
-            elif response.status_code == 401:
-                logger.error("Finnhub API authentication failed - check API key")
-                return None
-            elif response.status_code == 429:
-                logger.warning("Finnhub rate limit exceeded")
-                return None
-            else:
-                logger.error(f"Finnhub API error {response.status_code}: {response.text}")
-                return None
-                
-        except requests.exceptions.Timeout:
-            logger.error(f"Finnhub request timeout for {endpoint}")
-            return None
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Finnhub request failed: {e}")
-            return None
-        except Exception as e:
-            logger.error(f"Unexpected error in Finnhub request: {e}")
-            return None
-    
-    def _create_field_with_source(self, value: Any) -> Optional[FieldWithSource]:
-        """Create FieldWithSource from raw value."""
-        if value is None or value == '':
-            return None
-        try:
-            return FieldWithSource(value=value, source='finnhub')
-        except:
-            return None
-    
-    def fetch_profile(self) -> Optional[CompanyProfile]:
-        """
-        Fetch company profile/overview.
-        Endpoint: /stock/profile2
-        """
-        data = self._make_request(constants.FINNHUB_ENDPOINTS['profile'], {'symbol': self.symbol})
-        
-        if not data:
-            return None
-        
-        try:
-            return CompanyProfile(
-                std_company_name=TextFieldWithSource(value=data.get('name'), source='finnhub'),
-                std_industry=TextFieldWithSource(value=data.get('finnhubIndustry'), source='finnhub'),
-                std_sector=TextFieldWithSource(value=data.get('ggroup'), source='finnhub'),  # GICS group
-                std_country=TextFieldWithSource(value=data.get('country'), source='finnhub'),
-                std_currency=TextFieldWithSource(value=data.get('currency'), source='finnhub'),
-                std_exchange=TextFieldWithSource(value=data.get('exchange'), source='finnhub'),
-                std_market_cap=self._create_field_with_source(data.get('marketCapitalization')),
-            )
-        except Exception as e:
-            logger.error(f"Failed to parse Finnhub profile: {e}")
-            return None
-    
-    def fetch_earnings_estimates(self) -> Optional[List[Dict]]:
-        """
-        Fetch earnings estimates and surprises.
-        Endpoint: /stock/earnings
-        
-        Returns:
-            List of earnings data with actual vs estimates
-        """
-        data = self._make_request(constants.FINNHUB_ENDPOINTS['earnings_estimates'], {'symbol': self.symbol})
-        
-        if not data or not isinstance(data, list):
-            return None
-        
-        logger.info(f"Fetched {len(data)} earnings records from Finnhub")
-        return data
-    
-    def fetch_revenue_estimates(self) -> Optional[List[Dict]]:
-        """
-        Fetch revenue estimates.
-        Endpoint: /stock/revenue-estimates
-        
-        Returns:
-            List of revenue estimate data
-        """
-        data = self._make_request(constants.FINNHUB_ENDPOINTS['revenue_estimates'], {'symbol': self.symbol})
-        
-        if not data or not isinstance(data, dict):
-            return None
-        
-        # Finnhub revenue estimates format: {"data": [...], "symbol": "AAPL"}
-        estimates = data.get('data', [])
-        logger.info(f"Fetched {len(estimates)} revenue estimates from Finnhub")
-        return estimates
-    
-    def fetch_eps_estimates(self) -> Optional[List[Dict]]:
-        """
-        Fetch EPS estimates.
-        Endpoint: /stock/eps-estimates
-        
-        Returns:
-            List of EPS estimate data
-        """
-        data = self._make_request(constants.FINNHUB_ENDPOINTS['eps_estimates'], {'symbol': self.symbol})
-        
-        if not data or not isinstance(data, dict):
-            return None
-        
-        # Format: {"data": [...], "symbol": "AAPL"}
-        estimates = data.get('data', [])
-        logger.info(f"Fetched {len(estimates)} EPS estimates from Finnhub")
-        return estimates
-    
-    def fetch_ebitda_estimates(self) -> Optional[List[Dict]]:
-        """
-        Fetch EBITDA estimates.
-        Endpoint: /stock/ebitda-estimates
-        
-        Returns:
-            List of EBITDA estimate data
-        """
-        data = self._make_request(constants.FINNHUB_ENDPOINTS['ebitda_estimates'], {'symbol': self.symbol})
-        
-        if not data or not isinstance(data, dict):
-            return None
-        
-        estimates = data.get('data', [])
-        logger.info(f"Fetched {len(estimates)} EBITDA estimates from Finnhub")
-        return estimates
-    
+        super().__init__(symbol, 'finnhub')
+        self.api_key = settings.FINNHUB_API_KEY
+        self.base_url = "https://finnhub.io/api/v1"
+
+    def fetch_income_statements(self) -> list:
+        """Not implemented for Finnhub (Forecast/Profile only)."""
+        return []
+
+    def fetch_balance_sheets(self) -> list:
+        """Not implemented for Finnhub (Forecast/Profile only)."""
+        return []
+
+    def fetch_cash_flow_statements(self) -> list:
+        """Not implemented for Finnhub (Forecast/Profile only)."""
+        return []
+
     def fetch_forecast_data(self) -> Optional[ForecastData]:
         """
-        Fetch comprehensive forecast data from Finnhub.
-        
-        Primary focus: Earnings surprise history (unique to Finnhub)
-        Secondary: EPS/Revenue/EBITDA estimates (may fail on free tier)
-        
-        Returns:
-            ForecastData object with earnings surprises or None
+        Fetch forecast data (Surprises, Price Targets, Estimates, Metrics).
+        Aggregated into ForecastData object.
         """
         forecast = ForecastData()
         has_data = False
         
-        # 1. Fetch earnings surprises (PRIMARY - this is Finnhub's unique value)
-        logger.info(f"Fetching earnings surprises for {self.symbol}...")
-        earnings_data = self.fetch_earnings_estimates()
-        
-        if earnings_data and len(earnings_data) > 0:
-            # Parse earnings surprise history
-            surprise_history = []
-            for record in earnings_data:
-                try:
-                    surprise_entry = {
-                        "period": record.get('period'),
-                        "quarter": record.get('quarter'),
-                        "year": record.get('year'),
-                        "actual": record.get('actual'),
-                        "estimate": record.get('estimate'),
-                        "surprise": record.get('surprise'),
-                        "surprise_percent": record.get('surprisePercent'),
-                        "symbol": self.symbol
-                    }
-                    # Only add if has meaningful data
-                    if surprise_entry['actual'] is not None and surprise_entry['estimate'] is not None:
-                        surprise_history.append(surprise_entry)
-                except Exception as e:
-                    logger.warning(f"Failed to parse earnings record: {e}")
-                    continue
+        # 1. Price Targets
+        targets = self.fetch_price_targets()
+        if targets:
+            forecast.std_price_target_low = targets.std_price_target_low
+            forecast.std_price_target_high = targets.std_price_target_high
+            forecast.std_price_target_avg = targets.std_price_target_avg
+            forecast.std_price_target_consensus = targets.std_price_target_consensus
+            forecast.std_number_of_analysts = targets.std_number_of_analysts
+            has_data = True
             
-            if surprise_history:
-                forecast.std_earnings_surprise_history = surprise_history
-                has_data = True
-                logger.info(f"  ✓ Got {len(surprise_history)} earnings surprise records")
+        # 2. Earnings Surprises
+        surprises = self._fetch_earnings_surprises()
+        if surprises:
+            forecast.std_earnings_surprise_history = surprises
+            has_data = True
         
-        # 2. Fetch EPS estimates (SECONDARY - may fail on free tier)
-        logger.info(f"Fetching EPS estimates for {self.symbol}...")
-        eps_estimates = self.fetch_eps_estimates()
-        if eps_estimates and len(eps_estimates) > 0:
-            try:
-                # Take most recent estimate
-                latest = eps_estimates[0]
-                if eps_mean := latest.get('epsAvg'):
-                    forecast.std_eps_estimate_current_year = FieldWithSource(
-                        value=float(eps_mean), source='finnhub'
+        # 3. EPS & Revenue Estimates
+        estimates = self._fetch_eps_estimates()
+        if estimates:
+            # Current Year
+            if estimates.get('epsAvg'):
+                forecast.std_eps_estimate_current_year = FieldWithSource(
+                    value=float(estimates['epsAvg'][0]['estimate']), 
+                    source='finnhub'
+                ) if estimates['epsAvg'] else None
+            
+            # Next Year (if available in array)
+            if estimates.get('epsAvg') and len(estimates['epsAvg']) > 1:
+                forecast.std_eps_estimate_next_year = FieldWithSource(
+                    value=float(estimates['epsAvg'][1]['estimate']), 
+                    source='finnhub'
+                )
+            
+            # Revenue Estimates
+            if estimates.get('revenueAvg'):
+                forecast.std_revenue_estimate_current_year = FieldWithSource(
+                    value=float(estimates['revenueAvg'][0]['estimate']), 
+                    source='finnhub'
+                ) if estimates['revenueAvg'] else None
+                
+                if len(estimates['revenueAvg']) > 1:
+                    forecast.std_revenue_estimate_next_year = FieldWithSource(
+                        value=float(estimates['revenueAvg'][1]['estimate']), 
+                        source='finnhub'
                     )
-                    has_data = True
-                    logger.info(f"  ✓ Got EPS estimate")
-            except (ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse EPS estimates: {e}")
+            has_data = True
+            
+        # 4. Forward Metrics (P/E, EPS)
+        metrics = self._fetch_metrics()
+        if metrics:
+            # Forward P/E
+            if metrics.get('metric', {}).get('forwardPeRatio'):
+                forecast.std_forward_pe = FieldWithSource(
+                    value=float(metrics['metric']['forwardPeRatio']), 
+                    source='finnhub'
+                )
+            
+            # Forward EPS (derived from current price / forward P/E if not directly available)
+            # Note: Finnhub doesn't directly provide forward EPS in /stock/metric
+            # It's usually calculated as: price / forwardPE
+            # We'll leave this for Yahoo/FMP which have it directly
+            has_data = True
         
-        # 3. Fetch Revenue estimates (SECONDARY - may fail on free tier)
-        logger.info(f"Fetching revenue estimates for {self.symbol}...")
-        rev_estimates = self.fetch_revenue_estimates()
-        if rev_estimates and len(rev_estimates) > 0:
-            try:
-                latest = rev_estimates[0]
-                if rev_mean := latest.get('revenueAvg'):
-                    forecast.std_revenue_estimate_current_year = FieldWithSource(
-                        value=float(rev_mean), source='finnhub'
-                    )
-                    has_data = True
-                    logger.info(f"  ✓ Got revenue estimate")
-            except (ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse revenue estimates: {e}")
+        return forecast if has_data else None
+
+    def fetch_profile(self) -> Optional[CompanyProfile]:
+        """Fetch basic company profile (Sector/Industry)."""
+        data = self._make_request('stock/profile2')
+        if not data: return None
         
-        # 4. Fetch EBITDA estimates (SECONDARY - may fail on free tier)
-        logger.info(f"Fetching EBITDA estimates for {self.symbol}...")
-        ebitda_estimates = self.fetch_ebitda_estimates()
-        if ebitda_estimates and len(ebitda_estimates) > 0:
-            try:
-                latest = ebitda_estimates[0]
-                if ebitda_mean := latest.get('ebitdaAvg'):
-                    forecast.std_ebitda_estimate_next_year = FieldWithSource(
-                        value=float(ebitda_mean), source='finnhub'
-                    )
-                    has_data = True
-                    logger.info(f"  ✓ Got EBITDA estimate")
-            except (ValueError, KeyError) as e:
-                logger.warning(f"Failed to parse EBITDA estimates: {e}")
-        
-        if has_data:
-            logger.info(f"Successfully fetched forecast data for {self.symbol} from Finnhub")
-            return forecast
-        else:
-            logger.warning(f"No forecast data available for {self.symbol} from Finnhub")
+        try:
+            return CompanyProfile(
+                std_symbol=data.get('ticker'),
+                std_company_name=TextFieldWithSource(value=data.get('name'), source='finnhub'),
+                std_industry=TextFieldWithSource(value=data.get('finnhubIndustry'), source='finnhub'),
+                std_sector=TextFieldWithSource(value=data.get('finnhubIndustry'), source='finnhub'), # Finnhub puts sector in industry field often
+                std_market_cap=FieldWithSource(value=float(data.get('marketCapitalization', 0)), source='finnhub') if data.get('marketCapitalization') else None,
+                std_logo_url=TextFieldWithSource(value=data.get('logo'), source='finnhub')
+            )
+        except Exception as e:
+            logger.warning(f"Failed to parse Finnhub profile: {e}")
             return None
-    
-    # ====== Required Abstract Methods (BaseFetcher Interface) ======
-    # Finnhub is primarily for forecast data, not historical statements
-    # These methods return empty lists to satisfy the interface
-    
-    def fetch_income_statements(self) -> list:
-        """
-        Not implemented for Finnhub (forecast-only data source).
-        Returns empty list to satisfy BaseFetcher interface.
-        """
-        return []
-    
-    def fetch_balance_sheets(self) -> list:
-        """
-        Not implemented for Finnhub (forecast-only data source).
-        Returns empty list to satisfy BaseFetcher interface.
-        """
-        return []
-    
-    def fetch_cash_flow_statements(self) -> list:
-        """
-        Not implemented for Finnhub (forecast-only data source).
-        Returns empty list to satisfy BaseFetcher interface.
-        """
-        return []
 
+    def fetch_price_targets(self) -> Optional[AnalystTargets]:
+        """Fetch price targets."""
+        data = self._make_request('stock/price-target')
+        if not data: return None
+        
+        try:
+            return AnalystTargets(
+                std_price_target_low=FieldWithSource(value=float(data.get('targetLow', 0)), source='finnhub') if data.get('targetLow') else None,
+                std_price_target_high=FieldWithSource(value=float(data.get('targetHigh', 0)), source='finnhub') if data.get('targetHigh') else None,
+                std_price_target_avg=FieldWithSource(value=float(data.get('targetMean', 0)), source='finnhub') if data.get('targetMean') else None,
+                std_price_target_consensus=FieldWithSource(value=float(data.get('targetMedian', 0)), source='finnhub') if data.get('targetMedian') else None,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to parse Finnhub price targets: {e}")
+            return None
 
-# Register this fetcher
-FetcherRegistry.register(DataSource.FINNHUB, FinnhubFetcher)
+    def _fetch_earnings_surprises(self) -> List[Dict]:
+        """Fetch earnings surprises history."""
+        # /stock/earnings?symbol=AAPL
+        logger.info(f"Fetching earnings surprises for {self.symbol}...")
+        data = self._make_request('stock/earnings')
+        if not data or not isinstance(data, list): 
+            return []
+            
+        # Finnhub returns list of dicts: {actual, estimate, period, quarter, symbol, year}
+        # We need to map this to our schema or return raw list if schema expects raw?
+        # ForecastData.std_earnings_surprise_history expects List[Dict] or List[Object]?
+        # Checking unified_schema... usually List[Any] or List[Dict] for complex extensions.
+        # Let's return the raw list for now, normalized if needed.
+        return data
+
+    def _fetch_eps_estimates(self) -> Optional[Dict]:
+        """
+        Fetch analyst EPS and Revenue estimates.
+        Endpoint: /stock/estimates?symbol=AAPL&freq=quarterly
+        Returns: {epsAvg: [{estimate, period}], revenueAvg: [{estimate, period}], ...}
+        """
+        logger.info(f"Fetching EPS/Revenue estimates for {self.symbol}...")
+        data = self._make_request('stock/estimates', {'freq': 'quarterly'})
+        if not data:
+            return None
+        
+        return data
+    
+    def _fetch_metrics(self) -> Optional[Dict]:
+        """
+        Fetch key financial metrics including forward P/E.
+        Endpoint: /stock/metric?symbol=AAPL&metric=all
+        Returns: {metric: {forwardPeRatio, ...}, series: {...}}
+        """
+        logger.info(f"Fetching financial metrics for {self.symbol}...")
+        data = self._make_request('stock/metric', {'metric': 'all'})
+        if not data:
+            return None
+            
+        return data
+
+    def _make_request(self, endpoint: str, params: Dict = {}) -> Optional[Any]:
+        """
+        Delegates to utils.http_utils.make_request.
+        """
+        if not self.api_key:
+            logger.warning("Finnhub API key missing")
+            return None
+            
+        url = f"{self.base_url}/{endpoint}"
+        params = params.copy()
+        params['token'] = self.api_key
+        params['symbol'] = self.symbol
+        
+        return make_request(url, params=params, source_name="Finnhub")

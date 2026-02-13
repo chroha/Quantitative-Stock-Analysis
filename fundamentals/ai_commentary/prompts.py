@@ -375,6 +375,11 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | Peter Lynch | $X | X% | X% | [Brief Comment] |
 | Analyst | $X | X% | X% | [Brief Comment] |
 
+**CRITICAL INSTRUCTION**: 
+- **DO NOT REMOVE ROWS**. You MUST display ALL 10 models in the table above.
+- If a model has 0 weight or missing data, set Fair Value to "-" and Comment to "Not used" or "Unable to calculate".
+- Do NOT hide models just because they are not used. The user requires a full view of all 10 models.
+
 ## IV. Conclusion
 **Key Strengths:** [Points]
 **Key Risks:** [Points]

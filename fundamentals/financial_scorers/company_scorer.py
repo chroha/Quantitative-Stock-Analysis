@@ -24,6 +24,19 @@ from fundamentals.financial_scorers.scoring_config import (
 
 logger = setup_logger('company_scorer')
 
+# Sector name normalization
+# Different data sources use different sector naming conventions
+SECTOR_ALIASES = {
+    'Consumer Cyclical': 'Consumer Discretionary',  # Yahoo Finance convention
+    'Consumer Defensive': 'Consumer Staples',        # Yahoo Finance convention
+    # Add more aliases as needed
+}
+
+def normalize_sector(sector: str) -> str:
+    """Normalize sector name to GICS standard classification."""
+    return SECTOR_ALIASES.get(sector, sector)
+
+
 
 class CompanyScorer:
     """
@@ -71,21 +84,24 @@ class CompanyScorer:
                 'warnings': [...]
             }
         """
-        if sector not in self.benchmarks['sectors']:
-            logger.warning(f"Unknown sector: {sector}. Available: {list(self.benchmarks['sectors'].keys())}")
+        # Normalize sector name (e.g., "Consumer Cyclical" -> "Consumer Discretionary")
+        normalized_sector = normalize_sector(sector)
+        
+        if normalized_sector not in self.benchmarks['sectors']:
+            logger.warning(f"Unknown sector: {sector} (normalized: {normalized_sector}). Available: {list(self.benchmarks['sectors'].keys())}")
             # Return a valid but empty result structure to prevent crashes
             return {
                 'company': company_name or 'Unknown',
-                'sector': sector,
+                'sector': sector,  # Keep original sector for display
                 'total_score': 0.0,
                 'category_scores': {},
                 'warnings': [f"Critical: Unknown sector '{sector}'. Cannot score against benchmarks."]
             }
         
-        sector_config = self.benchmarks['sectors'][sector]
+        sector_config = self.benchmarks['sectors'][normalized_sector]
         global_defaults = self.benchmarks['defaults']
         
-        logger.info(f"Scoring company: {company_name or 'Unknown'} (Sector: {sector})")
+        logger.info(f"Scoring company: {company_name or 'Unknown'} (Sector: {sector} -> {normalized_sector})")
         
         # Get weights (with sector overrides)
         weights = self._get_weights(sector)
@@ -125,9 +141,12 @@ class CompanyScorer:
         import copy
         base_weights = copy.deepcopy(CATEGORY_WEIGHTS)
         
+        # Normalize sector name
+        normalized_sector = normalize_sector(sector)
+        
         # Apply sector-specific overrides
-        if sector in SECTOR_WEIGHT_OVERRIDES:
-            overrides = SECTOR_WEIGHT_OVERRIDES[sector]
+        if normalized_sector in SECTOR_WEIGHT_OVERRIDES:
+            overrides = SECTOR_WEIGHT_OVERRIDES[normalized_sector]
             for category, cat_data in overrides.items():
                 if category in base_weights:
                     # Update max_score if present
@@ -140,6 +159,12 @@ class CompanyScorer:
         
         return base_weights
     
+    def _extract_value(self, metric_data) -> Optional[float]:
+        """Extract numeric value from metric data (which might be a dict with source)."""
+        if isinstance(metric_data, dict) and 'value' in metric_data:
+            return metric_data['value']
+        return metric_data
+
     def _score_profitability(self, profitability, sector_config, global_defaults, weights) -> dict:
         """Score profitability category (40 points max)."""
         metrics_config = sector_config.get('metrics', {})
@@ -150,14 +175,14 @@ class CompanyScorer:
         metric_details = {}
         warnings = []
         
-        # Map metric names
+        # Map metric names (extracting values)
         metric_mapping = {
-            'roic': profitability.roic,
-            'roe': profitability.roe,
-            'operating_margin': profitability.operating_margin,
-            'gross_margin': profitability.gross_margin,
-            'net_margin': profitability.net_margin,
-            'debt_coverage': profitability.interest_coverage  # Map interest_coverage to debt_coverage key
+            'roic': self._extract_value(profitability.roic),
+            'roe': self._extract_value(profitability.roe),
+            'operating_margin': self._extract_value(profitability.operating_margin),
+            'gross_margin': self._extract_value(profitability.gross_margin),
+            'net_margin': self._extract_value(profitability.net_margin),
+            'debt_coverage': self._extract_value(profitability.interest_coverage)  # Map interest_coverage to debt_coverage key
         }
         
         # Score each profitability metric
@@ -233,6 +258,9 @@ class CompanyScorer:
     
     def _score_single_metric(self, metric_name, value, weight, metric_config, global_defaults):
         """Helper to score a single metric and return weighted score + details."""
+        # Ensure value is extracted
+        value = self._extract_value(value)
+        
         if value is None:
             return 0, None
             
@@ -263,7 +291,7 @@ class CompanyScorer:
         warnings = []
         
         # === FCF CAGR (special handling) ===
-        fcf_cagr = growth.fcf_cagr_5y
+        fcf_cagr = self._extract_value(growth.fcf_cagr_5y)
         fcf_weight = metric_weights.get('fcf_cagr_5y', 12)
         
         # Determine config for FCF
@@ -378,7 +406,7 @@ class CompanyScorer:
                     metric_details['debt_to_equity'] = details
             else:
                 metric_details['debt_to_equity'] = {
-                    'value': debt_to_equity, 
+                    'value': self._extract_value(debt_to_equity), 
                     'raw_score': 0, 
                     'weight': 0, 
                     'weighted_score': 0, 

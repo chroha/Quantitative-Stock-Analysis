@@ -62,8 +62,15 @@ def main():
     print_header("QUANTITATIVE STOCK ANALYSIS SYSTEM V3.0")
     
     # --- Input ---
+    force_fetch = "--force-fetch" in sys.argv
+    
     if len(sys.argv) > 1:
-        symbol = sys.argv[1].strip().upper()
+        # Filter out flags to get the symbol
+        args = [arg for arg in sys.argv[1:] if not arg.startswith("--")]
+        if args:
+            symbol = args[0].strip().upper()
+        else:
+            symbol = input("Enter stock symbol (e.g., AAPL): ").strip().upper()
     else:
         symbol = input("Enter stock symbol (e.g., AAPL): ").strip().upper()
     
@@ -90,7 +97,7 @@ def main():
         bench_loader = BenchmarkDataLoader()
         bench_path = bench_loader.get_output_path()
         
-        if bench_path.exists():
+        if bench_path.exists() and not force_fetch:
             print(f"  {ICON.OK} Industry Benchmark data available")
             if len(sys.argv) <= 1:
                 choice = input("  Update industry benchmarks? (y/N): ").strip().lower()
@@ -100,7 +107,7 @@ def main():
         else:
             print("  Fetching Industry Benchmarks...")
             print("  Downloading industry data files...")
-            bench_loader.run_update()
+            bench_loader.run_update(force_refresh=force_fetch)
 
         # 1.2 Stock Data
         stock_loader = StockDataLoader()
@@ -108,7 +115,7 @@ def main():
         stock_path = os.path.join(output_dir, stock_file)
         
         stock_data = None
-        if os.path.exists(stock_path):
+        if os.path.exists(stock_path) and not force_fetch:
             print(f"  {ICON.OK} Found existing data for {symbol}")
             if len(sys.argv) <= 1:
                 choice = input("  Update stock data? (y/N): ").strip().lower()

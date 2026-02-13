@@ -39,11 +39,15 @@ class PEValuationModel(BaseValuationModel):
                 return None
             
             latest_income = stock_data.income_statements[0]  # Most recent
-            if not latest_income.std_eps_diluted or latest_income.std_eps_diluted.value is None:
-                logger.warning(f"{stock_data.symbol}: No EPS data")
-                return None
+            eps = None
+            if latest_income.std_eps_diluted and latest_income.std_eps_diluted.value is not None:
+                eps = latest_income.std_eps_diluted.value
+            elif latest_income.std_eps and latest_income.std_eps.value is not None:
+                eps = latest_income.std_eps.value
             
-            eps = latest_income.std_eps_diluted.value
+            if eps is None:
+                logger.warning(f"{stock_data.symbol}: No EPS data (Basic or Diluted)")
+                return None
             
             if eps <= 0:
                 logger.warning(f"{stock_data.symbol}: Negative or zero EPS ({eps})")

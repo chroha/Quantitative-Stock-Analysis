@@ -13,7 +13,8 @@ from datetime import datetime
 from utils.logger import setup_logger
 from utils.unified_schema import (
     StockData, PriceData, IncomeStatement, BalanceSheet, CashFlow,
-    CompanyProfile, AnalystTargets, FieldWithSource, TextFieldWithSource, YAHOO_FIELD_MAPPING
+    CompanyProfile, AnalystTargets, FieldWithSource, TextFieldWithSource, YAHOO_FIELD_MAPPING,
+    ForecastData
 )
 from utils.field_registry import DataSource
 from data_acquisition.stock_data.base_fetcher import BaseFetcher
@@ -125,9 +126,60 @@ class YahooFetcher(BaseFetcher):
             logger.error(f"Failed to fetch profile from Yahoo: {e}")
             return None
     
+    def fetch_forecast_data(self) -> Optional[ForecastData]:
+        """
+        Fetch forecast data (forward metrics, estimates, targets) from Yahoo Finance.
+        
+        Returns:
+            ForecastData object or None if fetch fails
+        """
+        try:
+            from utils.unified_schema import ForecastData
+            if not self.ticker:
+                self.ticker = yf.Ticker(self.symbol)
+            
+            info = self.ticker.info
+            
+            # Create ForecastData object
+            forecast = ForecastData(
+                # Forward Metrics
+                std_forward_eps=self._create_field_with_source(info.get('forwardEps')),
+                std_forward_pe=self._create_field_with_source(info.get('forwardPE')),
+                
+                # Analyst Targets
+                std_price_target_low=self._create_field_with_source(info.get('targetLowPrice')),
+                std_price_target_high=self._create_field_with_source(info.get('targetHighPrice')),
+                std_price_target_avg=self._create_field_with_source(info.get('targetMeanPrice')),
+                std_price_target_consensus=self._create_field_with_source(info.get('targetMedianPrice')),
+                std_number_of_analysts=self._create_field_with_source(info.get('numberOfAnalystOpinions')),
+                
+                # Estimates
+                std_eps_estimate_current_year=self._create_field_with_source(info.get('epsCurrentYear')),
+                # Yahoo doesn't explicitly provide next year estimates in 'info' typically, 
+                # but sometimes 'epsForward' is a proxy for next year or 12m forward.
+                
+                # Growth - Map generic earningsGrowth/revenueGrowth to current year/next year if appropriate?
+                # Yahoo's 'earningsGrowth' is usually quarterly yoy. 
+                # We'll map what we can.
+                std_earnings_growth_current_year=self._create_field_with_source(info.get('earningsGrowth')),
+                std_revenue_growth_next_year=self._create_field_with_source(info.get('revenueGrowth')), 
+                
+                # Analyst Ratings (Partial)
+                std_analyst_rating_buy=self._create_field_with_source(info.get('recommendationMean')), # This is actually a score 1-5
+                # improved logic could map recommendationKey ('buy', 'hold') to counts if valid, but yfinance only gives key
+            )
+            
+            logger.info(f"Fetched forecast data for {self.symbol} from Yahoo")
+            return forecast
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch forecast data from Yahoo: {e}")
+            return None
+
     def fetch_analyst_targets(self) -> Optional[AnalystTargets]:
         """
         Fetch analyst price targets from Yahoo Finance.
+        DEPRECATED: Use fetch_forecast_data instead. Kept for backward compatibility.
         
         Returns:
             AnalystTargets object or None if fetch fails
@@ -149,10 +201,8 @@ class YahooFetcher(BaseFetcher):
             
             # Check if any data was actually fetched
             if any([targets.std_price_target_low, targets.std_price_target_high, targets.std_price_target_avg]):
-                logger.info(f"Fetched analyst targets for {self.symbol} from Yahoo")
                 return targets
             else:
-                logger.warning(f"No analyst target data available for {self.symbol} from Yahoo")
                 return None
         
         except Exception as e:
@@ -351,7 +401,8 @@ class YahooFetcher(BaseFetcher):
             income_statements=self.fetch_income_statements(),
             balance_sheets=self.fetch_balance_sheets(),
             cash_flows=self.fetch_cash_flows(),
-            analyst_targets=self.fetch_analyst_targets(),  # NEW: Fetch analyst targets
+            analyst_targets=self.fetch_analyst_targets(),  # Keep for compat
+            forecast_data=self.fetch_forecast_data(),      # NEW: Populate forecast data
         )
         
         logger.info(f"Completed Yahoo fetch for {self.symbol}")

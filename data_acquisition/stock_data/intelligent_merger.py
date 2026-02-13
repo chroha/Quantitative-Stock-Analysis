@@ -63,9 +63,9 @@ def merge_statement_by_period(
     merged_kwargs = {'std_period': period}
     
     # Determine period type (FY/Q/TTM) - Default to FY if unknown
-    # Priority: Yahoo > FMP > EDGAR > AV
+    # Priority: Yahoo > EDGAR > Finnhub > FMP > AV
     period_type = 'FY'
-    for source in [DataSource.YAHOO, DataSource.FMP, DataSource.SEC_EDGAR, DataSource.ALPHAVANTAGE]:
+    for source in [DataSource.YAHOO, DataSource.SEC_EDGAR, DataSource.FINNHUB, DataSource.FMP, DataSource.ALPHAVANTAGE]:
         stmt = statements_by_source.get(source)
         if stmt and hasattr(stmt, 'std_period_type') and stmt.std_period_type:
              period_type = stmt.std_period_type

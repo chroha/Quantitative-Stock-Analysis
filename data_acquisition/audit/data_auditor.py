@@ -18,6 +18,14 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 import logging
 
+import sys
+
+# Ensure project root is in sys.path
+current_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(current_dir))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 # Import Fetchers
 from data_acquisition.stock_data.yahoo_fetcher import YahooFetcher
 from data_acquisition.stock_data.edgar_fetcher import EdgarFetcher
@@ -28,6 +36,7 @@ from data_acquisition.stock_data.initial_data_loader import StockDataLoader
 
 # Import Mappings
 from utils.unified_schema import YAHOO_FIELD_MAPPING, FMP_FIELD_MAPPING, StockData
+from utils.console_utils import symbol as console_symbol
 
 # Setup basic logging to console
 logging.basicConfig(level=logging.INFO, format='%(message)s')
@@ -36,6 +45,7 @@ logger = logging.getLogger("data_auditor")
 class DataAuditor:
     def __init__(self, symbol: str, output_dir: str):
         self.symbol = symbol.upper()
+
         self.output_dir = output_dir
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         self.session_dir = os.path.join(self.output_dir, f"{self.symbol}_{self.timestamp}")
@@ -217,6 +227,18 @@ class DataAuditor:
                      v = val.get('value')
                      report.append(f"  {field:<30} : {str(v)[:20]:<20} ({src})")
 
+        # 3. Forecast Data
+        if data.forecast_data:
+            report.append(f"\n[Forecast Data Source Map]")
+            for field, val in data.forecast_data.model_dump().items():
+                if field.startswith('std_') and val:
+                    if isinstance(val, dict): # FieldWithSource
+                        src = val.get('source', 'Unknown')
+                        v = val.get('value')
+                        report.append(f"  {field:<35} : {str(v)[:20]:<20} ({src})")
+                    elif isinstance(val, list): # Special handling for history lists
+                        report.append(f"  {field:<35} : {len(val)} records (See parsed/finnhub_forecast.json)")
+
         self._save_txt(report, "final_provenance_report.txt", 'reports')
 
     def _save_txt(self, lines: List[str], filename: str, sub_dir: str, header: str = None):
@@ -249,31 +271,31 @@ class DataAuditor:
                 # Earnings Surprises (Finnhub's unique feature)
                 surprises = forecast_data.std_earnings_surprise_history
                 if surprises and len(surprises) > 0:
-                    summary.append(f"\n✓ Earnings Surprise History: {len(surprises)} records")
+                    summary.append(f"\n{console_symbol.OK} Earnings Surprise History: {len(surprises)} records")
                     # Show latest 3
                     for s in surprises[:3]:
-                        summary.append(f"  {s['period']}: Actual={s['actual']:.2f} vs Est={s['estimate']:.2f} (Surprise: {s['surprise_percent']:.1f}%)")
+                        summary.append(f"  {s['period']}: Actual={s.get('actual', 0):.2f} vs Est={s.get('estimate', 0):.2f} (Surprise: {s.get('surprisePercent', 0):.1f}%)")
                 else:
-                    summary.append("\n✗ No earnings surprise data")
+                    summary.append(f"\n{console_symbol.FAIL} No earnings surprise data")
                 
                 # EPS/Revenue Estimates
                 summary.append("\nEstimates:")
                 if forecast_data.std_eps_estimate_current_year:
-                    summary.append(f"  ✓ EPS Estimate: {forecast_data.std_eps_estimate_current_year.value:.2f}")
+                    summary.append(f"  {console_symbol.OK} EPS Estimate: {forecast_data.std_eps_estimate_current_year.value:.2f}")
                 else:
-                    summary.append(f"  ✗ EPS Estimate")
+                    summary.append(f"  {console_symbol.FAIL} EPS Estimate")
                     
                 if forecast_data.std_revenue_estimate_current_year:
-                    summary.append(f"  ✓ Revenue Estimate: ${forecast_data.std_revenue_estimate_current_year.value:,.0f}")
+                    summary.append(f"  {console_symbol.OK} Revenue Estimate: ${forecast_data.std_revenue_estimate_current_year.value:,.0f}")
                 else:
-                    summary.append(f"  ✗ Revenue Estimate")
+                    summary.append(f"  {console_symbol.FAIL} Revenue Estimate")
                     
                 if forecast_data.std_ebitda_estimate_next_year:
-                    summary.append(f"  ✓ EBITDA Estimate: ${forecast_data.std_ebitda_estimate_next_year.value:,.0f}")
+                    summary.append(f"  {console_symbol.OK} EBITDA Estimate: ${forecast_data.std_ebitda_estimate_next_year.value:,.0f}")
                 else:
-                    summary.append(f"  ✗ EBITDA Estimate")
+                    summary.append(f"  {console_symbol.FAIL} EBITDA Estimate")
             else:
-                summary.append("\n✗ No forecast data available from Finnhub")
+                summary.append(f"\n{console_symbol.FAIL} No forecast data available from Finnhub")
             
             self._save_txt(summary, "finnhub_summary.txt", 'reports')
             
@@ -312,18 +334,18 @@ class DataAuditor:
                 # Estimates
                 summary.append("\nEstimates:")
                 if forecast_data.std_eps_estimate_current_year:
-                    summary.append(f"  ✓ EPS: {forecast_data.std_eps_estimate_current_year.value:.2f}")
+                    summary.append(f"  {console_symbol.OK} EPS: {forecast_data.std_eps_estimate_current_year.value:.2f}")
                 if forecast_data.std_revenue_estimate_current_year:
-                    summary.append(f"  ✓ Revenue: ${forecast_data.std_revenue_estimate_current_year.value:,.0f}")
+                    summary.append(f"  {console_symbol.OK} Revenue: ${forecast_data.std_revenue_estimate_current_year.value:,.0f}")
                 
                 # Growth
                 summary.append("\nGrowth Estimates:")
                 if forecast_data.std_earnings_growth_current_year:
-                    summary.append(f"  ✓ Earnings Growth: {forecast_data.std_earnings_growth_current_year.value*100:.1f}%")
+                    summary.append(f"  {console_symbol.OK} Earnings Growth: {forecast_data.std_earnings_growth_current_year.value*100:.1f}%")
                 if forecast_data.std_revenue_growth_next_year:
-                    summary.append(f"  ✓ Revenue Growth: {forecast_data.std_revenue_growth_next_year.value*100:.1f}%")
+                    summary.append(f"  {console_symbol.OK} Revenue Growth: {forecast_data.std_revenue_growth_next_year.value*100:.1f}%")
             else:
-                summary.append("\n✗ No forecast data available from FMP")
+                summary.append(f"\n{console_symbol.FAIL} No forecast data available from FMP")
             
             self._save_txt(summary, "fmp_forecast_summary.txt", 'reports')
             
@@ -351,3 +373,26 @@ class DataAuditor:
         self.run_pipeline_integration()
         
         logger.info(f"\nAudit Complete! Please inspect the 'reports' folder in: \n{self.session_dir}")
+
+if __name__ == "__main__":
+    import argparse
+    
+    # 允许命令行参数，如果没有则交互式输入
+    parser = argparse.ArgumentParser(description='Run Data Audit for a Stock Symbol')
+    parser.add_argument('symbol', nargs='?', help='Stock symbol to audit')
+    args = parser.parse_args()
+    
+    symbol = args.symbol
+    if not symbol:
+        symbol = input("Enter stock symbol (e.g., AAPL): ").strip().upper()
+    
+    if not symbol:
+        symbol = "AAPL"
+        print("Defaulting to AAPL")
+    
+    # Run from project root usually
+    output_dir = "debug_data"
+    
+    print(f"\nInitializing Data Auditor for {symbol}...")
+    auditor = DataAuditor(symbol, output_dir)
+    auditor.run_full_audit()

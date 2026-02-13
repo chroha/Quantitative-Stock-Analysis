@@ -97,6 +97,7 @@ This document provides a comprehensive guide to the `utils/` directory, which co
 - **Features**:
   - `fetch_url()`: Wrapper with headers (User-Agent rotation) and error handling.
   - `RateLimiter`: Validates and throttles API requests (especially for Alpha Vantage/FMP).
+  - **Smart Error Handling**: Gracefully handles 403 Forbidden (e.g., Finnhub plan limits) with fallback.
 
 ### `helpers.py`
 

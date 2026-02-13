@@ -43,11 +43,12 @@ class FieldDefinition:
     
     def __post_init__(self):
         if self.priority is None:
-            # Default priority: Yahoo > FMP > EDGAR > AlphaVantage
+            # Default priority: Yahoo > EDGAR > Finnhub > FMP > AlphaVantage
             self.priority = [
-                DataSource.YAHOO, 
-                DataSource.FMP, 
-                DataSource.SEC_EDGAR, 
+                DataSource.YAHOO,
+                DataSource.SEC_EDGAR,
+                DataSource.FINNHUB,
+                DataSource.FMP,
                 DataSource.ALPHAVANTAGE
             ]
 
@@ -61,7 +62,7 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
         unified_name='std_revenue',
         description='Total revenue',
         required=True,
-        yahoo_names=['Total Revenue'],
+        yahoo_names=['Total Revenue', 'totalRevenue'],
         edgar_tags=['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'SalesRevenueNet', 'SalesRevenueServicesNet', 'SalesRevenueGoodsNet'],
         fmp_names=['revenue'],
         av_names=['totalRevenue'],
@@ -79,7 +80,7 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
         unified_name='std_gross_profit',
         description='Gross profit',
         important=True,
-        yahoo_names=['Gross Profit'],
+        yahoo_names=['Gross Profit', 'grossProfits'],
         edgar_tags=['GrossProfit'],
         fmp_names=['grossProfit'],
         av_names=['grossProfit'],
@@ -168,7 +169,7 @@ INCOME_FIELDS: Dict[str, FieldDefinition] = {
         unified_name='std_ebitda',
         description='EBITDA',
         important=True,
-        yahoo_names=['EBITDA'],
+        yahoo_names=['EBITDA', 'ebitda'],
         edgar_tags=None,  # Calculated from operating_income + D&A
         fmp_names=['ebitda'],
         av_names=['ebitda'],
@@ -246,7 +247,7 @@ BALANCE_FIELDS: Dict[str, FieldDefinition] = {
         unified_name='std_total_debt',
         description='Total debt',
         required=True,
-        yahoo_names=['Total Debt'],
+        yahoo_names=['Total Debt', 'totalDebt'],
         edgar_tags=['LongTermDebt', 'LongTermDebtNoncurrent', 'DebtInstrumentCarryingAmount'],
         fmp_names=['totalDebt'],
         av_names=['shortTermDebt', 'longTermDebt'],  # Will need combining
@@ -272,7 +273,7 @@ CASHFLOW_FIELDS: Dict[str, FieldDefinition] = {
         unified_name='std_operating_cash_flow',
         description='Operating cash flow',
         required=True,
-        yahoo_names=['Operating Cash Flow'],
+        yahoo_names=['Operating Cash Flow', 'operatingCashflow'],
         edgar_tags=['NetCashProvidedByUsedInOperatingActivities'],
         fmp_names=['operatingCashFlow'],
         av_names=['operatingCashflow'],
@@ -308,7 +309,7 @@ CASHFLOW_FIELDS: Dict[str, FieldDefinition] = {
         unified_name='std_free_cash_flow',
         description='Free cash flow',
         important=True,
-        yahoo_names=['Free Cash Flow'],
+        yahoo_names=['Free Cash Flow', 'freeCashflow'],
         edgar_tags=None,  # Calculated: OCF - Capex
         fmp_names=['freeCashFlow'],
         av_names=None,  # Calculated

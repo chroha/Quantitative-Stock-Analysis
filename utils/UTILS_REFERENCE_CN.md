@@ -97,6 +97,7 @@
 - **功能**:
   - `fetch_url()`: 封装了 User-Agent 轮换和错误处理的请求函数。
   - `RateLimiter`: API 请求限流器，防止触发 Alpha Vantage/FMP 的频率限制。
+  - **智能错误处理**: 自动识别 403 Forbidden (如 Finnhub 权限不足) 并触发优雅降级，防止程序崩溃。
 
 ### `helpers.py`
 

@@ -22,8 +22,9 @@ class MetricWarning:
 
 @dataclass
 class CalculationResult:
-    """Generic calculation result with warnings."""
+    """Generic calculation result with warnings and source tracking."""
     value: Optional[float]
+    source: str = "Calculated"
     intermediate_values: Dict[str, Any] = field(default_factory=dict)
     warnings: List[MetricWarning] = field(default_factory=list)
     calculation_date: datetime = field(default_factory=datetime.now)
@@ -63,6 +64,41 @@ class CalculatorBase:
         """
         self.symbol = symbol
         self.logger = setup_logger(f'{self.__class__.__name__}_{symbol}')
+        
+    def merge_sources(self, sources: List[str]) -> str:
+        """
+        Merge multiple sources into a single provenance string.
+        e.g. ['Yahoo', 'FMP'] -> 'Yahoo/FMP'
+        Removes duplicates and 'N/A'.
+        """
+        valid_sources = []
+        seen = set()
+        for s in sources:
+            if s and s != 'N/A' and s != 'Calculated':
+                # Normalize
+                s_norm = s.strip()
+                if s_norm not in seen:
+                    valid_sources.append(s_norm)
+                    seen.add(s_norm)
+        
+        if not valid_sources:
+            return "Calculated"
+            
+        return "/".join(valid_sources)
+
+    def get_field_with_source(self, data_obj, field_name: str) -> tuple[Optional[float], str]:
+        """
+        Safely extract field value and source from Pydantic model.
+        
+        Returns:
+            (value, source) tuple
+        """
+        field = getattr(data_obj, field_name, None)
+        if field:
+            val = getattr(field, 'value', None)
+            src = getattr(field, 'source', 'N/A')
+            return val, src
+        return None, 'N/A'
     
     def safe_divide(
         self,

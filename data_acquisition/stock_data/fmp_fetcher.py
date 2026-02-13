@@ -391,7 +391,14 @@ class FMPFetcher(BaseFetcher):
         
         # 1. Fetch analyst estimates (EPS/Revenue estimates)
         logger.info(f"Fetching analyst estimates for {self.symbol}...")
-        estimates_data = self._make_request(constants.FMP_ENDPOINTS['analyst_estimates'], {'limit': 1})
+        # 1. Fetch analyst estimates (EPS/Revenue estimates)
+        logger.info(f"Fetching analyst estimates for {self.symbol}...")
+        # FMP stable requires 'period' parameter (annual is free, quarter is premium)
+        # Revert to standard endpoint with query params
+        estimates_data = self._make_request(
+            constants.FMP_ENDPOINTS['analyst_estimates'], 
+            {'limit': 1, 'period': 'annual'}
+        )
         if estimates_data and len(estimates_data) > 0:
             try:
                 item = estimates_data[0]

@@ -1,6 +1,7 @@
 from typing import Optional, Any
 from utils.unified_schema import StockData
 from .base_model import BaseValuationModel
+import datetime
 
 class PeterLynchModel(BaseValuationModel):
     """
@@ -78,124 +79,80 @@ class PeterLynchModel(BaseValuationModel):
             return None
 
     def _calculate_ni_cagr(self, stock_data: StockData) -> Optional[float]:
-        # Needs at least 3 years of data
-        stmts = stock_data.income_statements
-        if not stmts or len(stmts) < 3:
-            return None
+        """
+        Calculate Net Income CAGR.
+        Priority:
+        1. Historical 5Y Net Income CAGR (calculated)
+        2. Historical 3-4Y Net Income CAGR (calculated)
+        3. Profile's Earnings Growth (last resort)
+        """
+        # Strategy 1 & 2: Calculate from historical data
+        # Filter for Annual reports only to be precise
+        all_stmts = stock_data.income_statements
+        stmts = [s for s in all_stmts if s.std_period_type == 'FY']
+        
+        # If insufficient annual data, fall back to whatever we have (but risky) or try TTM
+        # For now, let's rely on FY.
+        if stmts and len(stmts) >= 3:
+            # Assuming sorted desc (Latest -> Oldest)
+            # Re-sort to be safe because we just filtered
+            stmts.sort(key=lambda x: x.std_period or "", reverse=True)
             
-        # Filter for Annual reports only to be precise, or just use indices if sorted
-        # Assuming sorted desc (Latest -> Oldest)
-        
-        # We want approx 5 years lookback. 
-        # If we have annuals mixed with quarters, it's tricky. 
-        # Let's try to find the statement closest to 5 years ago.
-        
-        import datetime
-        latest_date = stmts[0].std_period
-        # Handle TTM prefix
-        if latest_date.startswith("TTM-"):
-             latest_date = latest_date[4:]
-             
-        try:
-            latest_dt = datetime.datetime.strptime(latest_date, "%Y-%m-%d")
-        except:
-            return None
+            latest_date_str = stmts[0].std_period
             
-        target_date = latest_dt - datetime.timedelta(days=5*365)
-        
-        base_stmt = None
-        years_diff = 0
-        
-        # Find statement closest to 5y ago, but not older than 6y
-        for stmt in stmts:
-            try:
-                s_date = stmt.std_period
-                if s_date.startswith("TTM-"):
-                    s_date = s_date[4:]
-                    
-                s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
-                age_days = (latest_dt - s_dt).days
-                age_years = age_days / 365.0
-                
-                if 4.5 <= age_years <= 6.5:
-                    base_stmt = stmt
-                    years_diff = age_years
-                    break
-            except:
-                continue
-                
-        # Fallback: if no 5y data, try 3y
-        if not base_stmt:
-             target_date_3y = latest_dt - datetime.timedelta(days=3*365)
-             for stmt in stmts:
+            # Helper to parse date
+            def parse_date(d_str):
                 try:
-                    s_date = stmt.std_period
-                    if s_date.startswith("TTM-"):
-                        s_date = s_date[4:]
-                    s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
+                    if d_str.startswith("Synthetic_TTM"): return None
+                    if d_str.startswith("TTM-"): d_str = d_str[4:]
+                    return datetime.datetime.strptime(d_str, "%Y-%m-%d")
+                except: return None
+
+            latest_dt = parse_date(latest_date_str)
+            if not latest_dt:
+                # If latest is synthetic, try next
+                if len(stmts) > 1:
+                     latest_date_str = stmts[1].std_period
+                     latest_dt = parse_date(latest_date_str)
+            
+            if latest_dt:
+                # Find best base statement (Priorities: ~5y -> ~4y -> ~3y)
+                best_candidate = None
+                best_diff = 0
+                
+                for stmt in stmts:
+                    s_dt = parse_date(stmt.std_period)
+                    if not s_dt: continue
+                    
                     age_days = (latest_dt - s_dt).days
                     age_years = age_days / 365.0
                     
-                    if 2.5 <= age_years <= 3.5:
-                        base_stmt = stmt
-                        years_diff = age_years
-                        break
-                except:
-                    continue
+                    # Ideal: 4.5 - 5.5 years
+                    if 4.5 <= age_years <= 5.5:
+                        best_candidate = stmt
+                        best_diff = age_years
+                        break # Found ideal
+                    
+                    # Acceptable: 2.5 - 6.5 years
+                    if 2.5 <= age_years <= 6.5:
+                         # Keep looking for better, or store as fallback
+                         if best_candidate is None or abs(age_years - 5) < abs(best_diff - 5):
+                             best_candidate = stmt
+                             best_diff = age_years
+                
+                if best_candidate:
+                    try:
+                        current = stmts[0].std_net_income.value
+                        oldest = best_candidate.std_net_income.value
+                        
+                        if current is not None and oldest is not None and current > 0 and oldest > 0:
+                            cagr = (current / oldest) ** (1/best_diff) - 1
+                            return cagr
+                    except Exception:
+                        pass # Calculation failed, fall through to strategy 3
 
-        if not base_stmt:
-            # Last resort: use oldest available if profitable
-            base_stmt = stmts[-1]
-            try:
-                s_date = base_stmt.std_period
-                if s_date.startswith("TTM-"):
-                    s_date = s_date[4:]
-                s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
-                years_diff = (latest_dt - s_dt).days / 365.0
-            except:
-                years_diff = len(stmts) / 4 # Rough estimate
-            
-        try:
-            current = stmts[0].std_net_income.value
-            oldest = base_stmt.std_net_income.value
-            
-            if current is None or oldest is None:
-                return None
-            
-            # If base year is negative, we can't calculate a meaningful CAGR directly.
-            # Lynch would look for a "normal" year.
-            # Strategy: if oldest < 0, move forward in time until positive (up to 3y lookback)
-            if oldest <= 0:
-                # Try to find a profitable year between base and current
-                idx = stmts.index(base_stmt)
-                while idx > 0:
-                    idx -= 1
-                    s = stmts[idx]
-                    val = s.std_net_income.value
-                    if val and val > 0:
-                        # Found a closer positive year
-                        oldest = val
-                        # Recalculate years
-                        try:
-                           s_date = s.std_period
-                           if s_date.startswith("TTM-"):
-                               s_date = s_date[4:]
-                           s_dt = datetime.datetime.strptime(s_date, "%Y-%m-%d")
-                           years_diff = (latest_dt - s_dt).days / 365.0
-                        except:
-                           pass # Keep old estimate or fail
-                        break
-                
-                if oldest <= 0:
-                    return None # Still negative, give up
-            
-            if current <= 0:
-                return None # Current loss = no P/E based valuation
-                
-            if years_diff < 1:
-                return None
-                
-            cagr = (current / oldest) ** (1/years_diff) - 1
-            return cagr
-        except Exception:
-            return None
+        # Strategy 3: Profile Earnings Growth (Yahoo/FMP provided)
+        if stock_data.profile and stock_data.profile.std_earnings_growth:
+             return stock_data.profile.std_earnings_growth.value
+             
+        return None

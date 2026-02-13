@@ -41,8 +41,9 @@ Performs a full-pipeline analysis for a single stock:
   - Discounted Cash Flow (DCF)
   - Dividend Discount Model (DDM)
   - Relative Valuation (PE/PB/PS/EV-EBITDA Multiples)
-  - Value Investing (Graham Number, Peter Lynch, PEG Ratio)
+  - Value Investing (Graham Number, Peter Lynch Fair Value, PEG Ratio)
   - Analyst Consensus Targets
+- **Data Provenance**: Tracks the exact source (Yahoo, FMP, Finnhub, Edgar) for every data point in the final report.
 - **AI Investment Commentary**: Uses Google Gemini to generate bilingual analysis reports including:
   - **Forward Metrics Analysis**: Current vs forward P/E, EPS comparison tables with auto-calculated changes
   - **Earnings Surprise Analysis**: Detailed 4-quarter surprise table with average beat% and consistency metrics
@@ -231,7 +232,9 @@ python run_macro_report.py
 Troubleshoot data anomalies, missing fields, or DDM failures using the built-in audit tool:
 
 ```bash
-python run_data_audit.py --symbol TSM
+python data_acquisition/audit/data_auditor.py
+# Interactive mode (prompts for symbol) or pass symbol as argument:
+# python data_acquisition/audit/data_auditor.py TSM
 ```
 
 **What it does:**
@@ -242,6 +245,22 @@ python run_data_audit.py --symbol TSM
 4. **Reports**:
     - `yahoo_unmapped_fields.txt`: Identifies API fields not utilized by our schema.
     - `final_provenance_report.txt`: Shows the exact source (Yahoo vs FMP) of every data point.
+
+## System Architecture
+
+The Data Acquisition module has been re-architected to separate concerns (Flow vs. Quality vs. Execution), moving away from monolithic scripts.
+
+### 1. Data Orchestrator (`data_acquisition/orchestration/`)
+
+- **Role**: The "Conductor".
+- **Function**: Manages the execution flow of the 5-layer data strategy. It doesn't fetch data itself but directs Fetchers based on the plan.
+- **Benefit**: Decouples business logic (flow control) from implementation details (API calls), making the acquisition pipeline robust and easy to visualize.
+
+### 2. Gap Analyzer
+
+- **Role**: The "Inspector".
+- **Function**: A dedicated component that assesses data quality after each fetch phase. It generates a "Quality Report" identifying missing critical fields (e.g., "Missing R&D Expenses", "History < 5 Years").
+- **Benefit**: Centralized quality standards. Changing a data requirement (e.g., "Must have EBITDA") is done in one place, affecting all fetchers and auditors consistently.
 
 ## Core Algorithms & Logic
 

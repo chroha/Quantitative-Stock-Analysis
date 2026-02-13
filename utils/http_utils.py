@@ -47,7 +47,7 @@ def make_request(
                 logger.warning(f"{source_name} HTTP {e.response.status_code}: {e}. Retrying ({attempt+1}/{retries})...")
             
             elif e.response.status_code == 403:
-                logger.error(f"{source_name} 403 Forbidden. Check API key or permissions.")
+                logger.warning(f"{source_name} 403 Forbidden. Feature not available on current plan or key invalid.")
                 return None
             
             elif e.response.status_code == 402:

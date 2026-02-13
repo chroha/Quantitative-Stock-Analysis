@@ -451,6 +451,10 @@ class DataAggregator:
         
         # Helper for formatting values based on Registry Definition
         def format_val(val, fmt_type):
+            # Unwrap dict if present (from new source tracking)
+            if isinstance(val, dict) and 'value' in val:
+                val = val['value']
+
             if val is None: return "N/A (Missing)"
             if isinstance(val, (int, float)):
                 if fmt_type == MetricFormat.PERCENT:
@@ -475,6 +479,36 @@ class DataAggregator:
             if isinstance(val, dict) and 'value' in val:
                 return val['value']
             return val
+        
+        def merge_sources(sources):
+            """Merge a list of sources into a unique, joined string."""
+            if not sources: return "N/A"
+            unique = sorted(list(set(s for s in sources if s and s != 'N/A')))
+            if not unique: return "N/A"
+            return "/".join(unique)
+
+        def get_field_with_source(obj, field):
+            """Extract both value and source."""
+            if not obj: return None, 'N/A'
+            f = obj.get(field)
+            if isinstance(f, dict):
+                val = f.get('value')
+                src = f.get('source', 'N/A')
+                # Capitalize source for consistency
+                if src and src != 'N/A':
+                    src = src.title()
+                return val, src
+            # If not a dict with source, return value and N/A
+            return f, 'N/A'
+            
+        def extract_metric_source(metric_data, default_source="Calculated"):
+            """Extract value and source from a metric (which might be a dict or float)."""
+            if isinstance(metric_data, dict) and 'source' in metric_data:
+                src = metric_data.get('source', default_source)
+                if src and src != 'N/A':
+                    src = src.title()
+                return metric_data.get('value'), src
+            return metric_data, default_source
 
         # === Financial Data Components (Source: Financial Data) ===
         if fin_data_path:
@@ -486,14 +520,31 @@ class DataAggregator:
                 cap = metrics.get('capital_allocation', {})
                 
                 lines.append("### 1. 财务计算组件 (Financial Calculation Components)\n")
-                lines.append("| Component | 中文名称 | Value (数值) | Logic (逻辑) |")
-                lines.append("|---|---|---|---|")
+                lines.append("| Component | 中文名称 | Value (数值) | Source | Logic (逻辑) |")
+                lines.append("|---|---|---|---|---|")
+                
+                
+                
+                # Determine source (fallback)
+                fin_source_fallback = "Calculated"
+                if raw_path:
+                    raw_d = self._load_json(raw_path)
+                    stmts = raw_d.get('income_statements', [])
+                    if stmts and len(stmts) > 0:
+                        sample_field = stmts[0].get('std_revenue')
+                        if isinstance(sample_field, dict) and 'source' in sample_field:
+                            # Use this as base, but we prefer specific sources
+                            pass 
                 
                 # ROIC Components
-                lines.append(f"| NOPAT | 税后营业利润 | {format_val(prof.get('roic_nopat'), MetricFormat.CURRENCY)} | `Operating Income * (1 - Tax Rate)` |")
-                lines.append(f"| Invested Capital | 投入资本 | {format_val(prof.get('roic_invested_capital'), MetricFormat.CURRENCY)} | `Total Equity + Total Debt - Cash` |")
-                lines.append(f"| Tax Rate | 有效税率 | {format_val(prof.get('roic_effective_tax_rate'), MetricFormat.PERCENT)} | `Income Tax / Pretax Income` |")
+                nopat_val, nopat_src = extract_metric_source(prof.get('roic_nopat'), fin_source_fallback)
+                ic_val, ic_src = extract_metric_source(prof.get('roic_invested_capital'), fin_source_fallback)
+                tax_val, tax_src = extract_metric_source(prof.get('roic_effective_tax_rate'), fin_source_fallback)
                 
+                lines.append(f"| NOPAT | 税后营业利润 | {format_val(nopat_val, MetricFormat.CURRENCY_LARGE)} | {nopat_src} | `Operating Income * (1 - Tax Rate)` |")
+                lines.append(f"| Invested Capital | 投入资本 | {format_val(ic_val, MetricFormat.CURRENCY_LARGE)} | {ic_src} | `Total Equity + Total Debt - Cash` |")
+                lines.append(f"| Tax Rate | 有效税率 | {format_val(tax_val, MetricFormat.PERCENT)} | {tax_src} | `Income Tax / Pretax Income` |")
+
                 # Margin Components (Revenue is already in Valuation section, but repeated here for completeness context)
                 # We need raw income statement values which are in initial_data, but financial_data has computed margins.
                 # Let's use the raw data loaded earlier if available.
@@ -502,29 +553,42 @@ class DataAggregator:
                     stmts = raw_d.get('income_statements', [])
                     if stmts:
                         curr = stmts[0]
-                        gp = get_field_val(curr, 'std_gross_profit')
-                        op_inc = get_field_val(curr, 'std_operating_income')
-                        lines.append(f"| Gross Profit | 毛利润 | {format_val(gp, MetricFormat.CURRENCY)} | `Revenue - Cost of Revenue` |")
-                        lines.append(f"| Operating Income | 营业利润 | {format_val(op_inc, MetricFormat.CURRENCY)} | `Gross Profit - OpEx` |")
-                
+                        gp_val, gp_src = get_field_with_source(curr, 'std_gross_profit')
+                        op_inc_val, op_src = get_field_with_source(curr, 'std_operating_income')
+                        lines.append(f"| Gross Profit | 毛利润 | {format_val(gp_val, MetricFormat.CURRENCY_LARGE)} | {gp_src} | `Revenue - Cost of Revenue` |")
+                        lines.append(f"| Operating Income | 营业利润 | {format_val(op_inc_val, MetricFormat.CURRENCY_LARGE)} | {op_src} | `Gross Profit - OpEx` |")
+
                 # Cash Flow Components
-                fcf = growth.get('fcf_latest') if 'fcf_latest' in growth else 'N/A'
-                lines.append(f"| FCF (Latest) | 自由现金流 | {format_val(fcf, MetricFormat.CURRENCY)} | `OCF - CapEx` |")
+                fcf_data = growth.get('fcf_latest')
+                # Try to construct better source for FCF if it says "Calculated"
+                fcf_val, fcf_src = extract_metric_source(fcf_data, "Calculated")
                 
-                # Check for OCF and CapEx in raw data
+                # Check for OCF and CapEx in raw data first to get their sources
+                ocf_src_raw = "N/A"
+                capex_src_raw = "N/A"
+                
                 if raw_path:
                     raw_d = self._load_json(raw_path)
                     cf_stmts = raw_d.get('cash_flow_statements', [])
                     if cf_stmts:
                         curr_cf = cf_stmts[0]
-                        ocf = get_field_val(curr_cf, 'std_cash_flow_operating')
-                        capex = get_field_val(curr_cf, 'std_capex')
-                        lines.append(f"| Operating Cash Flow | 经营现金流 | {format_val(ocf, MetricFormat.CURRENCY)} | `From Cash Flow Stmt` |")
-                        lines.append(f"| Capital Expenditure | 资本支出 | {format_val(capex, MetricFormat.CURRENCY)} | `From Cash Flow Stmt` |")
+                        ocf_val, ocf_src_raw = get_field_with_source(curr_cf, 'std_cash_flow_operating')
+                        capex_val, capex_src_raw = get_field_with_source(curr_cf, 'std_capex')
+                        
+                        # If FCF source is generic, improve it
+                        if fcf_src == "Calculated":
+                             fcf_src = merge_sources([ocf_src_raw, capex_src_raw])
+
+                        lines.append(f"| FCF (Latest) | 自由现金流 | {format_val(fcf_val, MetricFormat.CURRENCY_LARGE)} | {fcf_src} | `OCF - CapEx` |")
+                        lines.append(f"| Operating Cash Flow | 经营现金流 | {format_val(ocf_val, MetricFormat.CURRENCY_LARGE)} | {ocf_src_raw} | `From Cash Flow Statement` |")
+                        lines.append(f"| Capital Expenditure | 资本支出 | {format_val(capex_val, MetricFormat.CURRENCY_LARGE)} | {capex_src_raw} | `From Cash Flow Statement` |")
                 
-                # Capital Allocation
-                lines.append(f"| SBC Impact | 股权激励 | {format_val(cap.get('sbc_impact_3y'), MetricFormat.PERCENT)} | `SBC / Revenue (3Y Avg)` |")
-                lines.append(f"| Dilution Rate | 稀释率 | {format_val(cap.get('share_dilution_cagr_5y'), MetricFormat.PERCENT)} | `Share Count CAGR` |")
+                # SBC Impact & Dilution from capital allocation metrics (also calculated from CF/statement data)
+                sbc_val, sbc_src = extract_metric_source(cap.get('sbc_impact_3y'), "Calculated")
+                dilution_val, dilution_src = extract_metric_source(cap.get('share_dilution_cagr_5y'), "Calculated")
+                
+                lines.append(f"| SBC Impact | 股权激励 | {format_val(sbc_val, MetricFormat.PERCENT)} | {sbc_src} | `SBC / Revenue (3Y Avg)` |")
+                lines.append(f"| Dilution Rate | 稀释率 | {format_val(dilution_val, MetricFormat.PERCENT)} | {dilution_src} | `Share Count CAGR` |")
                 
                 lines.append("")
         
@@ -536,6 +600,25 @@ class DataAggregator:
                 cats = score_data.get('categories', {})
                 data_info = score_data.get('data_info', {})
                 
+                # Determine source from price_history metadata
+                price_data_source = "Calculated"  # Default fallback
+                if raw_path:
+                    raw_d = self._load_json(raw_path)
+                    # Check if price_history has source info
+                    ph = raw_d.get('price_history', [])
+                    if ph and len(ph) > 0:
+                        # Price history entries might have source field
+                        first_entry = ph[0]
+                        if isinstance(first_entry, dict) and 'source' in first_entry:
+                            price_data_source = first_entry['source'].title()
+                    # Also check root metadata
+                    if price_data_source == "Calculated":
+                        meta = raw_d.get('metadata', {})
+                        if 'price_source' in meta:
+                            price_data_source = meta['price_source'].title()
+                        elif 'source' in meta and 'price' in str(meta.get('data_types', [])):
+                            price_data_source = meta['source'].title()
+                
                 # Helper to find specific indicator values in categories
                 def find_ind_val(ind_name, key='value'):
                     for cat in cats.values():
@@ -544,36 +627,38 @@ class DataAggregator:
                             return inds[ind_name].get(key)
                     return None
                 
+                
                 lines.append("### 2. 技术指标组件 (Technical Indicator Components)\n")
-                lines.append("| Component | 中文名称 | Value (数值) | Context (参考) |")
-                lines.append("|---|---|---|---|")
+                lines.append("| Component | 中文名称 | Value (数值) | Source | Context (参考) |")
+                lines.append("|---|---|---|---|---|")
+                
                 
                 # Market Data (Raw inputs for Position, Volume Ratio)
                 latest_price = data_info.get('latest_price')
                 high_52w = data_info.get('high_52w')
                 low_52w = data_info.get('low_52w')
                 
-                lines.append(f"| Latest Price | 最新价格 | {format_val(latest_price, MetricFormat.CURRENCY)} | `Close Price` |")
-                lines.append(f"| 52-Week High | 52周最高 | {format_val(high_52w, MetricFormat.CURRENCY)} | `Highest Price (1Y)` |")
-                lines.append(f"| 52-Week Low | 52周最低 | {format_val(low_52w, MetricFormat.CURRENCY)} | `Lowest Price (1Y)` |")
+                lines.append(f"| Latest Price | 最新价格 | {format_val(latest_price, MetricFormat.CURRENCY)} | {price_data_source} | `Close Price` |")
+                lines.append(f"| 52-Week High | 52周最高 | {format_val(high_52w, MetricFormat.CURRENCY)} | {price_data_source} | `Highest Price (1Y)` |")
+                lines.append(f"| 52-Week Low | 52周最低 | {format_val(low_52w, MetricFormat.CURRENCY)} | {price_data_source} | `Lowest Price (1Y)` |")
                 
                 latest_vol = data_info.get('latest_volume')
                 avg_vol = data_info.get('avg_volume')
-                lines.append(f"| Latest Volume | 最新成交量 | {format_val(latest_vol, MetricFormat.DECIMAL)} | `Daily Volume` |")
-                lines.append(f"| Avg Volume | 平均成交量 | {format_val(avg_vol, MetricFormat.DECIMAL)} | `20-Day Average` |")
+                lines.append(f"| Latest Volume | 最新成交量 | {format_val(latest_vol, MetricFormat.DECIMAL)} | {price_data_source} | `Daily Volume` |")
+                lines.append(f"| Avg Volume | 平均成交量 | {format_val(avg_vol, MetricFormat.DECIMAL)} | {price_data_source} | `20-Day Average` |")
                 
                 # Moving Averages (Trend inputs)
                 sma_20 = find_ind_val('multi_ma', 'ma20')
                 if sma_20:
-                    lines.append(f"| SMA 20 | 20日均线 | {format_val(sma_20, MetricFormat.CURRENCY)} | `Short Trend` |")
+                    lines.append(f"| SMA 20 | 20日均线 | {format_val(sma_20, MetricFormat.CURRENCY)} | {price_data_source} | `Short Trend` |")
                 
                 sma_50 = find_ind_val('multi_ma', 'ma50')
                 if sma_50:
-                    lines.append(f"| SMA 50 | 50日均线 | {format_val(sma_50, MetricFormat.CURRENCY)} | `Medium Trend` |")
+                    lines.append(f"| SMA 50 | 50日均线 | {format_val(sma_50, MetricFormat.CURRENCY)} | {price_data_source} | `Medium Trend` |")
                 
                 sma_200 = find_ind_val('multi_ma', 'ma200')
                 if sma_200:
-                    lines.append(f"| SMA 200 | 200日均线 | {format_val(sma_200, MetricFormat.CURRENCY)} | `Long Trend` |")
+                    lines.append(f"| SMA 200 | 200日均线 | {format_val(sma_200, MetricFormat.CURRENCY)} | {price_data_source} | `Long Trend` |")
                 
                 # Volatility Components (Raw Bollinger Bands instead of Bandwidth)
                 bb_upper = find_ind_val('bollinger', 'upper')
@@ -581,47 +666,47 @@ class DataAggregator:
                 bb_middle = find_ind_val('bollinger', 'middle')
                 
                 if bb_upper:
-                    lines.append(f"| BB Upper | 布林上轨 | {format_val(bb_upper, MetricFormat.CURRENCY)} | `20D SMA + 2*StdDev` |")
+                    lines.append(f"| BB Upper | 布林上轨 | {format_val(bb_upper, MetricFormat.CURRENCY)} | {price_data_source} | `20D SMA + 2*StdDev` |")
                 if bb_middle:
-                     lines.append(f"| BB Middle | 布林中轨 | {format_val(bb_middle, MetricFormat.CURRENCY)} | `20D SMA` |")
+                     lines.append(f"| BB Middle | 布林中轨 | {format_val(bb_middle, MetricFormat.CURRENCY)} | {price_data_source} | `20D SMA` |")
                 if bb_lower:
-                    lines.append(f"| BB Lower | 布林下轨 | {format_val(bb_lower, MetricFormat.CURRENCY)} | `20D SMA - 2*StdDev` |")
+                    lines.append(f"| BB Lower | 布林下轨 | {format_val(bb_lower, MetricFormat.CURRENCY)} | {price_data_source} | `20D SMA - 2*StdDev` |")
                 
                 # Momentum Raw Values
                 rsi = find_ind_val('rsi', 'rsi')
-                lines.append(f"| RSI (14) | 相对强弱指数 | {format_val(rsi, MetricFormat.DECIMAL)} | `Momentum (0-100)` |")
+                lines.append(f"| RSI (14) | 相对强弱指数 | {format_val(rsi, MetricFormat.DECIMAL)} | {price_data_source} | `Momentum (0-100)` |")
                 
                 roc = find_ind_val('roc', 'roc')
                 if roc is not None:
-                    lines.append(f"| ROC (20) | 变动率 | {format_val(roc, MetricFormat.PERCENT)} | `Price Rate of Change` |")
+                    lines.append(f"| ROC (20) | 变动率 | {format_val(roc, MetricFormat.PERCENT)} | {price_data_source} | `Price Rate of Change` |")
                 
                 macd_line = find_ind_val('macd', 'macd')
                 signal_line = find_ind_val('macd', 'signal_line')
                 macd_hist = find_ind_val('macd', 'histogram')
                 
                 if macd_line:
-                    lines.append(f"| MACD Line | MACD线 | {format_val(macd_line, MetricFormat.DECIMAL)} | `12EMA - 26EMA` |")
+                    lines.append(f"| MACD Line | MACD线 | {format_val(macd_line, MetricFormat.DECIMAL)} | {price_data_source} | `12EMA - 26EMA` |")
                 if signal_line:
-                    lines.append(f"| Signal Line | 信号线 | {format_val(signal_line, MetricFormat.DECIMAL)} | `9EMA of MACD` |")
+                    lines.append(f"| Signal Line | 信号线 | {format_val(signal_line, MetricFormat.DECIMAL)} | {price_data_source} | `9EMA of MACD` |")
                 if macd_hist:
-                    lines.append(f"| MACD Hist | MACD柱 | {format_val(macd_hist, MetricFormat.DECIMAL)} | `MACD - Signal` |")
+                    lines.append(f"| MACD Hist | MACD柱 | {format_val(macd_hist, MetricFormat.DECIMAL)} | {price_data_source} | `MACD - Signal` |")
                 
                 # Trend Strength (ADX)
                 adx = find_ind_val('adx', 'adx')
                 if adx:
-                    lines.append(f"| ADX | 趋势强度 | {format_val(adx, MetricFormat.DECIMAL)} | `>25=Strong Trend` |")
+                    lines.append(f"| ADX | 趋势强度 | {format_val(adx, MetricFormat.DECIMAL)} | {price_data_source} | `>25=Strong Trend` |")
                 
                 # Structure
                 supp = find_ind_val('support_resistance', 'nearest_support')
                 res = find_ind_val('support_resistance', 'nearest_resistance')
                 if supp:
-                    lines.append(f"| Support | 最近支撑 | {format_val(supp, MetricFormat.CURRENCY)} | `Nearest Support Level` |")
+                    lines.append(f"| Support | 最近支撑 | {format_val(supp, MetricFormat.CURRENCY)} | {price_data_source} | `Nearest Support Level` |")
                 if res:
-                    lines.append(f"| Resistance | 最近阻力 | {format_val(res, MetricFormat.CURRENCY)} | `Nearest Resistance Level` |")
+                    lines.append(f"| Resistance | 最近阻力 | {format_val(res, MetricFormat.CURRENCY)} | {price_data_source} | `Nearest Resistance Level` |")
                     
                 hl_pattern = find_ind_val('high_low_structure', 'pattern')
                 if hl_pattern:
-                    lines.append(f"| Structure | 市场结构 | {format_val(hl_pattern, MetricFormat.STRING)} | `High/Low Pattern` |")
+                    lines.append(f"| Structure | 市场结构 | {format_val(hl_pattern, MetricFormat.STRING)} | {price_data_source} | `High/Low Pattern` |")
 
                 # Volume Analysis
                 obv = find_ind_val('obv', 'obv')
@@ -629,17 +714,17 @@ class DataAggregator:
                     # OBV is cumulative, formatting as large currency just to get B/M suffix but no currency sign logic?
                     # format_val uses currency logic if fmt=CURRENCY. We can use DECIMAL or just force string.
                     # Let's use DECIMAL for now, or add a CUSTOM handling if easy.
-                    lines.append(f"| OBV | 能量潮 | {format_val(obv, MetricFormat.DECIMAL)} | `On-Balance Volume` |")
+                    lines.append(f"| OBV | 能量潮 | {format_val(obv, MetricFormat.DECIMAL)} | {price_data_source} | `On-Balance Volume` |")
                     
                 vol_ratio = find_ind_val('volume_strength', 'volume_ratio')
                 if vol_ratio:
-                    lines.append(f"| Vol Ratio | 量比 | {format_val(vol_ratio, MetricFormat.DECIMAL)} | `Vol / AvgVol` |")
+                    lines.append(f"| Vol Ratio | 量比 | {format_val(vol_ratio, MetricFormat.DECIMAL)} | {price_data_source} | `Vol / AvgVol` |")
 
                 # Volatility (ATR)
                 atr = find_ind_val('atr', 'atr') # Raw value
                 atr_pct = find_ind_val('atr', 'atr_pct') # Percentage
                 if atr_pct:
-                    lines.append(f"| ATR % | 波动率百分比 | {format_val(atr_pct, MetricFormat.PERCENT)} | `ATR / Price` |")
+                    lines.append(f"| ATR % | 波动率百分比 | {format_val(atr_pct, MetricFormat.PERCENT)} | {price_data_source} | `ATR / Price` |")
                 
                 lines.append("")
 
@@ -648,8 +733,8 @@ class DataAggregator:
         
         if raw_path or fin_data_path:
             lines.append("### 3. 估值基础数据 (Valuation Input Data)\n")
-            lines.append("| English Name | 中文名称 | Value (数值) | Field Name (字段) |")
-            lines.append("|---|---|---|---|")
+            lines.append("| English Name | 中文名称 | Value (数值) | Source | Field Name (字段) |")
+            lines.append("|---|---|---|---|---|")
             
             # Load data sources
             raw_data = self._load_json(raw_path) if raw_path else {}
@@ -662,56 +747,86 @@ class DataAggregator:
             balance_stmts = raw_data.get('balance_sheets', [])
             cf_stmts = raw_data.get('cash_flows', [])
             
-            # Helper to get field value safely
+            # Helper to get field value and source
             def get_field_val(obj, field):
+                """Extract value only (backward compatible)."""
                 if not obj: return None
                 f = obj.get(field)
-                # Handle both dict with 'value' (FieldWithSource) and direct value
                 if isinstance(f, dict) and 'value' in f:
                      return f.get('value')
                 return f
             
-            # 1. Growth Metrics (CAGR)
-            lines.append(f"| Revenue CAGR (5Y) | 营收增速 | {format_val(fin_metrics.get('growth', {}).get('revenue_cagr_5y'), MetricFormat.PERCENT)} | `revenue_cagr_5y` |")
-            lines.append(f"| Net Income CAGR (5Y) | 净利增速 | {format_val(fin_metrics.get('growth', {}).get('net_income_cagr_5y'), MetricFormat.PERCENT)} | `net_income_cagr_5y` |")
-            lines.append(f"| FCF CAGR (5Y) | FCF增速 | {format_val(fin_metrics.get('growth', {}).get('fcf_cagr_5y'), MetricFormat.PERCENT)} | `fcf_cagr_5y` |")
+            def get_field_with_source(obj, field):
+                """Extract both value and source."""
+                if not obj: return None, 'N/A'
+                f = obj.get(field)
+                if isinstance(f, dict):
+                    val = f.get('value')
+                    src = f.get('source', 'N/A')
+                    return val, src.title() if src != 'N/A' else 'N/A'
+                return f, 'N/A'
+            
+            # 1. Growth Metrics (CAGR - Calculated, no source)
+            # Try to resolve sources if possible
+            rev_cagr_val = fin_metrics.get('growth', {}).get('revenue_cagr_5y')
+            ni_cagr_val = fin_metrics.get('growth', {}).get('net_income_cagr_5y')
+            fcf_cagr_val = fin_metrics.get('growth', {}).get('fcf_cagr_5y')
+
+            def get_cagr_src(metric_name):
+                 # We don't have easy access to the exact source list used for CAGR here without deeper digging
+                 # But we can check if the value object itself has a source now (since we updated GrowthMetrics)
+                 obj = fin_metrics.get('growth', {}).get(metric_name)
+                 if isinstance(obj, dict) and 'source' in obj:
+                     return obj['source']
+                 return "Calculated"
+
+            lines.append(f"| Revenue CAGR (5Y) | 营收增速 | {format_val(rev_cagr_val, MetricFormat.PERCENT)} | {get_cagr_src('revenue_cagr_5y')} | `revenue_cagr_5y` |")
+            lines.append(f"| Net Income CAGR (5Y) | 净利增速 | {format_val(ni_cagr_val, MetricFormat.PERCENT)} | {get_cagr_src('net_income_cagr_5y')} | `net_income_cagr_5y` |")
+            lines.append(f"| FCF CAGR (5Y) | FCF增速 | {format_val(fcf_cagr_val, MetricFormat.PERCENT)} | {get_cagr_src('fcf_cagr_5y')} | `fcf_cagr_5y` |")
             
             # 2. Latest Financials (Verification Data)
             if income_stmts:
                 latest_is = income_stmts[0]
-                lines.append(f"| Net Income (Latest) | 最新净利润 | {format_val(get_field_val(latest_is, 'std_net_income'), MetricFormat.CURRENCY_LARGE)} | `std_net_income` |")
-                lines.append(f"| Revenue (Latest) | 最新营收 | {format_val(get_field_val(latest_is, 'std_revenue'), MetricFormat.CURRENCY_LARGE)} | `std_revenue` |")
-                lines.append(f"| EBITDA | EBITDA | {format_val(get_field_val(latest_is, 'std_ebitda'), MetricFormat.CURRENCY_LARGE)} | `std_ebitda` |")
+                ni_val, ni_src = get_field_with_source(latest_is, 'std_net_income')
+                rev_val, rev_src = get_field_with_source(latest_is, 'std_revenue')
+                ebitda_val, ebitda_src = get_field_with_source(latest_is, 'std_ebitda')
+                lines.append(f"| Net Income (Latest) | 最新净利润 | {format_val(ni_val, MetricFormat.CURRENCY_LARGE)} | {ni_src} | `std_net_income` |")
+                lines.append(f"| Revenue (Latest) | 最新营收 | {format_val(rev_val, MetricFormat.CURRENCY_LARGE)} | {rev_src} | `std_revenue` |")
+                lines.append(f"| EBITDA | EBITDA | {format_val(ebitda_val, MetricFormat.CURRENCY_LARGE)} | {ebitda_src} | `std_ebitda` |")
 
             if cf_stmts:
                 latest_cf = cf_stmts[0]
                 # FCF Calculation Components
-                ocf = get_field_val(latest_cf, 'std_operating_cash_flow')
-                capex = get_field_val(latest_cf, 'std_capex')
-                fcf = get_field_val(latest_cf, 'std_free_cash_flow')
-                sbc = get_field_val(latest_cf, 'std_stock_based_compensation')
-                stock_repurchase = get_field_val(latest_cf, 'std_repurchase_of_stock')
+                ocf_val, ocf_src = get_field_with_source(latest_cf, 'std_operating_cash_flow')
+                capex_val, capex_src = get_field_with_source(latest_cf, 'std_capex')
+                fcf_val, fcf_src = get_field_with_source(latest_cf, 'std_free_cash_flow')
+                sbc_val, sbc_src = get_field_with_source(latest_cf, 'std_stock_based_compensation')
+                sr_val, sr_src = get_field_with_source(latest_cf, 'std_repurchase_of_stock')
                 
                 # If FCF missing, calculate
-                if fcf is None and ocf is not None and capex is not None:
-                    fcf = ocf + capex # Capex is usually negative
+                if fcf_val is None and ocf_val is not None and capex_val is not None:
+                    fcf_val = ocf_val + capex_val # Capex is usually negative
+                    fcf_src = "Calculated"
                     
-                lines.append(f"| Operating Cash Flow | 经营现金流 | {format_val(ocf, MetricFormat.CURRENCY_LARGE)} | `std_operating_cash_flow` |")
-                lines.append(f"| Capital Expenditure | 资本支出 | {format_val(capex, MetricFormat.CURRENCY_LARGE)} | `std_capex` |")
-                lines.append(f"| Free Cash Flow | 自由现金流 | {format_val(fcf, MetricFormat.CURRENCY_LARGE)} | `OCF - CapEx` |")
+                lines.append(f"| Operating Cash Flow | 经营现金流 | {format_val(ocf_val, MetricFormat.CURRENCY_LARGE)} | {ocf_src} | `std_operating_cash_flow` |")
+                lines.append(f"| Capital Expenditure | 资本支出 | {format_val(capex_val, MetricFormat.CURRENCY_LARGE)} | {capex_src} | `std_capex` |")
+                lines.append(f"| Free Cash Flow | 自由现金流 | {format_val(fcf_val, MetricFormat.CURRENCY_LARGE)} | {fcf_src} | `OCF - CapEx` |")
                 
-                lines.append(f"| Stock Based Comp | 股权激励金额 | {format_val(sbc, MetricFormat.CURRENCY_LARGE)} | `std_stock_based_compensation` |")
-                lines.append(f"| Stock Repurchase | 股票回购金额 | {format_val(stock_repurchase, MetricFormat.CURRENCY_LARGE)} | `std_repurchase_of_stock` |")
+                lines.append(f"| Stock Based Comp | 股权激励金额 | {format_val(sbc_val, MetricFormat.CURRENCY_LARGE)} | {sbc_src} | `std_stock_based_compensation` |")
+                lines.append(f"| Stock Repurchase | 股票回购金额 | {format_val(sr_val, MetricFormat.CURRENCY_LARGE)} | {sr_src} | `std_repurchase_of_stock` |")
             
             if balance_stmts:
                 latest_bs = balance_stmts[0]
-                total_debt = get_field_val(latest_bs, 'std_total_debt')
-                cash = get_field_val(latest_bs, 'std_cash') or get_field_val(latest_bs, 'std_cash_and_equivalents')
-                shareholder_equity = get_field_val(latest_bs, 'std_shareholder_equity')
+                debt_val, debt_src = get_field_with_source(latest_bs, 'std_total_debt')
+                cash_val, cash_src = get_field_with_source(latest_bs, 'std_cash')
+                cash_val2, cash_src2 = get_field_with_source(latest_bs, 'std_cash_and_equivalents')
+                if not cash_val:
+                    cash_val, cash_src = cash_val2, cash_src2
+                equity_val, equity_src = get_field_with_source(latest_bs, 'std_shareholder_equity')
                 
-                lines.append(f"| Total Debt | 总债务 | {format_val(total_debt, MetricFormat.CURRENCY_LARGE)} | `std_total_debt` |")
-                lines.append(f"| Cash & Equiv | 现金及等价物 | {format_val(cash, MetricFormat.CURRENCY_LARGE)} | `std_cash` |")
-                lines.append(f"| Shareholder Equity | 股东权益 | {format_val(shareholder_equity, MetricFormat.CURRENCY_LARGE)} | `std_shareholder_equity` |")
+                lines.append(f"| Total Debt | 总债务 | {format_val(debt_val, MetricFormat.CURRENCY_LARGE)} | {debt_src} | `std_total_debt` |")
+                lines.append(f"| Cash & Equiv | 现金及等价物 | {format_val(cash_val, MetricFormat.CURRENCY_LARGE)} | {cash_src} | `std_cash` |")
+                lines.append(f"| Shareholder Equity | 股东权益 | {format_val(equity_val, MetricFormat.CURRENCY_LARGE)} | {equity_src} | `std_shareholder_equity` |")
             
             # 3. Quality & Allocation Ratios (Calculated)
             # Access nested metrics correctly
@@ -719,37 +834,37 @@ class DataAggregator:
             metrics_cap = fin_metrics.get('capital_allocation', {})
             metrics_prof = fin_metrics.get('profitability', {})
             
-            lines.append(f"| Earnings Quality | 盈利质量 | {format_val(metrics_growth.get('earnings_quality_3y') or metrics_prof.get('earnings_quality'), MetricFormat.DECIMAL)} | `OCF / Net Income` |")
-            lines.append(f"| CapEx Intensity | 资本开支占比 | {format_val(metrics_cap.get('capex_intensity_3y'), MetricFormat.PERCENT)} | `CapEx / OCF (Avg 3Y)` |")
-            lines.append(f"| SBC Impact | SBC营收占比 | {format_val(metrics_cap.get('sbc_impact_3y'), MetricFormat.PERCENT)} | `SBC / Revenue (Avg 3Y)` |")
+            lines.append(f"| Earnings Quality | 盈利质量 | {format_val(metrics_growth.get('earnings_quality_3y') or metrics_prof.get('earnings_quality'), MetricFormat.DECIMAL)} | Calculated | `OCF / Net Income` |")
+            lines.append(f"| CapEx Intensity | 资本开支占比 | {format_val(metrics_cap.get('capex_intensity_3y'), MetricFormat.PERCENT)} | Calculated | `CapEx / OCF (Avg 3Y)` |")
+            lines.append(f"| SBC Impact | SBC营收占比 | {format_val(metrics_cap.get('sbc_impact_3y'), MetricFormat.PERCENT)} | Calculated | `SBC / Revenue (Avg 3Y)` |")
 
             # Market data from profile
-            market_cap = get_field_val(profile, 'std_market_cap')
-            lines.append(f"| Market Cap | 市值 | {format_val(market_cap, MetricFormat.CURRENCY_LARGE)} | `profile.std_market_cap` |")
+            mc_val, mc_src = get_field_with_source(profile, 'std_market_cap')
+            lines.append(f"| Market Cap | 市值 | {format_val(mc_val, MetricFormat.CURRENCY_LARGE)} | {mc_src} | `profile.std_market_cap` |")
             
             # Price ratios
-            pe_ratio = get_field_val(profile, 'std_pe_ratio')
-            pb_ratio = get_field_val(profile, 'std_pb_ratio')
-            ps_ratio = get_field_val(profile, 'std_ps_ratio')
-            peg_ratio = get_field_val(profile, 'std_peg_ratio')
-            div_yield = get_field_val(profile, 'std_dividend_yield')
+            pe_val, pe_src = get_field_with_source(profile, 'std_pe_ratio')
+            pb_val, pb_src = get_field_with_source(profile, 'std_pb_ratio')
+            ps_val, ps_src = get_field_with_source(profile, 'std_ps_ratio')
+            peg_val, peg_src = get_field_with_source(profile, 'std_peg_ratio')
+            div_val, div_src = get_field_with_source(profile, 'std_dividend_yield')
             
-            lines.append(f"| P/E Ratio | 市盈率 | {format_val(pe_ratio, MetricFormat.DECIMAL)} | `profile.std_pe_ratio` |")
-            lines.append(f"| P/B Ratio | 市净率 | {format_val(pb_ratio, MetricFormat.DECIMAL)} | `profile.std_pb_ratio` |")
-            lines.append(f"| P/S Ratio | 市销率 | {format_val(ps_ratio, MetricFormat.DECIMAL)} | `profile.std_ps_ratio` |")
-            lines.append(f"| PEG Ratio | PEG比率 | {format_val(peg_ratio, MetricFormat.DECIMAL)} | `profile.std_peg_ratio` |")
-            lines.append(f"| Dividend Yield | 股息率 | {format_val(div_yield, MetricFormat.PERCENT)} | `profile.std_dividend_yield` |")
+            lines.append(f"| P/E Ratio | 市盈率 | {format_val(pe_val, MetricFormat.DECIMAL)} | {pe_src} | `profile.std_pe_ratio` |")
+            lines.append(f"| P/B Ratio | 市净率 | {format_val(pb_val, MetricFormat.DECIMAL)} | {pb_src} | `profile.std_pb_ratio` |")
+            lines.append(f"| P/S Ratio | 市销率 | {format_val(ps_val, MetricFormat.DECIMAL)} | {ps_src} | `profile.std_ps_ratio` |")
+            lines.append(f"| PEG Ratio | PEG比率 | {format_val(peg_val, MetricFormat.DECIMAL)} | {peg_src} | `profile.std_peg_ratio` |")
+            lines.append(f"| Dividend Yield | 股息率 | {format_val(div_val, MetricFormat.PERCENT)} | {div_src} | `profile.std_dividend_yield` |")
 
             # EPS
-            eps = get_field_val(profile, 'std_eps')
-            forward_eps = get_field_val(profile, 'std_forward_eps')
-            book_value = get_field_val(profile, 'std_book_value_per_share')
-            earnings_growth = get_field_val(profile, 'std_earnings_growth')
+            eps_val, eps_src = get_field_with_source(profile, 'std_eps')
+            fwd_eps_val, fwd_eps_src = get_field_with_source(profile, 'std_forward_eps')
+            bv_val, bv_src = get_field_with_source(profile, 'std_book_value_per_share')
+            eg_val, eg_src = get_field_with_source(profile, 'std_earnings_growth')
             
-            lines.append(f"| EPS (TTM) | 每股收益 | {format_val(eps, MetricFormat.CURRENCY)} | `profile.std_eps` |")
-            lines.append(f"| Forward EPS | 前瞻每股收益 | {format_val(forward_eps, MetricFormat.CURRENCY)} | `profile.std_forward_eps` |")
-            lines.append(f"| Book Value/Share | 每股账面价值 | {format_val(book_value, MetricFormat.CURRENCY)} | `std_book_value_per_share` |")
-            lines.append(f"| Earnings Growth | 盈利增长率 | {format_val(get_field_val(profile, 'std_earnings_growth'), MetricFormat.PERCENT)} | `profile.std_earnings_growth` |")
+            lines.append(f"| EPS (TTM) | 每股收益 | {format_val(eps_val, MetricFormat.CURRENCY)} | {eps_src} | `profile.std_eps` |")
+            lines.append(f"| Forward EPS | 前瞻每股收益 | {format_val(fwd_eps_val, MetricFormat.CURRENCY)} | {fwd_eps_src} | `profile.std_forward_eps` |")
+            lines.append(f"| Book Value/Share | 每股账面价值 | {format_val(bv_val, MetricFormat.CURRENCY)} | {bv_src} | `std_book_value_per_share` |")
+            lines.append(f"| Earnings Growth | 盈利增长率 | {format_val(eg_val, MetricFormat.PERCENT)} | {eg_src} | `profile.std_earnings_growth` |")
             
             # === NEW: Forward Estimates from forecast_data ===
             lines.append("")
@@ -761,7 +876,7 @@ class DataAggregator:
             lines.append("|---|---|---|---|---|---|")
             
             # Load forecast_data
-            forecast_data = raw_data.get('forecast_data', {})
+            forecast_data = raw_data.get('forecast_data') or {}
             
             def get_forecast_val(field):
                 """Extract value and source from forecast_data field."""
@@ -832,34 +947,57 @@ class DataAggregator:
 
             lines.append("")
             lines.append("### 4. 补充数据 (Supplemental Data)\n")
-            lines.append("| Category | English Name | 中文名称 | Value (数值) | Logic (逻辑) |")
-            lines.append("|---|---|---|---|---|")
+            lines.append("| Category | English Name | 中文名称 | Value (数值) | Source | Logic (逻辑) |")
+            lines.append("|---|---|---|---|---|---|")
+            
             
             # Group 1: Analyst Consensus
-            lines.append(f"| **Analyst** | Recommendation | 评级建议 | {get_field_val(profile, 'std_recommendation_key')} | `recommendationKey` |")
-            lines.append(f"| | Target High | 目标价上限 | {format_val(get_target('std_price_target_high'), MetricFormat.CURRENCY)} | `targetHighPrice` |")
-            lines.append(f"| | Target Low | 目标价下限 | {format_val(get_target('std_price_target_low'), MetricFormat.CURRENCY)} | `targetLowPrice` |")
-            lines.append(f"| | Num Analysts | 分析师数量 | {get_target('std_number_of_analysts')} | `numberOfAnalystOpinions` |")
+            rec_key_val, rec_key_src = get_field_with_source(profile, 'std_recommendation_key')
+            target_high_val, target_high_src = get_field_with_source(analyst_targets, 'std_price_target_high')
+            target_low_val, target_low_src = get_field_with_source(analyst_targets, 'std_price_target_low')
+            num_analysts_val, num_analysts_src = get_field_with_source(analyst_targets, 'std_number_of_analysts')
+            
+            lines.append(f"| **Analyst** | Recommendation | 评级建议 | {format_val(rec_key_val, MetricFormat.STRING)} | {rec_key_src} | Analyst Recommendation |")
+            lines.append(f"| | Target High | 目标价上限 | {format_val(target_high_val, MetricFormat.CURRENCY)} | {target_high_src} | Highest Price Target |")
+            lines.append(f"| | Target Low | 目标价下限 | {format_val(target_low_val, MetricFormat.CURRENCY)} | {target_low_src} | Lowest Price Target |")
+            lines.append(f"| | Num Analysts | 分析师数量 | {format_val(num_analysts_val, MetricFormat.DECIMAL)} | {num_analysts_src} | Number of Analysts |")
 
             # Group 2: Relative Strength & Risk
-            lines.append(f"| **Risk/Trend** | 52W Change | 年涨跌幅 | {format_val(get_field_val(profile, 'std_52_week_change'), MetricFormat.PERCENT)} | `52WeekChange` |")
-            lines.append(f"| | vs S&P 500 | 标普同期 | {format_val(get_field_val(profile, 'std_sandp_52_week_change'), MetricFormat.PERCENT)} | `SandP52WeekChange` |")
-            lines.append(f"| | Audit Risk | 审计风险 | {get_field_val(profile, 'std_audit_risk')} | `auditRisk` |")
-            lines.append(f"| | Board Risk | 董事会风险 | {get_field_val(profile, 'std_board_risk')} | `boardRisk` |")
+            change_52w_val, change_52w_src = get_field_with_source(profile, 'std_52_week_change')
+            sp_change_val, sp_change_src = get_field_with_source(profile, 'std_sandp_52_week_change')
+            audit_risk_val, audit_risk_src = get_field_with_source(profile, 'std_audit_risk')
+            board_risk_val, board_risk_src = get_field_with_source(profile, 'std_board_risk')
+            
+            lines.append(f"| **Risk/Trend** | 52W Change | 年涨跌幅 | {format_val(change_52w_val, MetricFormat.PERCENT)} | {change_52w_src} | 52-Week Price Change |")
+            lines.append(f"| | vs S&P 500 | 标普同期 | {format_val(sp_change_val, MetricFormat.PERCENT)} | {sp_change_src} | S&P 500 Performance |")
+            lines.append(f"| | Audit Risk | 审计风险 | {format_val(audit_risk_val, MetricFormat.DECIMAL)} | {audit_risk_src} | Audit Risk Score |")
+            lines.append(f"| | Board Risk | 董事会风险 | {format_val(board_risk_val, MetricFormat.DECIMAL)} | {board_risk_src} | Board Risk Score |")
 
             # Group 3: Liquidity & Per Share
-            lines.append(f"| **Liquidity** | Current Ratio | 流动比率 | {format_val(get_field_val(profile, 'std_current_ratio'), MetricFormat.DECIMAL)} | `currentRatio` |")
-            lines.append(f"| | Quick Ratio | 速动比率 | {format_val(get_field_val(profile, 'std_quick_ratio'), MetricFormat.DECIMAL)} | `quickRatio` |")
-            lines.append(f"| | Cash/Share | 每股现金 | {format_val(get_field_val(profile, 'std_total_cash_per_share'), MetricFormat.CURRENCY)} | `totalCashPerShare` |")
-            lines.append(f"| | Rev/Share | 每股营收 | {format_val(get_field_val(profile, 'std_revenue_per_share'), MetricFormat.CURRENCY)} | `revenuePerShare` |")
+            current_ratio_val, current_ratio_src = get_field_with_source(profile, 'std_current_ratio')
+            quick_ratio_val, quick_ratio_src = get_field_with_source(profile, 'std_quick_ratio')
+            cash_per_share_val, cash_per_share_src = get_field_with_source(profile, 'std_total_cash_per_share')
+            rev_per_share_val, rev_per_share_src = get_field_with_source(profile, 'std_revenue_per_share')
+            
+            lines.append(f"| **Liquidity** | Current Ratio | 流动比率 | {format_val(current_ratio_val, MetricFormat.DECIMAL)} | {current_ratio_src} | Current Assets / Current Liabilities |")
+            lines.append(f"| | Quick Ratio | 速动比率 | {format_val(quick_ratio_val, MetricFormat.DECIMAL)} | {quick_ratio_src} | Quick Assets / Current Liabilities |")
+            lines.append(f"| | Cash/Share | 每股现金 | {format_val(cash_per_share_val, MetricFormat.CURRENCY)} | {cash_per_share_src} | Cash Per Share |")
+            lines.append(f"| | Rev/Share | 每股营收 | {format_val(rev_per_share_val, MetricFormat.CURRENCY)} | {rev_per_share_src} | Revenue Per Share |")
 
             # Group 4: Ownership & Sentiment
-            lines.append(f"| **Sentiment** | Insiders Held | 内部持股 | {format_val(get_field_val(profile, 'std_held_percent_insiders'), MetricFormat.PERCENT)} | `heldPercentInsiders` |")
-            lines.append(f"| | Institutions | 机构持股 | {format_val(get_field_val(profile, 'std_held_percent_institutions'), MetricFormat.PERCENT)} | `heldPercentInstitutions` |")
-            lines.append(f"| | Short Ratio | 做空比率 | {format_val(get_field_val(profile, 'std_short_ratio'), MetricFormat.DECIMAL)} | `shortRatio` |")
-            lines.append(f"| | Short % Float | 做空流通比 | {format_val(get_field_val(profile, 'std_short_percent_of_float'), MetricFormat.PERCENT)} | `shortPercentOfFloat` |")
-            lines.append(f"| | Ent Value | 企业价值 | {format_val(get_field_val(profile, 'std_enterprise_value'), MetricFormat.CURRENCY_LARGE)} | `enterpriseValue` |")
-            lines.append(f"| | EV/EBITDA | EV/EBITDA | {format_val(get_field_val(profile, 'std_enterprise_to_ebitda'), MetricFormat.DECIMAL)} | `enterpriseToEbitda` |")
+            insiders_held_val, insiders_held_src = get_field_with_source(profile, 'std_held_percent_insiders')
+            institutions_val, institutions_src = get_field_with_source(profile, 'std_held_percent_institutions')
+            short_ratio_val, short_ratio_src = get_field_with_source(profile, 'std_short_ratio')
+            short_pct_val, short_pct_src = get_field_with_source(profile, 'std_short_percent_of_float')
+            ent_value_val, ent_value_src = get_field_with_source(profile, 'std_enterprise_value')
+            ev_ebitda_val, ev_ebitda_src = get_field_with_source(profile, 'std_enterprise_to_ebitda')
+            
+            lines.append(f"| **Sentiment** | Insiders Held | 内部持股 | {format_val(insiders_held_val, MetricFormat.PERCENT)} | {insiders_held_src} | Insider Ownership % |")
+            lines.append(f"| | Institutions | 机构持股 | {format_val(institutions_val, MetricFormat.PERCENT)} | {institutions_src} | Institutional Ownership % |")
+            lines.append(f"| | Short Ratio | 做空比率 | {format_val(short_ratio_val, MetricFormat.DECIMAL)} | {short_ratio_src} | Days to Cover Short |")
+            lines.append(f"| | Short % Float | 做空流通比 | {format_val(short_pct_val, MetricFormat.PERCENT)} | {short_pct_src} | Short % of Float |")
+            lines.append(f"| | Ent Value | 企业价值 | {format_val(ent_value_val, MetricFormat.CURRENCY_LARGE)} | {ent_value_src} | Enterprise Value |")
+            lines.append(f"| | EV/EBITDA | EV/EBITDA | {format_val(ev_ebitda_val, MetricFormat.DECIMAL)} | {ev_ebitda_src} | EV / EBITDA Ratio |")
 
         lines.append("")
         return "\n".join(lines)

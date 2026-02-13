@@ -206,6 +206,20 @@ SECTOR_WEIGHT_OVERRIDES = {
             'metrics': {'share_dilution_cagr_5y': 10, 'capex_intensity_3y': 9, 'sbc_impact_3y': 5}
         }
     },
+    'Consumer Cyclical': {  # Alias for Consumer Discretionary (Yahoo Finance convention)
+        'profitability': {
+            'max_score': 38,
+            'metrics': {'roic': 14, 'roe': 10, 'operating_margin': 8, 'gross_margin': 3, 'net_margin': 3}
+        },
+        'growth': {
+            'max_score': 38,
+            'metrics': {'fcf_cagr_5y': 12, 'net_income_cagr_5y': 10, 'revenue_cagr_5y': 8, 'earnings_quality_3y': 5, 'fcf_to_debt_ratio': 3}
+        },
+        'capital_allocation': {
+            'max_score': 24,
+            'metrics': {'share_dilution_cagr_5y': 10, 'capex_intensity_3y': 9, 'sbc_impact_3y': 5}
+        }
+    },
     'Consumer Staples': {
         'profitability': {
             'max_score': 40,
