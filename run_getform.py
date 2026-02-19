@@ -17,7 +17,7 @@ project_root = current_dir if os.path.basename(current_dir) != "Quantitative Sto
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from fundamentals.ai_commentary.data_aggregator import DataAggregator
+from fundamentals.stock.data_aggregator import DataAggregator
 from config.constants import DATA_CACHE_STOCK, DATA_REPORTS
 from utils.logger import setup_logger
 

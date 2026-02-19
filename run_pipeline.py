@@ -134,10 +134,10 @@ def run_stock_analysis(symbols: List[str]):
             print(f"  {ICON.FAIL} Error executing analysis for {symbol}: {e}")
 
 def run_summary(symbols: List[str]):
-    """Runs run_scanner.py to generate summary CSV."""
+    """Runs run_getform.py to generate summary report."""
     print_step(4, 5, "Generating Summary Report")
     
-    script_path = os.path.join(current_dir, "run_scanner.py")
+    script_path = os.path.join(current_dir, "run_getform.py")
     try:
         cmd = [sys.executable, script_path] + symbols
         subprocess.run(cmd, check=True)
