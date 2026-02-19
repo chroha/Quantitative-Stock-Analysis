@@ -378,3 +378,12 @@ class MacroAggregator:
                 lines.append(f"{category}: " + " | ".join(line_parts))
                 
         return "\n".join(lines)
+
+if __name__ == "__main__":
+    try:
+        aggregator = MacroAggregator()
+        aggregator.run()
+        print("Macro data aggregation completed successfully.")
+    except Exception as e:
+        logger.error(f"Macro aggregation failed: {e}")
+        print(f"Error: {e}")

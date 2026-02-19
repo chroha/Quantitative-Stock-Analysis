@@ -101,6 +101,48 @@ class FinnhubStrategy(DataSourceStrategy):
             finnhub_profile = fetcher.fetch_profile()
             if finnhub_profile:
                 current_data.profile = merger.merge_profiles(current_data.profile, finnhub_profile)
+                logger.info("Merged Profile data from Finnhub")
+
+            # 3. Fetch Company News (Latest 30 Days) - Independent of profile
+            import datetime
+            end_date = datetime.date.today().strftime('%Y-%m-%d')
+            start_date = (datetime.date.today() - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
+            
+            news = fetcher.fetch_company_news(start_date, end_date)
+            if news:
+                current_data.news = news
+                logger.info(f"Added {len(news)} news items from Finnhub")
+            
+            # 4. Fetch Sentiment - Independent of profile
+            sentiment = fetcher.fetch_sentiment()
+            if sentiment:
+                current_data.sentiment = sentiment
+                logger.info("Added sentiment data from Finnhub")
+            
+            # 5. Fetch Peers - Independent of profile
+            peers = fetcher.fetch_peers()
+            if peers:
+                current_data.peers = peers
+                logger.info(f"Added {len(peers)} peers from Finnhub")
+
+            # 6. Fetch Quote (Real-time / Snapshot)
+            quote_data = fetcher.fetch_quote()
+            if quote_data:
+                if not current_data.price_history:
+                    current_data.price_history = [quote_data]
+                    logger.info(f"Added initial price data from Finnhub Quote ({quote_data.std_date.date()})")
+                elif current_data.price_history:
+                    last_point = current_data.price_history[-1]
+                    if last_point.std_date.date() == quote_data.std_date.date():
+                        if not last_point.std_close: last_point.std_close = quote_data.std_close
+                        if not last_point.std_high: last_point.std_high = quote_data.std_high
+                        if not last_point.std_low: last_point.std_low = quote_data.std_low
+                        if not last_point.std_open: last_point.std_open = quote_data.std_open
+                        logger.info("Updated existing price point with Finnhub Quote data")
+                    elif quote_data.std_date.date() > last_point.std_date.date():
+                        current_data.price_history.append(quote_data)
+                        logger.info(f"Appended new price point from Finnhub Quote ({quote_data.std_date.date()})")
+
                 
         except Exception as e:
             logger.warning(f"Finnhub Strategy failed: {e}")

@@ -49,6 +49,7 @@ class AlphaVantageFetcher(BaseFetcher):
         from utils.field_registry import DataSource as RegistryDataSource
         super().__init__(symbol, RegistryDataSource.ALPHAVANTAGE)
         self.api_key = settings.ALPHAVANTAGE_API_KEY
+        self._circuit_broken = False
         
         if not self.api_key:
             logger.warning("Alpha Vantage API key not configured")
@@ -67,64 +68,99 @@ class AlphaVantageFetcher(BaseFetcher):
     
     def _make_request(self, function: str) -> Optional[Dict[str, Any]]:
         """
-        Make API request with rate limiting and error handling.
-        
-        Args:
-            function: Alpha Vantage function name (e.g., 'INCOME_STATEMENT')
-            
-        Returns:
-            JSON response dict or None on failure
+        Make API request with rate limiting, error handling, and key rotation.
         """
-        if not self.api_key:
-            logger.error("Cannot make request: Alpha Vantage API key not configured")
+        if self._circuit_broken:
             return None
-        
-        self._rate_limit()
-        
-        params = {
-            'function': function,
-            'symbol': self.symbol,
-            'apikey': self.api_key
-        }
-        
-        try:
-            logger.info(f"Fetching {function} for {self.symbol} from Alpha Vantage")
-            response = requests.get(self.BASE_URL, params=params, timeout=constants.ALPHAVANTAGE_TIMEOUT_SECONDS)
-            response.raise_for_status()
             
-            data = response.json()
+        # Max rotation attempts = number of keys configured
+        max_rotations = settings.get_key_count('ALPHAVANTAGE')
+        attempts = 0
+        
+        while attempts <= max_rotations:
+            # We must re-check config inside loop in case it changed (it handles rotation)
+            if not self.api_key:
+                logger.error("Cannot make request: Alpha Vantage API key not configured")
+                return None
             
-            # Check for API errors
-            if 'Error Message' in data:
-                error_msg = data['Error Message']
-                logger.error(f"Alpha Vantage API error: {error_msg}")
+            self._rate_limit()
+            
+            params = {
+                'function': function,
+                'symbol': self.symbol,
+                'apikey': self.api_key
+            }
+            
+            try:
+                logger.info(f"Fetching {function} for {self.symbol} from Alpha Vantage (Key: {settings.mask_api_key(self.api_key)})")
+                # Use shorter timeout for AV too
+                response = requests.get(self.BASE_URL, params=params, timeout=10)
+                response.raise_for_status()
                 
-                # Add specific hint for common "Invalid API call" error
-                if "Invalid API call" in error_msg:
-                    masked_key = settings.mask_api_key(self.api_key)
-                    logger.error(f"  -> Hint: Verify API Key is correct and has no spaces. Using Key: {masked_key}")
-                    logger.error(f"  -> Hint: Some endpoints (Income/Balance Sheet) are now Premium-only. Free tier keys may fail here.")
+                data = response.json()
                 
+                # Check for API errors
+                if 'Error Message' in data:
+                    error_msg = data['Error Message']
+                    logger.error(f"Alpha Vantage API error: {error_msg}")
+                    
+                    if "Invalid API call" in error_msg:
+                        attempts += 1
+                        if attempts < max_rotations:
+                            logger.info(f"Rotating AlphaVantage API key due to invalid key error...")
+                            settings.rotate_keys()
+                            self.api_key = settings.ALPHAVANTAGE_API_KEY
+                            continue
+                    return None
+                
+                if 'Note' in data:
+                    # Rate limit exceeded (25 requests/day often)
+                    logger.warning(f"Alpha Vantage rate limit: {data['Note']}")
+                    attempts += 1
+                    if attempts < max_rotations:
+                         logger.info(f"Rotating AlphaVantage API key due to rate limit...")
+                         settings.rotate_keys()
+                         self.api_key = settings.ALPHAVANTAGE_API_KEY
+                         continue
+                    else:
+                        # If all keys rate limited, maybe break circuit?
+                        # AV rate limits are per key. So if we exhausted all keys, yes.
+                        logger.warning("All AlphaVantage keys rate limited.")
+                        return None
+                
+                if 'Information' in data:
+                    # API info message (usually rate limit warning)
+                    msg = data['Information']
+                    logger.warning(f"Alpha Vantage notice: {msg}")
+                    
+                    if "rate limit" in msg.lower() or "daily" in msg.lower():
+                        attempts += 1
+                        if attempts < max_rotations:
+                             logger.info(f"Rotating AlphaVantage API key due to usage limit notice...")
+                             settings.rotate_keys()
+                             self.api_key = settings.ALPHAVANTAGE_API_KEY
+                             continue
+                        else:
+                            logger.warning("All AlphaVantage keys rate limited (Information notice).")
+                            return None
+                            
+                    return None
+                
+                return data
+                
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Alpha Vantage request failed: {e}")
+                if "Read timed out" in str(e) or "Connect timed out" in str(e):
+                     logger.warning(f"Alpha Vantage Timeout. Enabling circuit breaker.")
+                     self._circuit_broken = True
+                return None
+            except ValueError as e:
+                logger.error(f"Alpha Vantage JSON parse error: {e}")
                 return None
             
-            if 'Note' in data:
-                # Rate limit exceeded
-                logger.warning(f"Alpha Vantage rate limit: {data['Note']}")
-                return None
+            break # Success or non-retriable error
             
-            if 'Information' in data:
-                # API info message (usually rate limit warning)
-                logger.warning(f"Alpha Vantage notice: {data['Information']}")
-                return None
-            
-            return data
-            
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Alpha Vantage request failed: {e}")
-            return None
-        except ValueError as e:
-            logger.error(f"Alpha Vantage JSON parse error: {e}")
-            return None
+        return None
     
     def _create_field_with_source(self, value: Any) -> Optional[FieldWithSource]:
         """Create FieldWithSource from raw value."""
@@ -148,12 +184,8 @@ class AlphaVantageFetcher(BaseFetcher):
     def fetch_profile(self) -> Optional[CompanyProfile]:
         """
         Fetch company overview/profile.
-        
-        NOTE: If you add new fields here, you MUST update CompanyProfile in utils/unified_schema.py.
-        Otherwise, the data will be dropped during the save process.
-        注意: 如果在此处添加新字段，必须同步更新 utils/unified_schema.py 中的 CompanyProfile 定义。
-        否则，数据将在保存过程中被丢弃。
         """
+        if self._circuit_broken: return None
         data = self._make_request(constants.ALPHAVANTAGE_FUNCTIONS['overview'])
         
         if not data or 'Symbol' not in data:
@@ -189,8 +221,9 @@ class AlphaVantageFetcher(BaseFetcher):
 
 
     
-    def fetch_income_statements(self) -> List[IncomeStatement]:
+    def fetch_income_statements(self, limit: int = 5) -> List[IncomeStatement]:
         """Fetch annual income statements."""
+        if self._circuit_broken: return []
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
         
@@ -204,7 +237,10 @@ class AlphaVantageFetcher(BaseFetcher):
         
         logger.info(f"Fetched {len(annual_reports)} income statements for {self.symbol} from Alpha Vantage")
         
-        for report in annual_reports[:5]:  # Limit to 5 years
+        # Apply slice if limit provided
+        processed_reports = annual_reports[:limit] if limit else annual_reports
+        
+        for report in processed_reports:
             try:
                 mapped_fields = SchemaMapper.map_statement(
                     report, 
@@ -222,8 +258,9 @@ class AlphaVantageFetcher(BaseFetcher):
         
         return statements
     
-    def fetch_balance_sheets(self) -> List[BalanceSheet]:
+    def fetch_balance_sheets(self, limit: int = 5) -> List[BalanceSheet]:
         """Fetch balance sheets (Annual + Quarterly)."""
+        if self._circuit_broken: return []
         data = self._make_request(constants.ALPHAVANTAGE_FUNCTIONS['balance_sheet'])
         
         if not data:
@@ -274,14 +311,10 @@ class AlphaVantageFetcher(BaseFetcher):
         annual_reports = data.get('annualReports', [])
         quarterly_reports = data.get('quarterlyReports', [])
         
-        annual_stmts = process_reports(annual_reports[:5])
-        # _parse_period currently appends -FY to everything if it looks like a date. 
-        # We need to ensure quarterly reports get their specific date or a different suffix?
-        # Let's check _parse_period implementation. 
-        # It takes YYYY-MM-DD and makes it YYYY-FY. That's bad for quarterly merging.
-        # I should probably update _parse_period or bypass it here.
-        # For now, let's bypass it for now by setting std_period directly to date string if possible?
-        # Actually, let's look at _parse_period again.
+        # Apply limit to annual reports
+        sliced_annual = annual_reports[:limit] if (limit and annual_reports) else annual_reports
+        
+        annual_stmts = process_reports(sliced_annual)
         
         # Override _parse_period behavior here by manually setting std_period to date string for quarterly
         quarterly_stmts = []
@@ -326,8 +359,9 @@ class AlphaVantageFetcher(BaseFetcher):
         logger.info(f"Fetched {len(final_list)} balance sheets (Annual+Quarterly) from Alpha Vantage")
         return final_list
     
-    def fetch_cash_flow_statements(self) -> List[CashFlow]:
+    def fetch_cash_flow_statements(self, limit: int = 5) -> List[CashFlow]:
         """Fetch annual cash flow statements."""
+        if self._circuit_broken: return []
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
         
@@ -341,7 +375,10 @@ class AlphaVantageFetcher(BaseFetcher):
         
         logger.info(f"Fetched {len(annual_reports)} cash flow statements for {self.symbol} from Alpha Vantage")
         
-        for report in annual_reports[:5]:  # Limit to 5 years
+        # Apply slice if limit provided
+        processed_reports = annual_reports[:limit] if limit else annual_reports
+
+        for report in processed_reports:
             try:
                 mapped_fields = SchemaMapper.map_statement(
                     report, 

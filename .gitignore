@@ -1,23 +1,26 @@
+# === Python ===
 .env
 __pycache__/
 *.pyc
 *.pyo
 *.pyd
-.Python
 *.so
 *.log
-*.csv
-*.json
-*.txt
+
+# === Editor / OS ===
 .idea/
 .vscode/
 *.swp
 *.swo
+.DS_Store
 
-# Reports (optional: keep if you want to exclude)
+# === Data Cache (auto-generated, never commit) ===
+data/cache/
+# Exception: Damodaran benchmark CSVs (~72KB, updated ~annually, worth tracking for year-over-year diffs)
+!data/cache/benchmark/*.csv
+
+# === Generated Reports (large, machine-generated) ===
 generated_reports/
 
-# Unified data cache
-data/cache/
-debug_data/
-audit_results/
+# === Developer / Audit Output ===
+devtools/audit_output/

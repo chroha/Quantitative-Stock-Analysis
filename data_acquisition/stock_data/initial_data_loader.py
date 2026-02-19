@@ -29,8 +29,41 @@ class StockDataLoader:
     def fetch_stock_data(self, symbol: str) -> StockData:
         return self.orchestrator.fetch_stock_data(symbol)
 
-    def get_stock_data(self, symbol: str) -> StockData:
-        """Alias for fetch_stock_data to maintain backward compatibility."""
+    def get_stock_data(self, symbol: str, force_refresh: bool = False) -> StockData:
+        """
+        Smart fetch: Check local cache first, if missing/old, then fetch from APIs.
+        """
+        from config.constants import DATA_CACHE_STOCK
+        from datetime import datetime
+        import glob
+        
+        # 1. Try to load from cache if not forced
+        if not force_refresh:
+            try:
+                # Find latest file: initial_data_SYMBOL_YYYY-MM-DD.json
+                search_pattern = os.path.join(DATA_CACHE_STOCK, f"initial_data_{symbol}_*.json")
+                files = sorted(glob.glob(search_pattern))
+                
+                if files:
+                    latest_file = files[-1]
+                    # Check age (e.g., 24 hours) - For now just check if it's from today? 
+                    # Actually user said "validation might fetch to get fresh price", so maybe strict age?
+                    # Let's say if file date is TODAY, we use it. 
+                    # Or maybe just return it if it exists and let caller decide?
+                    # User complaint was about "run_valuation" running AGAIN after "run_scoring".
+                    # Those happen in same session, so file should definitely be used.
+                    
+                    # Logic: If file date == today, use it.
+                    file_date_str = os.path.basename(latest_file).split('_')[-1].replace('.json', '')
+                    today_str = datetime.now().strftime('%Y-%m-%d')
+                    
+                    if file_date_str == today_str:
+                        logger.info(f"Loading cached data for {symbol}: {os.path.basename(latest_file)}")
+                        return self.load_stock_data(latest_file)
+            except Exception as e:
+                logger.warning(f"Failed to load cache: {e}")
+
+        # 2. Fetch from APIs
         return self.fetch_stock_data(symbol)
 
     def save_stock_data(self, data: StockData, output_dir: str) -> str:

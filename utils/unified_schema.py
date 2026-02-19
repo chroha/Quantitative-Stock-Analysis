@@ -40,7 +40,7 @@ Define standardized field names and data models using Pydantic to ensure type sa
 """
 
 from datetime import datetime
-from typing import Optional, Literal, Dict, Any
+from typing import Optional, Literal, Dict, Any, List
 from pydantic import BaseModel, Field
 
 # Data source types for provenance tracking
@@ -517,8 +517,87 @@ FMP_FIELD_MAPPING = {
     'ceo': 'std_ceo',
     
     # Cash flow (FMP has this field)
+    # Cash flow (FMP has this field)
     'stockBasedCompensation': 'std_stock_based_compensation',
     'commonStockRepurchased': 'std_repurchase_of_stock',
     'dividendsPaid': 'std_dividends_paid',
 }
+
+# =============================================================================
+# NEW DATA MODELS (2026-02-16) - Finnhub Expansion
+# =============================================================================
+
+class NewsItem(BaseModel):
+    """News item from Finnhub or other sources."""
+    id: str = Field(..., description="Unique news ID")
+    category: str = Field(..., description="News category (company, top news, etc)")
+    datetime: int = Field(..., description="Unix timestamp")
+    headline: str = Field(..., description="News headline")
+    source: str = Field(..., description="News source")
+    url: str = Field(..., description="Link to original article")
+    summary: Optional[str] = Field(None, description="Short summary/abstract")
+    related: Optional[str] = Field(None, description="Related tickers")
+    image: Optional[str] = Field(None, description="Image URL")
+
+class InsiderTransaction(BaseModel):
+    """Insider transaction record."""
+    name: str = Field(..., description="Insider name")
+    share: int = Field(..., description="Number of shares held after transaction")
+    change: int = Field(..., description="Number of shares changed")
+    filing_date: str = Field(..., description="Filing date")
+    transaction_date: str = Field(..., description="Transaction date")
+    transaction_price: float = Field(..., description="Transaction price")
+    transaction_code: Optional[str] = Field(None, description="Transaction code")
+    
+class InsiderSentiment(BaseModel):
+    """Insider sentiment metrics (Finnhub specific)."""
+    year: int
+    month: int
+    change: float = Field(..., description="Net buying/selling share count")
+    mspr: float = Field(..., description="Monthly Share Purchase Ratio")
+
+class SentimentData(BaseModel):
+    """Container for sentiment and insider data."""
+    insider_sentiment: List[InsiderSentiment] = Field(default_factory=list)
+    insider_transactions: List[InsiderTransaction] = Field(default_factory=list)
+
+# Update StockData to include new fields
+# Note: We cannot easily modify the existing StockData class in-place without re-declaring it.
+# Users should use this updated definition.
+
+# Re-declare StockData with new fields (News, Sentiment)
+class StockData(BaseModel):
+    """
+    Complete stock data model combining all categories.
+    This is the primary data structure used throughout the system.
+    """
+    symbol: str = Field(..., description="Stock ticker symbol")
+    last_updated: datetime = Field(default_factory=datetime.now, description="Last data update timestamp")
+    
+    # Data categories
+    profile: Optional[CompanyProfile] = None
+    price_history: list[PriceData] = Field(default_factory=list, description="Historical price data")
+    income_statements: list[IncomeStatement] = Field(default_factory=list, description="Income statements")
+    balance_sheets: list[BalanceSheet] = Field(default_factory=list, description="Balance sheets")
+    cash_flows: list[CashFlow] = Field(default_factory=list, description="Cash flow statements")
+    
+    # Analyst & Forecast Data
+    analyst_targets: Optional[AnalystTargets] = None  # DEPRECATED: Use forecast_data instead
+    forecast_data: Optional[ForecastData] = Field(
+        None,
+        description="Forward-looking metrics and analyst estimates (Yahoo/FMP/Finnhub)"
+    )
+    
+    sector_benchmark: Optional[SectorBenchmark] = Field(None, description="Sector benchmark data for comparison")
+    
+    # NEW: News & Sentiment
+    news: List[NewsItem] = Field(default_factory=list, description="Recent news items")
+    sentiment: Optional[SentimentData] = Field(None, description="Insider sentiment and transaction data")
+    
+    # NEW: Peers (Simple list)
+    peers: List[str] = Field(default_factory=list, description="List of peer ticker symbols")
+    
+    # Metadata for processing flags (e.g. source tracking)
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="Auxiliary processing metadata")
+
 

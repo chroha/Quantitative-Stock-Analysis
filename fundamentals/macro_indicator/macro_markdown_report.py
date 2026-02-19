@@ -85,7 +85,10 @@ class MacroMarkdownReport:
         md.append(f"## 5. ⚙️ {header}")
         md.append(self._render_deep_dive(analysis_results, data, lang))
         
-        # 7. AI Commentary
+        # 7. News Intelligence Chapter
+        md.append(self._render_news_intelligence(data, lang))
+        
+        # 8. AI Commentary
         md.append(self._render_ai_commentary(commentary, lang))
         
         return "\n".join(md)
@@ -505,4 +508,87 @@ class MacroMarkdownReport:
         if not text: return ""
         
         header = "AI 深度解读" if lang == 'cn' else "AI Strategic Analysis"
-        return f"\n## 6. 🧠 {header}\n\n{text}"
+        return f"\n## 7. 🧠 {header}\n\n{text}"
+
+    def _render_news_intelligence(self, data: Dict[str, Any], lang: str) -> str:
+        """Render News Intelligence chapter with categorized headlines."""
+        market_news = data.get('market_news', {})
+        if not market_news:
+            return ""
+        
+        general = market_news.get('general', [])
+        forex = market_news.get('forex', [])
+        crypto = market_news.get('crypto', [])
+        
+        if not general and not forex and not crypto:
+            return ""
+        
+        md = []
+        header = "全球市场新闻情报" if lang == 'cn' else "Global Market News Intelligence"
+        md.append(f"\n## 6. 📰 {header}")
+        
+        # Translation lookup for Chinese headlines
+        translations = data.get('news_translations', {})
+        
+        # Helper to format news items
+        def format_news_table(items, max_items, category_label):
+            if not items:
+                return []
+            lines = []
+            sub_header = f"### {category_label}"
+            lines.append(sub_header)
+            
+            if lang == 'cn':
+                lines.append("| # | 标题 | 来源 | 时间 |")
+            else:
+                lines.append("| # | Headline | Source | Date |")
+            lines.append("|---|---|---|---|")
+            
+            for i, item in enumerate(items[:max_items], 1):
+                # Handle both NewsItem objects and dicts
+                if hasattr(item, 'headline'):
+                    headline_en = item.headline or '-'
+                    source = item.source or '-'
+                    ts = item.datetime
+                    url = getattr(item, 'url', '') or ''
+                else:
+                    headline_en = item.get('headline', '-') or '-'
+                    source = item.get('source', '-') or '-'
+                    ts = item.get('datetime', 0)
+                    url = item.get('url', '') or ''
+                
+                # Use Chinese translation for cn lang if available
+                if lang == 'cn' and translations:
+                    headline_text = translations.get(headline_en, headline_en[:100])[:60]
+                else:
+                    headline_text = headline_en[:100]
+                
+                # Render as clickable hyperlink if URL is available
+                headline_cell = f"[{headline_text}]({url})" if url else headline_text
+                
+                try:
+                    from datetime import datetime as dt
+                    date_str = dt.fromtimestamp(ts).strftime('%m-%d %H:%M') if ts else '-'
+                except:
+                    date_str = '-'
+                
+                lines.append(f"| {i} | {headline_cell} | {source} | {date_str} |")
+            
+            lines.append("")
+            return lines
+        
+        # General Market News (Top 10)
+        gen_label = "🌍 综合市场新闻" if lang == 'cn' else "🌍 General Market News"
+        md.extend(format_news_table(general, 10, gen_label))
+        
+        # Forex News (Top 3)
+        if forex:
+            fx_label = "💱 外汇市场" if lang == 'cn' else "💱 Forex News"
+            md.extend(format_news_table(forex, 3, fx_label))
+        
+        # Crypto News (Top 5)
+        if crypto:
+            cr_label = "₿ 加密货币" if lang == 'cn' else "₿ Crypto News"
+            md.extend(format_news_table(crypto, 5, cr_label))
+        
+        return "\n".join(md)

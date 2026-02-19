@@ -81,10 +81,28 @@ class CalculatorBase:
                     valid_sources.append(s_norm)
                     seen.add(s_norm)
         
-        if not valid_sources:
-            return "Calculated"
+        # 3. Clean up sources to avoid nesting "Calculated (Calculated (...))"
+        cleaned_sources = []
+        for s in valid_sources:
+            # Recursively strip "Calculated (" wrapper
+            clean_s = s
+            while clean_s.startswith("Calculated (") and clean_s.endswith(")"):
+                 clean_s = clean_s[12:-1]
             
-        return "/".join(valid_sources)
+            if clean_s == "Calculated":
+                 continue
+            cleaned_sources.append(clean_s)
+        
+        if not cleaned_sources and "Calculated" in valid_sources:
+             return "Calculated"
+             
+        if not cleaned_sources:
+            return "Calculated"
+
+        # Unique sorting
+        unique_sources = sorted(list(set(cleaned_sources)))
+        formatted_sources = "&".join(unique_sources)
+        return f"Calculated ({formatted_sources})"
 
     def get_field_with_source(self, data_obj, field_name: str) -> tuple[Optional[float], str]:
         """

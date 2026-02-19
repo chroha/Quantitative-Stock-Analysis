@@ -9,9 +9,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 from .api_key_manager import APIKeyManager
 
-# Load environment variables from user_config/.env
+# Load environment variables from .env
 project_root = Path(__file__).parent.parent
-env_path = project_root / 'user_config' / '.env'
+env_path = project_root / '.env'
 load_dotenv(dotenv_path=env_path)
 
 
@@ -69,6 +69,10 @@ class Settings:
         Useful for long-running batch processes like run_scanner.py.
         """
         return self.manager.rotate()
+
+    def get_key_count(self, provider: str) -> int:
+        """Get number of keys configured for a specific provider."""
+        return self.manager.get_key_count(provider)
 
     # --- Helpers ---
 

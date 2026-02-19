@@ -5,6 +5,7 @@ Supports context-aware logging for orchestration vs standalone execution.
 
 import logging
 import re
+import os
 from typing import Optional
 from enum import Enum
 from config.settings import settings
@@ -15,10 +16,15 @@ class LoggingContext(Enum):
     STANDALONE = "standalone"      # Module run independently (full logging)
     ORCHESTRATED = "orchestrated"  # Called by run_analysis.py (quiet sub-modules)
     SILENT = "silent"              # Batch scanning (minimal output)
+    PIPELINE_QUIET = "pipeline_quiet" # User-facing pipeline (clean output)
 
 
-# Global logging mode (default: standalone for backward compatibility)
-_CURRENT_MODE = LoggingContext.STANDALONE
+# Global logging mode (default: check env var, else standalone)
+_env_mode = os.getenv('LOG_MODE', 'standalone').lower()
+try:
+    _CURRENT_MODE = LoggingContext(_env_mode)
+except ValueError:
+    _CURRENT_MODE = LoggingContext.STANDALONE
 
 # Console loggers that should always show INFO level (orchestration scripts)
 CONSOLE_LOGGERS = {
@@ -96,6 +102,11 @@ def setup_logger(
     elif current_mode == LoggingContext.SILENT:
         # In silent mode, everything is CRITICAL
         effective_level = logging.CRITICAL
+    elif current_mode == LoggingContext.PIPELINE_QUIET:
+         # In pipeline quiet mode, suppress almost everything except explicit errors
+         # We rely on print() in run_pipeline.py for user progress
+         effective_level = logging.ERROR
+
     # STANDALONE mode uses the provided level (default INFO)
     
     logger.setLevel(effective_level)

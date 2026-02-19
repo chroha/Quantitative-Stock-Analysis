@@ -16,6 +16,7 @@ set_logging_mode(LoggingContext.ORCHESTRATED)
 
 from data_acquisition.macro_data.macro_aggregator import MacroAggregator
 # Analyzers
+from fundamentals.reporting.report_assembler import ReportAssembler
 from fundamentals.macro_indicator.cycle_analyzer import CycleAnalyzer
 from fundamentals.macro_indicator.risk_assessor import RiskAssessor
 from fundamentals.macro_indicator.valuation_allocator import ValuationAllocator
@@ -23,6 +24,7 @@ from fundamentals.macro_indicator.valuation_allocator import ValuationAllocator
 from fundamentals.macro_indicator.macro_report import MacroReportGenerator
 from fundamentals.macro_indicator.macro_markdown_report import MacroMarkdownReport
 from fundamentals.macro_indicator.macro_ai_analyst import MacroAIAnalyst
+from data_acquisition.stock_data.finnhub_fetcher import FinnhubFetcher
 from config.constants import DATA_CACHE_MACRO, DATA_REPORTS
 from utils.logger import setup_logger
 from utils.console_utils import symbol as ICON, print_step, print_separator
@@ -42,7 +44,7 @@ def safe_print(text):
         print(re.sub(r'[^\x00-\x7F]+', '', text))
 
 def main():
-    print_header("MACRO STRATEGY ANALYSIS SYSTEM (Dashboard V2)")
+    print_header("MACRO STRATEGY ANALYSIS SYSTEM")
     
     # Paths (using unified constants)
     current_dir = Path(__file__).parent.absolute()
@@ -91,7 +93,7 @@ def main():
     macro_data = existing_data
     
     if should_fetch:
-        print_step(1, 3, "Fetching Macro Data")
+        print_step(1, 4, "Fetching Macro Data")
         try:
             # Pass 'input' function to enable interactive prompting for missing data
             aggregator = MacroAggregator(interactive_input_func=input) 
@@ -116,7 +118,7 @@ def main():
             print(f"  {ICON.FAIL} Critical error during data fetch: {e}")
             return
     else:
-        print_step(1, 3, "Loading Data")
+        print_step(1, 4, "Loading Data")
         print(f"  {ICON.OK} Loaded local snapshot")
 
     if not macro_data:
@@ -124,7 +126,7 @@ def main():
         return
 
     # Step 2: Analysis Algorithms
-    print_step(2, 3, "Running Analysis Models")
+    print_step(2, 4, "Running Analysis Models")
     try:
         # Initialize Analyzers
         cycle_analyzer = CycleAnalyzer()
@@ -148,11 +150,34 @@ def main():
         print(f"  {ICON.FAIL} Analysis modules failed: {e}")
         return
 
-    # Step 3: Report Generation
-    print_step(3, 3, "Generating Reports")
+    print_step(3, 4, "Fetching Market News")
+    market_news = {}
+    try:
+        fh = FinnhubFetcher("MARKET")
+        print("  > Fetching General Market News...")
+        market_news['general'] = fh.fetch_market_news('general')
+        
+        print("  > Fetching Forex News...")
+        market_news['forex'] = fh.fetch_market_news('forex')
+        
+        print("  > Fetching Crypto News...")
+        market_news['crypto'] = fh.fetch_market_news('crypto')
+        
+        print(f"  {ICON.OK} Market News fetched ({len(market_news['general'])} general, {len(market_news['forex'])} forex, {len(market_news['crypto'])} crypto)")
+        
+        # Attach to macro_data for report generation
+        macro_data['market_news'] = market_news
+        
+    except Exception as e:
+        logger.warning(f"Market News Fetch Failed: {e}")
+        print(f"  {ICON.WARN} Market News Fetch Failed: {e}")
+
+
+    print_step(4, 4, "Generating Reports")
     
     # AI Commentary Generation
     ai_commentary = None
+    ai_analyst = None
     try:
         print(f"  > Generating AI Strategic Commentary (Bilingual)...")
         ai_analyst = MacroAIAnalyst()
@@ -166,6 +191,9 @@ def main():
         # Markdown Dashboard (Bilingual / Detailed)
         md_gen = MacroMarkdownReport(output_dir=reports_dir)
         md_text = md_gen.generate_report(macro_data, analysis_results, ai_commentary)
+        
+        # Assemble with Disclaimer
+        md_text = ReportAssembler.assemble_macro_report(md_text)
         
         # Determine filename
         ts = macro_data.get('snapshot_date', datetime.now().isoformat())
