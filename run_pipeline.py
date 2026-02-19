@@ -102,7 +102,7 @@ def update_benchmarks():
         sys.exit(1)
 
 def run_stock_analysis(symbols: List[str]):
-    """Runs run_debug_analysis.py for each symbol with API Key rotation."""
+    """Runs run_analysis.py for each symbol with API Key rotation."""
     print_step(3, 5, "Stock Analysis Batch")
     
     # Auto-detect number of API key sets from FMP_API_KEY (primary source)
@@ -113,8 +113,7 @@ def run_stock_analysis(symbols: List[str]):
     if num_key_sets > 1:
         print(f"  {ICON.INFO} API Key Rotation Active: {num_key_sets} key sets available")
     
-    # Path to the moved analysis script
-    analysis_script = os.path.join(current_dir, "devtools", "debug_tools", "run_debug_analysis.py")
+    analysis_script = os.path.join(current_dir, "run_analysis.py")
     
     for i, symbol in enumerate(symbols):
         # Rotate key set index for each stock (Round-Robin)
@@ -135,10 +134,10 @@ def run_stock_analysis(symbols: List[str]):
             print(f"  {ICON.FAIL} Error executing analysis for {symbol}: {e}")
 
 def run_summary(symbols: List[str]):
-    """Runs run_debug_summary.py to generate summary CSV."""
+    """Runs run_scanner.py to generate summary CSV."""
     print_step(4, 5, "Generating Summary Report")
     
-    script_path = os.path.join(current_dir, "devtools", "debug_tools", "run_debug_summary.py")
+    script_path = os.path.join(current_dir, "run_scanner.py")
     try:
         cmd = [sys.executable, script_path] + symbols
         subprocess.run(cmd, check=True)
@@ -146,7 +145,7 @@ def run_summary(symbols: List[str]):
         print(f"  {ICON.FAIL} Summary generation failed")
 
 def run_macro():
-    """Runs run_debug_macro.py."""
+    """Runs run_macro_report.py."""
     print_step(5, 5, "Macro Analysis")
     
     # Check if report for today already exists
@@ -162,7 +161,7 @@ def run_macro():
             print(f"  {ICON.OK} Skipped macro analysis.")
             return
 
-    script_path = os.path.join(current_dir, "devtools", "debug_tools", "run_debug_macro.py")
+    script_path = os.path.join(current_dir, "run_macro_report.py")
     try:
         # This will be interactive for Forward PE input, allow it
         cmd = [sys.executable, script_path]
