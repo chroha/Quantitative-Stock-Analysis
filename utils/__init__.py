@@ -68,6 +68,12 @@ from .helpers import (
     parse_date,
     get_fiscal_year_quarter
 )
+from .numeric_utils import (
+    clean_numeric,
+    safe_divide,
+    safe_format,
+    is_valid_number
+)
 
 __all__ = [
     'setup_logger',
@@ -76,5 +82,9 @@ __all__ = [
     'safe_int',
     'format_large_number',
     'parse_date',
-    'get_fiscal_year_quarter'
+    'get_fiscal_year_quarter',
+    'clean_numeric',
+    'safe_divide',
+    'safe_format',
+    'is_valid_number'
 ]

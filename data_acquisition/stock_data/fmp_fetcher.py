@@ -43,76 +43,114 @@ class FMPFetcher(BaseFetcher):
         super().__init__(symbol, DataSource.FMP)
         self.api_key = settings.FMP_API_KEY
         self._free_tier_blocked = False  # Track if free tier limit hit
+        self._circuit_broken = False # Track if circuit is broken due to timeouts/errors
         logger.info(f"Initializing FMP fetcher for {self.symbol} (API key: {settings.get_masked_fmp_key()})")
     
     def _make_request(self, endpoint: str, extra_params: dict = None) -> Optional[dict]:
         """
-        Make API request to FMP.
-        
-        Args:
-            endpoint: API endpoint name (e.g., 'profile', 'price-target-consensus')
-            extra_params: Additional query parameters
-            
-        Returns:
-            JSON response or None if request fails
+        Make API request to FMP with automatic key rotation on failure.
         """
-        # Skip if already blocked by free tier
+        # Skip if already blocked by free tier or circuit breaker
+        # Note: We might want to RESET circuit breaker if we rotate keys?
+        # For now, if circuit is broken, we assume it's broken for the session unless we rotate.
         if self._free_tier_blocked:
             return None
             
-        url = f"{self.BASE_URL}/{endpoint}"
-        params = {
-            'symbol': self.symbol,
-            'apikey': self.api_key
-        }
-        if extra_params:
-            params.update(extra_params)
+        # If circuit was broken due to timeout on previous key, maybe we should try new key?
+        # But if it was timeout, likely all keys will timeout if it's network. 
+        # If it was 403, we definitely want to rotate.
         
-        try:
-            logger.debug(f"Requesting FMP endpoint: {endpoint}")
-            response = requests.get(url, params=params, timeout=constants.FMP_TIMEOUT_SECONDS)
-            response.raise_for_status()
+        # Max rotation attempts = number of keys configured
+        max_rotations = settings.get_key_count('FMP')
+        attempts = 0
+        
+        while attempts <= max_rotations:
+            # If circuit broken, check if we can rotate to fix it (only if it was 403?)
+            # Actually, let's just try request.
             
-            data = response.json()
+            url = f"{self.BASE_URL}/{endpoint}"
+            params = {
+                'symbol': self.symbol,
+                'apikey': self.api_key
+            }
+            if extra_params:
+                params.update(extra_params)
             
-            # Check for FMP error messages
-            if isinstance(data, dict) and 'Error Message' in data:
-                logger.error(f"FMP API error: {data['Error Message']}")
+            try:
+                logger.debug(f"Requesting FMP endpoint: {endpoint} (Key: {settings.get_masked_fmp_key()})")
+                
+                # Shorter timeout for FMP since it can hang
+                response = requests.get(url, params=params, timeout=5)
+                
+                # Handle 403 specifically for rotation
+                if response.status_code == 403:
+                    logger.warning(f"FMP 403 Forbidden for {endpoint} with current key.")
+                    attempts += 1
+                    if attempts < max_rotations:
+                        logger.info(f"Rotating FMP API key and retrying ({attempts}/{max_rotations})...")
+                        settings.rotate_keys()
+                        self.api_key = settings.FMP_API_KEY # Update local key reference
+                        continue # Retry loop
+                    else:
+                        logger.error("All FMP API keys exhausted or failed.")
+                        self._circuit_broken = True
+                        return None
+                
+                response.raise_for_status()
+                
+                data = response.json()
+                
+                # Check for FMP error messages (sometimes 200 OK but error in body)
+                if isinstance(data, dict) and 'Error Message' in data:
+                    msg = data['Error Message']
+                    logger.error(f"FMP API error: {msg}")
+                    if "Invalid API KEY" in msg or "Limit Reach" in msg:
+                        # Treat as 403 logic
+                        attempts += 1
+                        if attempts < max_rotations:
+                            logger.info(f"Rotating FMP API key due to error message and retrying...")
+                            settings.rotate_keys()
+                            self.api_key = settings.FMP_API_KEY
+                            continue
+                    return None
+                
+                logger.debug(f"Successfully fetched data from {endpoint}")
+                return data
+            
+            except requests.exceptions.HTTPError as e:
+                if e.response.status_code == 402:
+                    # Free tier limit - log once and skip remaining calls
+                    if not self._free_tier_blocked:
+                        self._free_tier_blocked = True
+                        print(f"          (FMP free tier - skipping)")
+                        logger.warning(f"FMP free tier does not support {self.symbol} - skipping FMP data")
+                    return None
+                elif e.response.status_code == 403:
+                    # Handled above
+                    pass 
+                else:
+                    logger.error(f"FMP HTTP error for {endpoint}: {e}")
                 return None
             
-            logger.debug(f"Successfully fetched data from {endpoint}")
-            return data
-        
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 402:
-                # Free tier limit - log once and skip remaining calls
-                if not self._free_tier_blocked:
-                    self._free_tier_blocked = True
-                    print(f"          (FMP free tier - skipping)")
-                    logger.warning(f"FMP free tier does not support {self.symbol} - skipping FMP data")
+            except requests.exceptions.RequestException as e:
+                logger.error(f"FMP request failed for {endpoint}: {e}")
+                if "Read timed out" in str(e) or "Connect timed out" in str(e):
+                     logger.warning(f"FMP Timeout on {endpoint}. Enabling circuit breaker.")
+                     self._circuit_broken = True
                 return None
-            elif e.response.status_code == 403:
-                logger.warning(f"FMP 403 Forbidden for {endpoint} - check API plan")
-            else:
-                logger.error(f"FMP HTTP error for {endpoint}: {e}")
-            return None
-        
-        except requests.exceptions.RequestException as e:
-            logger.error(f"FMP request failed for {endpoint}: {e}")
-            return None
-        
-        except ValueError as e:
-            logger.error(f"FMP JSON parsing error for {endpoint}: {e}")
-            return None
+            
+            except ValueError as e:
+                logger.error(f"FMP JSON parsing error for {endpoint}: {e}")
+                return None
+                
+            # If we get here (and didn't continue/return), break loop
+            break
+            
+        return None
     
     def fetch_analyst_targets(self) -> Optional[AnalystTargets]:
-        """
-        Fetch analyst price target consensus.
-        Uses /stable/price-target-consensus endpoint.
-        
-        Returns:
-            AnalystTargets object or None if fetch fails
-        """
+        """Fetch analyst price target consensus."""
+        if self._circuit_broken: return None
         data = self._make_request(constants.FMP_ENDPOINTS['price_target'])
         
         if not data or not isinstance(data, list) or len(data) == 0:
@@ -139,17 +177,8 @@ class FMPFetcher(BaseFetcher):
             return None
     
     def fetch_profile(self) -> Optional[CompanyProfile]:
-        """
-        Fetch company profile from /stable/profile endpoint.
-        
-        NOTE: If you add new fields here, you MUST update CompanyProfile in utils/unified_schema.py.
-        Otherwise, the data will be dropped during the save process.
-        注意: 如果在此处添加新字段，必须同步更新 utils/unified_schema.py 中的 CompanyProfile 定义。
-        否则，数据将在保存过程中被丢弃。
-        
-        Returns:
-            CompanyProfile object or None if fetch fails
-        """
+        """Fetch company profile."""
+        if self._circuit_broken: return None
         data = self._make_request(constants.FMP_ENDPOINTS['profile'])
         
         if not data or not isinstance(data, list) or len(data) == 0:
@@ -195,13 +224,9 @@ class FMPFetcher(BaseFetcher):
             return None
     
     
-    def fetch_income_statements(self) -> list:
-        """
-        Fetch income statements from FMP /stable/income-statement endpoint.
-        
-        Returns:
-            List of IncomeStatement objects
-        """
+    def fetch_income_statements(self, limit: int = 6) -> list:
+        """Fetch income statements."""
+        if self._circuit_broken: return []
         from utils.unified_schema import IncomeStatement
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
@@ -213,7 +238,10 @@ class FMPFetcher(BaseFetcher):
             return []
         
         statements = []
-        for item in data[:6]:  # Fetch up to 6 years
+        # Apply slice if limit is provided
+        processed_data = data[:limit] if limit else data
+        
+        for item in processed_data:
             try:
                 period_str = item.get('date')
                 if not period_str: continue
@@ -234,10 +262,9 @@ class FMPFetcher(BaseFetcher):
         logger.info(f"Fetched {len(statements)} income statements from FMP for {self.symbol}")
         return statements
     
-    def fetch_balance_sheets(self) -> list:
-        """
-        Fetch balance sheets (Annual + Quarterly).
-        """
+    def fetch_balance_sheets(self, limit: int = 6) -> list:
+        """Fetch balance sheets (Annual + Quarterly)."""
+        if self._circuit_broken: return []
         from utils.unified_schema import BalanceSheet
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
@@ -265,11 +292,20 @@ class FMPFetcher(BaseFetcher):
 
         # 1. Fetch Annual
         annual_data = self._make_request(constants.FMP_ENDPOINTS['balance_sheet'])
-        annual_stmts = process_data(annual_data[:6]) if annual_data else []
+        
+        # Apply limit to annual data. If limit is None, take all.
+        sliced_annual = annual_data[:limit] if (limit and annual_data) else annual_data
+        
+        annual_stmts = process_data(sliced_annual) if sliced_annual else []
 
         # 2. Fetch Quarterly (latest 4 is enough to get the recent one)
-        quarterly_data = self._make_request(constants.FMP_ENDPOINTS['balance_sheet'], {'period': 'quarter', 'limit': 4})
-        quarterly_stmts = process_data(quarterly_data) if quarterly_data else []
+        # If limit is massive (Full Scan), maybe we want more quarterly?
+        # For now, stick to standard logic for quarterly to ensure TTM calculation works
+        if not self._circuit_broken:
+            quarterly_data = self._make_request(constants.FMP_ENDPOINTS['balance_sheet'], {'period': 'quarter', 'limit': 4})
+            quarterly_stmts = process_data(quarterly_data) if quarterly_data else []
+        else:
+            quarterly_stmts = []
 
         # 3. Merge and Deduplicate
         merged = {s.std_period: s for s in annual_stmts}
@@ -284,13 +320,9 @@ class FMPFetcher(BaseFetcher):
         logger.info(f"Fetched {len(final_list)} balance sheets (Annual+Quarterly) from FMP")
         return final_list
     
-    def fetch_cash_flow_statements(self) -> list:
-        """
-        Fetch cash flow statements from FMP /stable/cash-flow-statement endpoint.
-        
-        Returns:
-            List of CashFlow objects
-        """
+    def fetch_cash_flow_statements(self, limit: int = 6) -> list:
+        """Fetch cash flow statements."""
+        if self._circuit_broken: return []
         from utils.unified_schema import CashFlow
         from utils.schema_mapper import SchemaMapper
         from utils.field_registry import DataSource as RegistryDataSource
@@ -302,7 +334,10 @@ class FMPFetcher(BaseFetcher):
             return []
         
         statements = []
-        for item in data[:6]:
+        # Apply slice if limit is provided
+        processed_data = data[:limit] if limit else data
+
+        for item in processed_data:
             try:
                 period_str = item.get('date')
                 if not period_str: continue
@@ -323,12 +358,7 @@ class FMPFetcher(BaseFetcher):
         return statements
     
     def fetch_all(self) -> dict:
-        """
-        Fetch all available data from FMP.
-        
-        Returns:
-            Dictionary with analyst_targets, profile, and financial statements
-        """
+        """Fetch all available data from FMP."""
         logger.info(f"Starting FMP data fetch for {self.symbol}")
         
         return {
@@ -341,6 +371,7 @@ class FMPFetcher(BaseFetcher):
 
     def fetch_ratios(self) -> Optional[CompanyProfile]:
         """Fetch valuation ratios."""
+        if self._circuit_broken: return None
         data = self._make_request(constants.FMP_ENDPOINTS['ratios'], {'limit': 1})
         if not data: return None
         
@@ -359,6 +390,7 @@ class FMPFetcher(BaseFetcher):
 
     def fetch_key_metrics(self) -> Optional[CompanyProfile]:
         """Fetch key metrics (Market Cap, BVPS, etc)."""
+        if self._circuit_broken: return None
         data = self._make_request(constants.FMP_ENDPOINTS['key_metrics'], {'limit': 1})
         if not data: return None
         
@@ -374,23 +406,11 @@ class FMPFetcher(BaseFetcher):
              return None
 
     def fetch_forecast_data(self) -> Optional[ForecastData]:
-        """
-        Fetch comprehensive forecast data from FMP.
-        
-        Combines:
-        - Analyst estimates (EPS/Revenue)
-        - Price targets
-        - Analyst ratings distribution
-        - Growth estimates
-        
-        Returns:
-            ForecastData object or None if all fetches fail
-        """
+        """Fetch comprehensive forecast data from FMP."""
+        if self._circuit_broken: return None
         forecast = ForecastData()
         has_data = False
         
-        # 1. Fetch analyst estimates (EPS/Revenue estimates)
-        logger.info(f"Fetching analyst estimates for {self.symbol}...")
         # 1. Fetch analyst estimates (EPS/Revenue estimates)
         logger.info(f"Fetching analyst estimates for {self.symbol}...")
         # FMP stable requires 'period' parameter (annual is free, quarter is premium)
@@ -427,6 +447,8 @@ class FMPFetcher(BaseFetcher):
                 logger.info(f"  ✓ Got analyst estimates for {self.symbol}")
             except (ValueError, KeyError) as e:
                 logger.warning(f"Failed to parse analyst estimates: {e}")
+        elif self._circuit_broken:
+            return None # Stop if broke
         
         # 2. Fetch price targets
         logger.info(f"Fetching price targets for {self.symbol}...")
@@ -454,6 +476,8 @@ class FMPFetcher(BaseFetcher):
                 logger.info(f"  ✓ Got price targets for {self.symbol}")
             except (ValueError, KeyError) as e:
                 logger.warning(f"Failed to parse price targets: {e}")
+        elif self._circuit_broken:
+            return None
         
         # 3. Fetch analyst ratings distribution (if endpoint exists)
         # Note: FMP may have this in 'grade' or 'rating' endpoints - check API docs

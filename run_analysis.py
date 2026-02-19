@@ -32,8 +32,8 @@ from fundamentals.financial_scorers.financial_scorers_output import FinancialSco
 from fundamentals.technical_scorers.technical_scorers_output import TechnicalScorerGenerator
 from fundamentals.valuation import ValuationCalculator
 from fundamentals.valuation.valuation_output import ValuationOutput
-from fundamentals.ai_commentary.data_aggregator import DataAggregator
-from fundamentals.ai_commentary.commentary_generator import CommentaryGenerator
+from fundamentals.stock.data_aggregator import DataAggregator
+from fundamentals.stock.stock_ai_analyst import StockAIAnalyst
 from utils.logger import setup_logger
 from utils.console_utils import symbol as ICON, print_step, print_separator
 from utils.report_utils import (
@@ -41,6 +41,7 @@ from utils.report_utils import (
     format_technical_score_report,
     format_valuation_report
 )
+from fundamentals.reporting.report_assembler import ReportAssembler
 
 logger = setup_logger('run_analysis')
 
@@ -59,7 +60,7 @@ def print_header(title):
 
 
 def main():
-    print_header("QUANTITATIVE STOCK ANALYSIS SYSTEM V3.0")
+    print_header("QUANTITATIVE STOCK ANALYSIS SYSTEM")
     
     # --- Input ---
     force_fetch = "--force-fetch" in sys.argv
@@ -120,7 +121,8 @@ def main():
             if len(sys.argv) <= 1:
                 choice = input("  Update stock data? (y/N): ").strip().lower()
                 if choice == 'y':
-                     stock_data = stock_loader.get_stock_data(symbol)
+                     # Fix: Force refresh when user explicitly asks for update
+                     stock_data = stock_loader.get_stock_data(symbol, force_refresh=True)
                      stock_loader.save_stock_data(stock_data, output_dir)
                 else:
                     stock_data = stock_loader.load_stock_data(stock_path)
@@ -341,47 +343,29 @@ def main():
         aggregated_data = aggregator.aggregate(symbol)
         
         if aggregated_data:
-            generator = CommentaryGenerator()
-            report = generator.generate_report(aggregated_data)
+            # Use StockAIAnalyst for generation
+            analyst = StockAIAnalyst()
+            report = analyst.generate_report(aggregated_data)
             
-            # Append raw data appendix (Same logic as run_commentary.py)
+            # Append raw data appendix
             print(f"   Generating data appendix...")
             appendix = aggregator.get_raw_data_appendix(symbol)
-            if appendix:
-                if report:
-                    report = report + appendix
-                else:
-                    report = f"# AI Analysis - {symbol} (Generation Failed)\n\n> [!WARNING]\n> AI commentary could not be generated due to API availability issues.\n\n" + appendix
             
-            # Append Disclaimer
-            disclaimer = """
-
----
-
-### Disclaimer / 免责声明
-
-**English:**
-This report is for informational and educational purposes only and does not constitute financial product advice. It has been prepared without taking into account your personal objectives, financial situation, or needs. Past performance is not a reliable indicator of future performance. You should consider seeking independent professional advice before making any investment decisions.
-
-**中文：**
-本报告仅供信息参考及教育用途，不构成任何金融产品建议。本报告内容在编制时未考虑您的个人投资目标、财务状况或特定需求。历史表现并非未来表现的可靠指标。在做出任何投资决策之前，您应考虑寻求独立的专业咨询。
-"""
-            if report:
-                report = report + disclaimer
-            if report:
-                report_file = f"ai_analysis_{symbol}_{current_date}.md"
-                # Save to generated_reports
-                report_dir = os.path.join(current_dir, DATA_REPORTS)
-                if not os.path.exists(report_dir):
-                    os.makedirs(report_dir, exist_ok=True)
-                    
-                report_path = os.path.join(report_dir, report_file)
-                with open(report_path, 'w', encoding='utf-8') as f:
-                    f.write(report)
-                print(f"\n[OK] AI Report Generated Successfully!")
-                print(f"   Path: {report_path}")
-            else:
-                print("  [ERROR] AI generation failed (API error or empty response).")
+            # Use Assembler to build final report
+            report = ReportAssembler.assemble_stock_report(report, appendix)
+            
+            # Save to generated_reports
+            report_file = f"ai_analysis_{symbol}_{current_date}.md"
+            report_dir = os.path.join(current_dir, DATA_REPORTS)
+            if not os.path.exists(report_dir):
+                os.makedirs(report_dir, exist_ok=True)
+                
+            report_path = os.path.join(report_dir, report_file)
+            with open(report_path, 'w', encoding='utf-8') as f:
+                f.write(report)
+                
+            print(f"\n[OK] AI Report Generated Successfully!")
+            print(f"   Path: {report_path}")
         else:
             print("  [ERROR] Data aggregation failed.")
 

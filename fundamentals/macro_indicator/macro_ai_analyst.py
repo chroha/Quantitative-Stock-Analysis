@@ -11,10 +11,10 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 from pathlib import Path
-from config.settings import settings
-from config.constants import DATA_CACHE_MACRO
+from fundamentals.reporting.llm_client import LLMClient
 from utils.logger import setup_logger
-from utils.numeric_utils import safe_format  # Centralized numeric formatting
+from config.constants import DATA_CACHE_MACRO
+from utils import safe_format
 
 logger = setup_logger('macro_ai_analyst')
 
@@ -25,26 +25,13 @@ class MacroAIAnalyst:
     """
     
     def __init__(self):
-        self.api_key = settings.GOOGLE_AI_KEY
-        # Aligning with known working models from commentary_generator.py
-        self.models = [
-            "gemini-3-flash-preview",
-            "gemini-2.5-flash",
-            "gemini-2.5-flash-lite",
-            "gemini-2.0-flash-exp",
-            "gemini-1.5-pro",
-            "gemini-1.5-flash"
-        ]
+        self.client = LLMClient()
         
     def generate_commentary(self, data: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, str]:
         """
         Generate bilingual commentary using the V4.0 "Cynical CIO" approach.
         Returns: {'cn': '...', 'en': '...'}
         """
-        if not self.api_key:
-            print("  [AI] ERROR: Google AI Key is missing in settings.")
-            return {'cn': 'AI API Key missing.', 'en': 'AI API Key missing.'}
-            
         # 1. Prepare Data Buffet (Full Context + Pre-computed Signals)
         ai_context = self._prepare_v4_context(data, analysis)
         
@@ -52,26 +39,43 @@ class MacroAIAnalyst:
         try:
             project_root = Path(__file__).parent.parent.parent
             debug_path = project_root / DATA_CACHE_MACRO / "debug_ai_context.json"
+            if not debug_path.parent.exists():
+                debug_path.parent.mkdir(parents=True, exist_ok=True)
             with open(debug_path, 'w', encoding='utf-8') as f:
                 json.dump(ai_context, f, indent=2, ensure_ascii=False)
             print(f"  [AI] V4 Context saved to: {debug_path}")
         except Exception as e:
+            # Import DATA_CACHE_MACRO locally if needed or assume it's available via previous import logic?
+            # Actually constants might not be imported here. 
+            # Looking at original code, it didn't import constants explicitly in snippet?
+            # Ah, lines 1-60 didn't show imports of constants.
+            # Let's hope constants are imported or just catch exception.
             print(f"  [AI] Failed to save debug context: {e}")
 
         # 2. Build V4.0 Prompt
         prompt = self._build_v4_prompt(ai_context)
         
-        # 3. Call API
-        for model in self.models:
-            print(f"  [AI] Attempting model: {model}...")
-            response_text = self._call_api(model, prompt)
-            if response_text:
-                print(f"  [AI] Success with {model}")
-                return self._parse_response(response_text)
-            else:
-                print(f"  [AI] Failed with {model}")
+        # 3. Call API via LLMClient
+        print(f"  [AI] Requesting analysis from AI...")
+        response_text = self.client.generate_text(prompt)
+        
+        if response_text:
+            result = self._parse_response(response_text)
+            
+            # Extract headline translations and store in data for report renderer
+            news_cn = result.pop('news_cn', [])
+            if news_cn and isinstance(news_cn, list):
+                # Build lookup: English -> Chinese
+                headlines = ai_context.get('headlines_to_translate', [])
+                translations = {}
+                for en, cn in zip(headlines, news_cn):
+                    translations[en] = cn
+                data['news_translations'] = translations
+                logger.info(f"Extracted {len(translations)} headline translations from AI response")
+            
+            return result
                 
-        return {'cn': 'AI Generation Failed (All models).', 'en': 'AI Generation Failed (All models).'}
+        return {'cn': 'AI Generation Failed.', 'en': 'AI Generation Failed.'}
 
     def _prepare_v4_context(self, data: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -139,8 +143,8 @@ class MacroAIAnalyst:
             "structural_divergences": divergences,
             "regime": analysis, # Pass full analysis dict
             "market_summary": {
-                "indices": {k: safe_format(v.get('change_1d_safe')) for k, v in assets.get('Indices', {}).items()},
-                "commodities": {k: safe_format(v.get('change_1d_safe')) for k, v in assets.get('Commodities', {}).items()},
+                "indices": {k: safe_format(v.get('change_1d_safe'), format_spec="+.2%") for k, v in assets.get('Indices', {}).items()},
+                "commodities": {k: safe_format(v.get('change_1d_safe'), format_spec="+.2%") for k, v in assets.get('Commodities', {}).items()},
                 "rates": {
                     "10y": econ.get('Rates & liquidity', {}).get('10Y Treasury', {}),
                     "hy_spread": econ.get('Rates & liquidity', {}).get('HY Spread', {})
@@ -150,7 +154,20 @@ class MacroAIAnalyst:
                 "aud_usd": assets.get('Currencies', {}).get('AUD/USD', {}),
                 "copper": assets.get('Commodities', {}).get('Copper', {}),
                 "china_proxy": assets.get('Currencies', {}).get('AUD/CNY', {})
-            }
+            },
+            "news_intelligence": {
+                "general": [x.model_dump() for x in data.get('market_news', {}).get('general', [])[:10]],
+                "forex": [x.model_dump() for x in data.get('market_news', {}).get('forex', [])[:3]],
+                "crypto": [x.model_dump() for x in data.get('market_news', {}).get('crypto', [])[:5]]
+            },
+            # Headlines to translate for Chinese report (must match report display counts)
+            "headlines_to_translate": [
+                x.headline for x in data.get('market_news', {}).get('general', [])[:10] if hasattr(x, 'headline')
+            ] + [
+                x.headline for x in data.get('market_news', {}).get('forex', [])[:3] if hasattr(x, 'headline')
+            ] + [
+                x.headline for x in data.get('market_news', {}).get('crypto', [])[:5] if hasattr(x, 'headline')
+            ]
         }
         return context
 
@@ -159,7 +176,7 @@ class MacroAIAnalyst:
         
         json_str = json.dumps(context, indent=2, ensure_ascii=False)
         
-        prompt = f"""
+        prompt = f'''
 ### ROLE: Global Macro CIO (Institutional Grade)
 **Client:** Sophisticated Australian Portfolio Manager.
 **Tone:** **Dispassionate, Sharp, High-Conviction.** Avoid emotional language. Use precise financial terminology. 
@@ -191,93 +208,64 @@ class MacroAIAnalyst:
    - Focus on **Terms of Trade**. If Copper/Iron Ore diverge from AUD, label AUD as **"Fundamentally Mispriced"**.
    - Provide a trade structure (Entry/Stop/Target) based on this divergence.
 
+**6. NEWS INTELLIGENCE (Synthesize 'news_intelligence'):**
+   - Correlate top news headlines with market moves.
+   - If Crypto news is bullish but price is flat, flag **"Seller Exhaustion"** or **"Hidden Distribution"**.
+   - Use Forex news to explain AUD/USD anomalies.
+
+**7. HEADLINE TRANSLATION:**
+   - Translate ALL headlines listed in `headlines_to_translate` to concise Chinese (~20 chars, financial-professional tone).
+   - Return them as a `news_cn` array in the same order as the input list.
+
 ### OUTPUT FORMAT (Strict JSON)
-Return JSON with "cn" and "en". Content in Markdown.
+Return JSON with "cn", "en", and "news_cn". Content in Markdown.
 **IMPORTANT:** For the Chinese version ("cn"), use ONLY Chinese titles without any English in parentheses.
 
 {{
-  "cn": "### 🦅 首席视点\\n\\n**📉 核心逻辑：{{Professional Title in Chinese, e.g., 流动性压力与估值错配}}**\\n{{Paragraph: A cold, hard look at the macro regime.}}\\n\\n**🔍 结构性脆弱诊断:**\\n- **信息时滞:** {{Discuss CPI latency objectively}}\\n- **抵押品压力:** {{Analyze Gold drop as a liquidity/collateral signal}}\\n- **信用背离:** {{Discuss Credit vs Equity gap}}\\n\\n**⚖️ 情景概率:**\\n- 🔻 **去杠杆风险 (概率: X%):** {{Mechanism: Margin calls -> Selling}}\\n- 🔼 **通胀交易 (概率: Y%):** {{Mechanism: Real assets rally}}\\n\\n**🇦🇺 澳洲策略:**\\n{{Trade Idea based on Terms of Trade divergence}}\\n\\n**🛡️ 风险管理指令:**\\n1. {{Capital Preservation Step}}\\n2. {{Alpha Generation Step}}\\n3. {{Liquidity Management}}",
-  "en": "..."
+  "cn": "### 🦅 首席视点\\\\n\\\\n**📉 核心逻辑：{{Professional Title in Chinese, e.g., 流动性压力与估值错配}}**\\\\n{{Paragraph: A cold, hard look at the macro regime.}}\\\\n\\\\n**🔍 结构性脆弱诊断:**\\\\n- **信息时滞:** {{Discuss CPI latency objectively}}\\\\n- **抵押品压力:** {{Analyze Gold drop as a liquidity/collateral signal}}\\\\n- **信用背离:** {{Discuss Credit vs Equity gap}}\\\\n\\\\n**📰 关键情报:**\\\\n- {{Synthesize key news impact on assets}}\\\\n\\\\n**⚖️ 情景概率:**\\\\n- 🔻 **去杠杆风险 (概率: X%):** {{Mechanism: Margin calls -> Selling}}\\\\n- 🔼 **通胀交易 (概率: Y%):** {{Mechanism: Real assets rally}}\\\\n\\\\n**🇦🇺 澳洲策略:**\\\\n{{Trade Idea based on Terms of Trade divergence}}\\\\n\\\\n**🛡️ 风险管理指令:**\\\\n1. {{Capital Preservation Step}}\\\\n2. {{Alpha Generation Step}}\\\\n3. {{Liquidity Management}}",
+  "en": "...",
+  "news_cn": ["华尔街资深人士建议抛售美股", "原油期货因美伊紧张攀升", ...]
 }}
-"""
+'''
         return prompt
 
     def _parse_response(self, text: str) -> Dict[str, str]:
         """Parse JSON response, handling potential code blocks."""
-        clean_text = text.strip()
-        if clean_text.startswith("```json"):
-            clean_text = clean_text[7:]
-        if clean_text.startswith("```"):
-            clean_text = clean_text.strip("`")
-        if clean_text.endswith("```"): # Remove trailing block format if any
-             clean_text = clean_text[:-3]
-             
-        try:
-            return json.loads(clean_text)
-        except json.JSONDecodeError:
-            logger.error(f"Failed to decode AI JSON: {text[:100]}...")
-            # Fallback: return raw text in both if parse fails
-            return {'cn': text, 'en': text}
-
-    def _call_api(self, model_name: str, prompt: str) -> Optional[str]:
-        """Call Gemini API with retry logic and graceful error handling."""
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={self.api_key}"
-        headers = {"Content-Type": "application/json"}
-        payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
-            "generationConfig": {"temperature": 0.5, "responseMimeType": "application/json"}
-        }
+        import re
+        clean = text.strip()
         
-        max_retries = 1
-        for attempt in range(max_retries + 1):
+        # Strategy 1: Regex-based code block removal (handles all variations)
+        block_match = re.search(r'```(?:json)?\s*\n?([\s\S]*?)\n?\s*```', clean)
+        if block_match:
+            clean = block_match.group(1).strip()
+        
+        try:
+            return json.loads(clean)
+        except json.JSONDecodeError:
+            pass
+        
+        # Strategy 2: Extract outermost JSON object by finding first { and last }
+        first_brace = clean.find('{')
+        last_brace = clean.rfind('}')
+        if first_brace >= 0 and last_brace > first_brace:
             try:
-                # Keep timeout at 60s
-                resp = requests.post(url, headers=headers, json=payload, timeout=60)
-                
-                if resp.status_code == 200:
-                    result = resp.json()
-                    
-                    # Print Token Usage
-                    usage = result.get('usageMetadata', {})
-                    if usage:
-                        prompt_tok = usage.get('promptTokenCount', 0)
-                        cand_tok = usage.get('candidatesTokenCount', 0)
-                        total_tok = usage.get('totalTokenCount', 0)
-                        print(f"  [AI] Token Usage: Input={prompt_tok}, Output={cand_tok}, Total={total_tok}")
-                    
-                    try:
-                        return result['candidates'][0]['content']['parts'][0]['text']
-                    except (KeyError, IndexError):
-                        print(f"  [AI] Parse Error: No candidates in {model_name} response.")
-                        return None
-                
-                # Handle Rate Limits (429) or Server Overload (503)
-                elif resp.status_code in [429, 503]:
-                    code_msg = "Rate limit" if resp.status_code == 429 else "Server overloaded"
-                    wait_time = 3 * (attempt + 1)
-                    if attempt < max_retries:
-                        print(f"  [AI] {code_msg} ({resp.status_code}). Retrying in {wait_time}s...")
-                        time.sleep(wait_time)
-                        continue
-                    else:
-                        print(f"  [AI] {code_msg} ({resp.status_code}). Moving to next model.")
-                        return None
-                
-                # Handle 404
-                elif resp.status_code == 404:
-                    print(f"  [AI] Model {model_name} not found (404).")
-                    return None
-                    
-                else:
-                    logger.warning(f"AI Error {resp.status_code}: {resp.text}")
-                    print(f"  [AI] HTTP Error {resp.status_code}")
-                    return None
+                return json.loads(clean[first_brace:last_brace + 1])
+            except json.JSONDecodeError:
+                pass
+        
+        # Strategy 3: Same on original text (in case stripping removed needed chars)
+        first_brace = text.find('{')
+        last_brace = text.rfind('}')
+        if first_brace >= 0 and last_brace > first_brace:
+            try:
+                return json.loads(text[first_brace:last_brace + 1])
+            except json.JSONDecodeError:
+                pass
+        
+        logger.error(f"Failed to decode AI JSON after all strategies: {text[:200]}...")
+        # Final fallback: strip code block markers and return cleaned text
+        fallback = re.sub(r'```(?:json)?', '', text).strip().rstrip('`').strip()
+        return {'cn': fallback, 'en': fallback}
 
-            except Exception as e:
-                logger.error(f"AI Exception: {e}")
-                print(f"  [AI] Connection failed: {e}")
-                if attempt < max_retries:
-                    time.sleep(2)
-                    continue
-            
-        return None
+
+

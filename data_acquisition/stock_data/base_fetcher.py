@@ -114,23 +114,23 @@ class BaseFetcher(ABC):
         return clean_numeric(value)
 
     @abstractmethod
-    def fetch_income_statements(self) -> list:
+    def fetch_income_statements(self, limit: int = None) -> list:
         """Fetch income statements."""
         pass
 
     @abstractmethod
-    def fetch_balance_sheets(self) -> list:
+    def fetch_balance_sheets(self, limit: int = None) -> list:
         """Fetch balance sheets."""
         pass
 
     @abstractmethod
-    def fetch_cash_flow_statements(self) -> list:
+    def fetch_cash_flow_statements(self, limit: int = None) -> list:
         """Fetch cash flow statements."""
         pass
         
-    def fetch_cash_flows(self) -> list:
+    def fetch_cash_flows(self, limit: int = None) -> list:
         """Alias for fetch_cash_flow_statements (Backward Compatibility)."""
-        return self.fetch_cash_flow_statements()
+        return self.fetch_cash_flow_statements(limit=limit)
 
 # Fetcher registry for dynamic source selection
 class FetcherRegistry:

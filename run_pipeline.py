@@ -88,7 +88,7 @@ def update_benchmarks():
     loader = BenchmarkDataLoader()
     json_path = loader.get_output_path()
     
-    # Interaction
+    # Interaction: Default No
     choice = input("  Update industry benchmarks? (y/N): ").strip().lower()
     force_refresh = (choice == 'y')
     
@@ -102,7 +102,7 @@ def update_benchmarks():
         sys.exit(1)
 
 def run_stock_analysis(symbols: List[str]):
-    """Runs run_analysis.py for each symbol with API Key rotation."""
+    """Runs run_debug_analysis.py for each symbol with API Key rotation."""
     print_step(3, 5, "Stock Analysis Batch")
     
     # Auto-detect number of API key sets from FMP_API_KEY (primary source)
@@ -113,6 +113,9 @@ def run_stock_analysis(symbols: List[str]):
     if num_key_sets > 1:
         print(f"  {ICON.INFO} API Key Rotation Active: {num_key_sets} key sets available")
     
+    # Path to the moved analysis script
+    analysis_script = os.path.join(current_dir, "devtools", "debug_tools", "run_debug_analysis.py")
+    
     for i, symbol in enumerate(symbols):
         # Rotate key set index for each stock (Round-Robin)
         key_index = i % num_key_sets
@@ -122,8 +125,9 @@ def run_stock_analysis(symbols: List[str]):
             # Pass the key set index to the subprocess via environment variable
             env = os.environ.copy()
             env['_KEY_SET_INDEX'] = str(key_index)
+            env['LOG_MODE'] = 'pipeline_quiet' # Clean output
             
-            cmd = [sys.executable, "run_analysis.py", symbol]
+            cmd = [sys.executable, analysis_script, symbol]
             subprocess.run(cmd, check=True, env=env)
         except subprocess.CalledProcessError as e:
             print(f"  {ICON.FAIL} Analysis failed for {symbol}")
@@ -131,17 +135,18 @@ def run_stock_analysis(symbols: List[str]):
             print(f"  {ICON.FAIL} Error executing analysis for {symbol}: {e}")
 
 def run_summary(symbols: List[str]):
-    """Runs run_getform.py to generate summary CSV."""
+    """Runs run_debug_summary.py to generate summary CSV."""
     print_step(4, 5, "Generating Summary Report")
     
+    script_path = os.path.join(current_dir, "devtools", "debug_tools", "run_debug_summary.py")
     try:
-        cmd = [sys.executable, "run_getform.py"] + symbols
+        cmd = [sys.executable, script_path] + symbols
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError:
         print(f"  {ICON.FAIL} Summary generation failed")
 
 def run_macro():
-    """Runs run_macro_report.py."""
+    """Runs run_debug_macro.py."""
     print_step(5, 5, "Macro Analysis")
     
     # Check if report for today already exists
@@ -151,15 +156,16 @@ def run_macro():
     
     if os.path.exists(report_path):
         print(f"  {ICON.INFO} Macro report for today found: {report_filename}")
-        # Default Y means "Skip"
-        choice = input(f"  Skip macro analysis? (Y/n): ").strip().lower()
-        if choice != 'n':
+        # Standardized prompt: Run (y/N)? Default N.
+        choice = input(f"  Re-run macro analysis? (y/N): ").strip().lower()
+        if choice != 'y':
             print(f"  {ICON.OK} Skipped macro analysis.")
             return
 
+    script_path = os.path.join(current_dir, "devtools", "debug_tools", "run_debug_macro.py")
     try:
-        # This will be interactive for Forward PE input
-        cmd = [sys.executable, "run_macro_report.py"]
+        # This will be interactive for Forward PE input, allow it
+        cmd = [sys.executable, script_path]
         subprocess.run(cmd, check=True)
     except subprocess.CalledProcessError:
         print(f"  {ICON.FAIL} Macro analysis failed")

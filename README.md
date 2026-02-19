@@ -10,7 +10,7 @@ This is a quantitative stock analysis and screening tool built for personal use.
 
 ### 1. Automated Analysis Pipeline (`run_pipeline.py`)
 
-**New!** A "One-Stop Shop" script that orchestrates the entire workflow:
+A "One-Stop Shop" script that orchestrates the entire workflow:
 
 - **Automated Workflow**:
   1. **Clean Cache**: Clears old data (intelligently matches industry benchmark CSVs).
@@ -24,12 +24,12 @@ This is a quantitative stock analysis and screening tool built for personal use.
 
 Performs a full-pipeline analysis for a single stock:
 
-- **Data Acquisition**: Employs a 4-tier cascading data source strategy:
+- **Data Acquisition**: Employs a multi-tier cascading data source strategy:
   - **T1 Yahoo Finance**: Primary source for real-time quotes and historical financials.
   - **T2 SEC EDGAR**: Official XBRL data directly from the U.S. Securities and Exchange Commission.
   - **T3 FMP**: Supplements with analyst estimates and structured data.
   - **T4 Alpha Vantage**: Final fallback to fill gaps for less-covered stocks.
-  - **Forecast Data**: Intelligent 3-source merge (Yahoo, FMP, Finnhub) for forward-looking metrics:
+  - **T5 Finnhub**: Company news, insider sentiment/transactions, peer companies, and supplemental forecast data:
     - Forward EPS/PE (next 12-month estimates)
     - Earnings & revenue growth estimates (current/next year)
     - Analyst price targets (low/high/consensus)
@@ -44,12 +44,10 @@ Performs a full-pipeline analysis for a single stock:
   - Value Investing (Graham Number, Peter Lynch Fair Value, PEG Ratio)
   - Analyst Consensus Targets
 - **Data Provenance**: Tracks the exact source (Yahoo, FMP, Finnhub, Edgar) for every data point in the final report.
-- **AI Investment Commentary**: Uses Google Gemini to generate bilingual analysis reports including:
+- **AI Investment Commentary**: Uses Google Gemini to generate bilingual (CN/EN) analysis reports including:
   - **Forward Metrics Analysis**: Current vs forward P/E, EPS comparison tables with auto-calculated changes
   - **Earnings Surprise Analysis**: Detailed 4-quarter surprise table with average beat% and consistency metrics
-  - Integrated historical and forward-looking insights
-
-### 3. Macro Strategy Analysis (`run_macro_report.py`)
+  - **Market Intelligence Appendix**: Clickable news headlines (via Finnhub), insider sentiment table (MSPR), insider transactions, and peer list
 
 ### 3. Batch Stock Scanner (`run_scanner.py`)
 
@@ -61,10 +59,11 @@ Performs a full-pipeline analysis for a single stock:
 
 ### 4. Macro Strategy Analysis (`run_macro_report.py`)
 
-A completely new macroeconomic analysis module for top-down market strategy:
+A macroeconomic analysis module for top-down market strategy:
 
-- **AI Macro Strategy**: Generates "Institutional Grade CIO" commentary by analyzing macro anomalies and divergences.
-- **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation) and Yahoo Finance (Global Markets).
+- **AI Macro Strategy**: Generates "Institutional Grade CIO" bilingual (CN/EN) commentary by analyzing macro anomalies and divergences — including scenario probabilities and trade structures.
+- **Global Market News Intelligence**: Fetches and displays categorized market news (General/Forex/Crypto) via Finnhub, with AI-powered Chinese headline translation (merged into a single API call).
+- **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation), Yahoo Finance (Global Markets), and Finnhub (Market News).
 - **Quantitative Framework**: Includes Economic Cycle positioning, ERP extreme valuations, and Aussie Terms of Trade analysis.
 - **Smart API Rotation**: Supports multi-key configuration in `.env` (comma-separated), automatically load-balancing requests to bypass rate limits.
 
@@ -72,29 +71,32 @@ A completely new macroeconomic analysis module for top-down market strategy:
 
 ```text
 .
-├── data_acquisition/       # Data Fetching Modules (Yahoo, EDGAR, FMP, Alpha Vantage)
+├── data_acquisition/       # Data Fetching Modules (Yahoo, EDGAR, FMP, Alpha Vantage, Finnhub)
+│   ├── orchestration/      # Data Pipeline Orchestrator & Strategies
 │   ├── benchmark_data/     # Industry Benchmark Data
-│   ├── stock_data/         # Stock Financial Data
+│   ├── stock_data/         # Stock Financial Data (incl. Finnhub fetcher)
 │   └── macro_data/         # Macro Economic Data (FRED, Yahoo)
 ├── fundamentals/           # Core Analysis Logic
 │   ├── financial_data/     # Metric Calculation (Growth, Profitability)
 │   ├── financial_scorers/  # Financial Scoring Engine
 │   ├── technical_scorers/  # Technical Indicator Scoring
 │   ├── valuation/          # Valuation Models
-│   ├── ai_commentary/      # AI Report Generation
-│   └── macro_indicator/    # Macro Strategy Logic
+│   ├── stock/              # Stock AI Report: ContextBuilder, Prompts, Analyst
+│   ├── reporting/          # Shared AI Infrastructure: LLMClient, ReportAssembler
+│   └── macro_indicator/    # Macro Strategy Logic & Report Generation
 ├── data/                   # [Unified Data Directory]
 │   └── cache/              # Cached data (gitignored)
 │       ├── stock/          # Per-stock analysis data (JSON)
 │       ├── macro/          # Macro economic snapshots
 │       └── benchmark/      # Industry benchmarks (JSON + CSV)
+├── devtools/               # Developer Tools (not part of production pipeline)
+│   └── debug_tools/        # Data auditor, model auditor, report auditor
 ├── generated_reports/      # Final Reports (AI, Scan Summaries)
 ├── report_example/         # Report Examples
 ├── config/                 # Configuration (Thresholds & Settings)
-├── user_config/            # User Private Config (.env only)
 ├── utils/                  # Utilities (Logger, Schema, Helpers)
 ├── run_analysis.py         # Single Stock Analysis Entry
-├── run_pipeline.py         # Automated Analysis Pipeline [New]
+├── run_pipeline.py         # Automated Analysis Pipeline
 ├── run_scanner.py          # Batch Scanner Entry
 ├── run_getform.py          # Form Generation Tool
 └── run_macro_report.py     # Macro Strategy Report Entry
@@ -168,6 +170,9 @@ GEMINI_API_KEY=your_key_here
 
 # [Required] FRED API Key: For macro economic data
 FRED_API_KEY=your_key_here
+
+# [Required] Finnhub: Company news, insider sentiment/transactions, peers, market news
+FINNHUB_API_KEY=your_key_here
 ```
 
 ### 3. Get API Keys
@@ -176,6 +181,7 @@ FRED_API_KEY=your_key_here
 - **FMP**: [Sign Up (Free Tier)](https://site.financialmodelingprep.com/) - Free tier has limitations (max 250 requests/day).
 - **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - Free to use.
 - **FRED**: [Get Key (Free)](https://fred.stlouisfed.org/) - Free to use.
+- **Finnhub**: [Get Key (Free)](https://finnhub.io/register) - Free tier covers all features used (news, sentiment, peers).
 
 ### 4. Advanced Configuration
 
@@ -218,6 +224,15 @@ python run_getform.py AAPL MSFT
 # Aggregates scores and valuations into a single CSV file
 ```
 
+### System Cleanup (`run_clean_cache.py`)
+
+```bash
+python run_clean_cache.py
+# Interactive tool to:
+# 1. Clear Cache (Normal Scan keeps benchmark CSVs, Full Scan deletes everything)
+# 2. Clear Generated Reports (Optional)
+```
+
 ### Run Macro Strategy Report (Macro Mode)
 
 ```bash
@@ -227,19 +242,24 @@ python run_macro_report.py
 
 ## Development & Debugging
 
-### Data Audit System (New)
+All developer tools are in `devtools/debug_tools/`. These do not affect the production pipeline.
 
-Troubleshoot data anomalies, missing fields, or DDM failures using the built-in audit tool:
+### Data Audit Tools
 
 ```bash
-python data_acquisition/audit/data_auditor.py
-# Interactive mode (prompts for symbol) or pass symbol as argument:
-# python data_acquisition/audit/data_auditor.py TSM
+# Full data pipeline audit (raw API → merge → schema)
+python devtools/debug_tools/run_data_auditor.py AAPL
+
+# Valuation model audit (checks DCF/DDM/PE calculation outputs)
+python devtools/debug_tools/run_model_auditor.py AAPL
+
+# AI report audit (checks context building and prompt generation)
+python devtools/debug_tools/run_report_auditor.py AAPL
 ```
 
-**What it does:**
+**What the data auditor does:**
 
-1. **Captures Raw Data**: Saves exact API responses from Yahoo/FMP/EDGAR to `debug_data/`.
+1. **Captures Raw Data**: Saves exact API responses from Yahoo/FMP/EDGAR/Finnhub to `devtools/audit_output/`.
 2. **Isolates Fetchers**: Runs each data source in isolation to verify parsing logic.
 3. **Traces Pipeline**: Snapshots data as it flows through merging and currency normalization steps.
 4. **Reports**:
@@ -248,19 +268,25 @@ python data_acquisition/audit/data_auditor.py
 
 ## System Architecture
 
-The Data Acquisition module has been re-architected to separate concerns (Flow vs. Quality vs. Execution), moving away from monolithic scripts.
+The system is organized into three layers: **Data Acquisition**, **Analysis (Fundamentals)**, and **Reporting**.
 
 ### 1. Data Orchestrator (`data_acquisition/orchestration/`)
 
 - **Role**: The "Conductor".
-- **Function**: Manages the execution flow of the 5-layer data strategy. It doesn't fetch data itself but directs Fetchers based on the plan.
-- **Benefit**: Decouples business logic (flow control) from implementation details (API calls), making the acquisition pipeline robust and easy to visualize.
+- **Function**: Manages the multi-tier data strategy. It doesn't fetch data itself — it directs Fetchers based on a plan and triggers fallback sources when gaps are detected.
+- **Benefit**: Decouples business logic (flow control) from implementation details (API calls).
 
 ### 2. Gap Analyzer
 
 - **Role**: The "Inspector".
-- **Function**: A dedicated component that assesses data quality after each fetch phase. It generates a "Quality Report" identifying missing critical fields (e.g., "Missing R&D Expenses", "History < 5 Years").
+- **Function**: Assesses data quality after each fetch phase, generating a Quality Report that identifies missing critical fields.
 - **Benefit**: Centralized quality standards. Changing a data requirement (e.g., "Must have EBITDA") is done in one place, affecting all fetchers and auditors consistently.
+
+### 3. Analysis Layer (`fundamentals/`)
+
+- **`stock/`**: Stock-domain AI pipeline — `ContextBuilder` (data prep), `Prompts` (prompt engineering), `StockAIAnalyst` (orchestration).
+- **`reporting/`**: Shared AI infrastructure — `LLMClient` (Gemini API wrapper), `ReportAssembler` (formatting).
+- **`macro_indicator/`**: Macro-domain logic — `MacroAIAnalyst` (CIO commentary generation), `MacroMarkdownReport` (bilingual report rendering).
 
 ## Core Algorithms & Logic
 
@@ -287,10 +313,10 @@ Instead of a "one-size-fits-all" approach, the system uses tailored weights for 
 
 #### Scoring Weights Visualization
 
-![scoring_weights_overview](scoring_weights_overview.png)
+![scoring_weights_overview](data/scoring_weights_overview.png)
 *Scoring Weights Overview*
 
-![scoring_weights_detailed](scoring_weights_detailed.png)
+![scoring_weights_detailed](data/scoring_weights_detailed.png)
 *Detailed Valuation Weights*
 
 ### 3. Valuation Blender
@@ -314,10 +340,10 @@ To avoid single-model bias, the system aggregates **10 Major Valuation Models** 
 
 #### Valuation Logic Visualization
 
-![Valuation Weights Detailed](valuation_weights_detailed_en.png)
+![Valuation Weights Detailed](data/valuation_weights_detailed_en.png)
 *Detailed Valuation Weights & Logic*
 
-![Valuation Weights Final](valuation_weights_final_en.png)
+![Valuation Weights Final](data/valuation_weights_final_en.png)
 *Final Valuation Synthesis*
 
 ---
@@ -332,5 +358,75 @@ If you encounter **bugs**, **calculation errors**, **data fetching failures**, o
 
 Investing in financial markets involves risks. The views, analyses, and scores presented in this report are logical deductions based on specific model parameters and do not constitute recommendations to buy, hold, or sell any financial products. Investors should make independent decisions based on their own risk tolerance. The author assumes no legal liability for any direct or indirect losses resulting from the use of this report.
 
+# Configuration Reference
+
+This guide lists all customizable configuration files.
+
+## 1. Core Configuration (`config/`)
+
+### `config/settings.py`
+
+- **Purpose**: API keys (from `.env`) and ecosystem settings. Supports multi-key rotation.
+- **Key Variables**: `GOOGLE_AI_KEY`, `FMP_API_KEY`, `FRED_API_KEY`.
+
+### `config/analysis_config.py`
+
+- **Purpose**: Analysis thresholds and validation parameters.
+- **Customizable**:
+  - `DATA_SUFFICIENCY_CONFIG`: Historical data completeness thresholds.
+  - `VALUATION_THRESHOLDS`: "Undervalued" vs "Overvalued" boundaries.
+  - `METRIC_BOUNDS`: Sanity checks for financial ratios.
+
+### `config/constants.py`
+
+- **Purpose**: Centralized path constants (`DATA_CACHE_STOCK`, `DATA_REPORTS`).
+
+## 2. Scoring & Valuation
+
+### `fundamentals/financial_scorers/scoring_config.py`
+
+- **Purpose**: Weights for financial health scoring (Profitability, Growth, Capital Allocation).
+- **Customizable**: `CATEGORY_WEIGHTS`, `SECTOR_WEIGHT_OVERRIDES`.
+
+### `fundamentals/technical_scorers/scoring_config.py`
+
+- **Purpose**: Weights for technical indicators (RSI, MACD, Trend).
+- **Customizable**: `MA_CONFIG` (Moving Averages), `RSI_CONFIG`.
+
+### `fundamentals/valuation/valuation_config.py`
+
+- **Purpose**: **Sector-specific valuation weights**.
+- **Customizable**: `SECTOR_WEIGHTS` (11 GICS sectors × 10 models).
+
 ---
-Generated by Antigravity Agent
+
+# Utilities Reference
+
+## 1. Core Infrastructure (`utils/`)
+
+### `unified_schema.py`
+
+- **Purpose**: The "Constitution". Pydantic models defining `StockData`, `FinancialStatements`, and `ForecastData`.
+
+### `field_registry.py`
+
+- **Purpose**: Maps raw API fields (Yahoo, FMP, EDGAR) to `unified_schema`.
+- **Edit this** to fix data gaps or map new XBRL tags.
+
+### `currency_normalizer.py`
+
+- **Purpose**: Automatically converts foreign currency (e.g., TWD/HKD) to USD and normalizes ADR share counts.
+
+## 2. Helpers
+
+### `numeric_utils.py`
+
+- **Purpose**: Safe math. Use `safe_float()`, `calculate_cagr()`, `safe_divide()`.
+
+### `http_utils.py`
+
+- **Purpose**: Network wrapper with **Rate Limiting** and **User-Agent Rotation**.
+
+### `logger.py`
+
+- **Purpose**: Centralized logging. Use `setup_logger()` instead of `print`.

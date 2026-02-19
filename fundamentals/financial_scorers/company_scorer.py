@@ -256,10 +256,15 @@ class CompanyScorer:
             'warnings': warnings
         }
     
-    def _score_single_metric(self, metric_name, value, weight, metric_config, global_defaults):
+    def _score_single_metric(self, metric_name, value_data, weight, metric_config, global_defaults):
         """Helper to score a single metric and return weighted score + details."""
-        # Ensure value is extracted
-        value = self._extract_value(value)
+        # Extract numeric value and source
+        value = self._extract_value(value_data)
+        source = "Calculated"
+        if isinstance(value_data, dict) and 'source' in value_data:
+            source = value_data['source']
+        elif hasattr(value_data, 'source'):
+            source = value_data.source
         
         if value is None:
             return 0, None
@@ -272,6 +277,7 @@ class CompanyScorer:
         
         details = {
             'value': value,
+            'source': source, # Preserved source
             'raw_score': score_result['raw_score'],
             'weight': weight,
             'weighted_score': round(weighted_score, 2),
@@ -308,7 +314,7 @@ class CompanyScorer:
         
         if fcf_config:
             w_score, details = self._score_single_metric(
-                'fcf_cagr_5y', fcf_cagr, fcf_weight, fcf_config, global_defaults
+                'fcf_cagr_5y', growth.fcf_cagr_5y, fcf_weight, fcf_config, global_defaults
             )
             if details:
                 total_score += w_score

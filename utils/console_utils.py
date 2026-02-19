@@ -43,9 +43,24 @@ class Symbol:
     def ARROW(self) -> str:
         return "➜" if not is_windows() else "->"
 
+    @property
+    def TRASH(self) -> str:
+        return "🗑️" if not is_windows() else "[DEL]"
+    
+    @property
+    def RECYCLE(self) -> str:
+        return "♻️" if not is_windows() else "[CLEAN]"
+
 
 # Global instance
 symbol = Symbol()
+ICON = symbol  # Alias for backward compatibility
+
+def print_header(title: str):
+    """Print a major section header."""
+    print("\n" + "="*80)
+    print(f"  {title}")
+    print("="*80)
 
 def print_step(step: int, total: int, message: str):
     """Print a formatted step header."""

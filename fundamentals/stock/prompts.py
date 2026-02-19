@@ -66,6 +66,10 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 - **Forward Estimates**: Forward EPS, Forward P/E, Earnings Growth (Current Year), Revenue Growth (Next Year)
 - **Analyst Price Targets**: Low/High/Consensus from analyst coverage
 - **Earnings Surprise History**: Latest 4 quarters showing actual vs. estimate with surprise %
+- **Market Intelligence**:
+    - **News**: Top 5 recent headlines with source and summary
+    - **Insider Sentiment**: Monthly Share Purchase Ratio (MSPR) and Net Buy/Sell change
+    - **Competitors**: List of key peer companies
 
 **How to use this data:**
 1. **REQUIRED in Section III (估值分析)**: Display Forward Metrics table comparing forward vs current multiples
@@ -131,7 +135,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 ### 4. 补充数据
 | 指标 | 数值 | 解读 |
 |---|---|---|
-| 企业价值 (Ent Value) | X | [Yahoo计算值] |
+| 企业价值 | X | [Yahoo计算值] |
 | EV/EBITDA | X | [Yahoo计算值] |
 | 每股现金 | X | [每股流动性分析] |
 | 每股营收 | X | [每股创收能力分析] |
@@ -147,7 +151,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | 指标 | 数值 | 得分 | 信号 | 解读 |
 |---|---|---|---|---|
 | ADX趋势 | X | X/{g(tech_trend, 'adx')} | [信号] | [简评] |
-| 均线系统 | - | X/{g(tech_trend, 'multi_ma')} | [信号] | [简评] |
+| 均线系统 | X | X/{g(tech_trend, 'multi_ma')} | [信号] | [简评] |
 | 52周位置 | X% | X/{g(tech_trend, '52w_pos')} | [信号] | [简评] |
 
 ### 2. 动量指标 (X/X)
@@ -161,13 +165,13 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | 指标 | 数值 | 得分 | 信号 | 解读 |
 |---|---|---|---|---|
 | ATR波动 | X% | X/{g(tech_vol, 'atr')} | [信号] | [简评] |
-| 布林带 | - | X/{g(tech_vol, 'bollinger')} | [信号] | [简评] |
+| 布林带 | X | X/{g(tech_vol, 'bollinger')} | [信号] | [简评] |
 
 ### 4. 价格结构 (X/X)
 | 指标 | 数值 | 得分 | 信号 | 解读 |
 |---|---|---|---|---|
-| 支撑/阻力 | - | X/{g(tech_struct, 'resistance')} | [信号] | [简评] |
-| 高低结构 | - | X/{g(tech_struct, 'high_low')} | [信号] | [简评] |
+| 支撑/阻力 | X | X/{g(tech_struct, 'resistance')} | [信号] | [简评] |
+| 高低结构 | X | X/{g(tech_struct, 'high_low')} | [信号] | [简评] |
 
 ### 5. 量价分析 (X/X)
 | 指标 | 数值 | 得分 | 信号 | 解读 |
@@ -182,10 +186,27 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | 相对标普500 | X% | [相对强弱分析 (Alpha)] |
 | 机构持股 | X% | [分析机构持仓比例对其稳定性的影响] |
 | 内部持股 | X% | [分析内部人持股比例对管理层信心的体现] |
-| 做空比率 (Short Ratio) | X | [分析做空天数，判断轧空风险] |
-| 流通盘做空比 (Short % Float) | X% | [分析做空比例，市场看空情绪] |
+| 做空比率 | X | [分析做空天数，判断轧空风险] |
+| 流通盘做空比 | X% | [分析做空比例，市场看空情绪] |
 
-## 三、估值分析 (加权估价:$X)
+## 三、市场情绪与情报 (Market Sentiment)
+### 1. 内部交易情绪
+**MSPR (月度购买比率):** X | **净买入/卖出:** X
+**解读:** [分析内部人近期交易行为，MSPR>0通常由买入驱动，<0由卖出驱动。结合净变化判断内部信心]
+
+### 2. 同业竞争
+**主要竞争对手:** [列出Peers]
+**对比简述:** [基于行业地位，简述其相对于同业的竞争优势或劣势]
+
+### 3. 关键新闻情报 (AI精选)
+1. **[新闻标题]** ([日期]) - [情感: 正面/负面/中性]
+   > [一句话摘要及对股价的潜在影响分析]
+2. **[新闻标题]** ([日期]) - [情感: 正面/负面/中性]
+   > [一句话摘要及对股价的潜在影响分析]
+3. **[新闻标题]** ([日期]) - [情感: 正面/负面/中性]
+   > [一句话摘要及对股价的潜在影响分析]
+
+## 四、估值分析 (加权估价:$X)
 **当前价:** $X | 上行空间:X%
 
 ### 1. 前瞻估值指标
@@ -206,14 +227,6 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | X | $X | $X | $X | X% |
 **平均超预期:** X% | **正向次数:** X/4 | **解读:** [分析业绩稳定性、管理层指引准确性]
 
-### 3. 华尔街预期
-| 指标 | 数值 | 解读 |
-|---|---|---|
-> 注意: 
-> 1. Yahoo 提供的 EV/EBITDA 为事实上的当前比率。
-> 2. `valuation` 中的 EV/EBITDA 是模型推算的股价。
-> 3. 如果 `valuation.ev_ebitda.mult` 存在，请在解读中明确指出：“基于行业平均倍数 (即 valuation.ev_ebitda.mult)x 推算”。这是造成估值差异的主要原因，务必解释清楚。
-
 | 模型 | 公允价 | 权重 | 偏离度 | 解读 |
 |------|--------|------|--------|----|
 | PE估值 | $X | X% | X% | [简评] |
@@ -227,7 +240,14 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | 彼得林奇估值 | $X | X% | X% | [简评] |
 | 分析师目标| $X | X% | X% | [简评] |
 
-## 四、总结与建议
+### 3. 华尔街预期
+| 指标 | 数值 | 解读 |
+|---|---|---|
+| 评级建议 | X | [买入/持有/卖出 分析] |
+| 目标价范围 | $X - $X | [对比当前价格与目标价范围] |
+| 分析师数量 | X | [基于样本量的置信度分析] |
+
+## 五、总结与建议
 **核心优势:** [要点]
 **主要风险:** [要点]
 **综合结论:** [约150字逻辑分析]
@@ -329,7 +349,24 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 | Short Ratio | X | [Analyze day-to-cover and squeeze risk] |
 | Short % of Float | X% | [Analyze bearish sentiment] |
 
-## III. Valuation Analysis (Weighted: $X)
+## III. Market Sentiment & Intelligence
+### 1. Insider Sentiment
+**MSPR:** X | **Net Change:** X
+**Comment:** [Analyze insider trading activity. MSPR > 0 suggests buying pressure. Interpret insider confidence.]
+
+### 2. Peer Comparison
+**Key Competitors:** [List Peers]
+**Comparison:** [Briefly discuss competitive position relative to peers.]
+
+### 3. Key News Intelligence (AI Curated)
+1. **[Headline]** ([Date]) - [Sentiment: Positive/Negative/Neutral]
+   > [Brief summary and potential impact on stock price]
+2. **[Headline]** ([Date]) - [Sentiment: Positive/Negative/Neutral]
+   > [Brief summary and potential impact on stock price]
+3. **[Headline]** ([Date]) - [Sentiment: Positive/Negative/Neutral]
+   > [Brief summary and potential impact on stock price]
+
+## IV. Valuation Analysis (Weighted: $X)
 **Price:** $X | **Upside:** X%
 
 ### 1. Forward Metrics
@@ -380,7 +417,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 - If a model has 0 weight or missing data, set Fair Value to "-" and Comment to "Not used" or "Unable to calculate".
 - Do NOT hide models just because they are not used. The user requires a full view of all 10 models.
 
-## IV. Conclusion
+## V. Conclusion
 **Key Strengths:** [Points]
 **Key Risks:** [Points]
 **Overall:** [~150 words logic]
@@ -388,3 +425,25 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 > **X Action:** [BUY|HOLD|WATCH|SELL]
 **Reason:** [~50 words summary]
 """
+
+def build_executive_summary_prompt(data: Dict[str, Any]) -> str:
+    """
+    Construct the executive summary prompt from the provided data.
+    """
+    json_str = json.dumps(data, ensure_ascii=False, separators=(',', ':'))
+    
+    return f"""
+<stock_data>
+{json_str}
+</stock_data>
+
+Task: Generate a concise Executive Summary (approx 200 words) for this stock in English.
+
+Structure:
+1. **Investment Verdict**: Buy/Hold/Sell with short rationale.
+2. **Key Highlights**: 3 bullet points on most critical Financial/Technical factors.
+3. **Risk Warning**: 1 key risk.
+
+Keep it professional, direct, and data-backed.
+"""
+

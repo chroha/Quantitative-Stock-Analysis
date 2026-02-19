@@ -291,7 +291,7 @@ class YahooFetcher(BaseFetcher):
         logger.info(f"Parsed {len(statements)} {statement_type} statements")
         return statements
     
-    def fetch_income_statements(self) -> list[IncomeStatement]:
+    def fetch_income_statements(self, limit: int = None) -> list[IncomeStatement]:
         """Fetch income statements (Annual + latest Quarterly)."""
         try:
             if not self.ticker:
@@ -302,6 +302,8 @@ class YahooFetcher(BaseFetcher):
             # yfinance sometimes returns duplicates or TTM, filter?
             # For now, trust parser.
             annual_stmts = self._parse_financial_statement(annual_df, 'income', 'FY')
+            if limit and annual_stmts:
+                annual_stmts = annual_stmts[:limit]
             
             # Fetch Quarterly
             quarterly_df = self.ticker.quarterly_financials
@@ -321,7 +323,7 @@ class YahooFetcher(BaseFetcher):
             logger.error(f"Failed to fetch income statements from Yahoo: {e}")
             return []
     
-    def fetch_balance_sheets(self) -> list[BalanceSheet]:
+    def fetch_balance_sheets(self, limit: int = None) -> list[BalanceSheet]:
         """Fetch balance sheets (Annual + latest Quarterly)."""
         try:
             if not self.ticker:
@@ -330,6 +332,8 @@ class YahooFetcher(BaseFetcher):
             # Fetch Annual
             annual_df = self.ticker.balance_sheet
             annual_stmts = self._parse_financial_statement(annual_df, 'balance', 'FY')
+            if limit and annual_stmts:
+                annual_stmts = annual_stmts[:limit]
             
             # Fetch Quarterly
             quarterly_df = self.ticker.quarterly_balance_sheet
@@ -355,7 +359,7 @@ class YahooFetcher(BaseFetcher):
             logger.error(f"Failed to fetch balance sheets from Yahoo: {e}")
             return []
     
-    def fetch_cash_flow_statements(self) -> list[CashFlow]:
+    def fetch_cash_flow_statements(self, limit: int = None) -> list[CashFlow]:
         """Fetch cash flow statements (Annual + latest Quarterly)."""
         try:
             if not self.ticker:
@@ -364,6 +368,8 @@ class YahooFetcher(BaseFetcher):
             # Fetch Annual
             annual_df = self.ticker.cashflow
             annual_stmts = self._parse_financial_statement(annual_df, 'cashflow', 'FY')
+            if limit and annual_stmts:
+                annual_stmts = annual_stmts[:limit]
             
             # Fetch Quarterly
             quarterly_df = self.ticker.quarterly_cashflow
@@ -400,7 +406,7 @@ class YahooFetcher(BaseFetcher):
             price_history=self.fetch_price_history(period="1y"),
             income_statements=self.fetch_income_statements(),
             balance_sheets=self.fetch_balance_sheets(),
-            cash_flows=self.fetch_cash_flows(),
+            cash_flows=self.fetch_cash_flow_statements(),
             analyst_targets=self.fetch_analyst_targets(),  # Keep for compat
             forecast_data=self.fetch_forecast_data(),      # NEW: Populate forecast data
         )
