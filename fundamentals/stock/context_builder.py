@@ -497,9 +497,9 @@ class ContextBuilder:
             debt_item = curr_bs.get('std_total_debt', 0)
             cash_item = curr_bs.get('std_cash', 0)
             
-            equity = get_raw_val(equity_item)
-            debt = get_raw_val(debt_item)
-            cash = get_raw_val(cash_item)
+            equity = get_raw_val(equity_item) or 0
+            debt = get_raw_val(debt_item) or 0
+            cash = get_raw_val(cash_item) or 0
             
             base_src = get_raw_src(equity_item, "Yahoo")
             ic_src = f"Calculated ({base_src})"
@@ -645,7 +645,7 @@ class ContextBuilder:
         val = mom_cat.get('rsi', {}).get('rsi')
         lines.append(f"| RSI (14) | 相对强弱指数 | {fmt(val, MetricFormat.DECIMAL)} | {tech_src(val)} | `Momentum (0-100)` |")
         val = mom_cat.get('roc', {}).get('roc')
-        lines.append(f"| ROC (20) | 变动率 | {fmt(val, MetricFormat.PERCENT)} | {tech_src(val)} | `Price Rate of Change` |")
+        lines.append(f"| ROC (20) | 变动率 | {fmt(val, MetricFormat.DECIMAL)}% | {tech_src(val)} | `Price Rate of Change` |")
         
         macd = mom_cat.get('macd', {})
         val = macd.get('macd')
@@ -676,7 +676,7 @@ class ContextBuilder:
         val = vp_cat.get('volume_strength', {}).get('volume_ratio')
         lines.append(f"| Vol Ratio | 量比 | {fmt(val, MetricFormat.DECIMAL)} | {tech_src(val)} | `Vol / AvgVol` |")
         val = vol_cat.get('atr', {}).get('atr_pct')
-        lines.append(f"| ATR % | 波动率百分比 | {fmt(val, MetricFormat.PERCENT)} | {tech_src(val)} | `ATR / Price` |")
+        lines.append(f"| ATR % | 波动率百分比 | {fmt(val, MetricFormat.DECIMAL)}% | {tech_src(val)} | `ATR / Price` |")
         lines.append("")
 
         # === 3. Valuation Input Data ===
@@ -748,7 +748,10 @@ class ContextBuilder:
         lines.append(f"| PEG Ratio | PEG比率 | {fmt(val, MetricFormat.DECIMAL)} | {src} | `profile.std_peg_ratio` |")
         
         val, src = get_val_src(profile, 'std_dividend_yield')
-        lines.append(f"| Dividend Yield | 股息率 | {fmt(val, MetricFormat.PERCENT)} | {src} | `profile.std_dividend_yield` |")
+        # Yahoo returns dividendYield as a decimal (e.g. 0.0092 = 0.92%).
+        # Using MetricFormat.PERCENT would multiply by 100 again → WRONG (92%).
+        # Use DECIMAL and append '%' manually.
+        lines.append(f"| Dividend Yield | 股息率 | {fmt(val, MetricFormat.DECIMAL)}% | {src} | `profile.std_dividend_yield` |")
         
         val, src = get_val_src(profile, 'std_eps')
         lines.append(f"| EPS (TTM) | 每股收益 | {fmt(val, MetricFormat.CURRENCY)} | {src} | `profile.std_eps` |")

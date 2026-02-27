@@ -3,6 +3,15 @@ Report Formatting Utilities
 Centralized logic for formatting console and text reports.
 """
 
+# Metrics that are stored as decimals (e.g. 0.25 = 25%) but may exceed [-1, 1].
+# Using metric name ensures correct % display regardless of value magnitude.
+PERCENT_METRICS = {
+    'roic', 'roe', 'operating_margin', 'gross_margin', 'net_margin',
+    'fcf_cagr_5y', 'net_income_cagr_5y', 'revenue_cagr_5y',
+    'share_dilution_cagr_5y', 'capex_intensity_3y', 'sbc_impact_3y',
+    'earnings_quality_3y', 'fcf_to_debt_ratio',
+}
+
 def format_financial_score_report(score_data):
     """Format financial score as a clean report string."""
     if not score_data:
@@ -48,8 +57,11 @@ def format_financial_score_report(score_data):
                 val = details.get('value')
                 
                 # Format value
+                # Use metric name to determine percentage format, since some ratio metrics
+                # (e.g. operating_margin = -1.53 meaning -153%) exceed the [-1, 1] range
+                # and would be incorrectly formatted as plain decimals by abs(val) < 1 alone.
                 if isinstance(val, float):
-                    if abs(val) < 1:
+                    if metric in PERCENT_METRICS or abs(val) < 1:
                         val_str = f"{val:.2%}"
                     else:
                         val_str = f"{val:.2f}"

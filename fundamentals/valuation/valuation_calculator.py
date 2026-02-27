@@ -18,7 +18,6 @@ from .valuation_models.ps_valuation import PSValuationModel
 from .valuation_models.ev_valuation import EVValuationModel
 from .valuation_models.analyst_targets import AnalystTargetsModel
 from .valuation_models.dcf_model import DCFModel
-from .valuation_models.dcf_model import DCFModel
 from .valuation_models.ddm_model import DDMModel
 from .valuation_models.graham_model import GrahamNumberModel
 from .valuation_models.peter_lynch_model import PeterLynchModel
@@ -28,8 +27,11 @@ logger = setup_logger('valuation_calculator')
 # Sector name normalization (same as company_scorer)
 # Different data sources use different sector naming conventions
 SECTOR_ALIASES = {
-    'Consumer Cyclical': 'Consumer Discretionary',  # Yahoo Finance convention
-    'Consumer Defensive': 'Consumer Staples',        # Yahoo Finance convention
+    'Consumer Cyclical': 'Consumer Discretionary',   # Yahoo Finance convention
+    'Consumer Defensive': 'Consumer Staples',         # Yahoo Finance convention
+    'Financial Services': 'Financials',               # Yahoo Finance convention
+    'Basic Materials': 'Materials',                   # Yahoo Finance / FMP convention
+    'Communication Services': 'Communication Services',  # Explicit pass-through (no change needed)
 }
 
 def normalize_sector(sector: str) -> str:

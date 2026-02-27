@@ -27,9 +27,10 @@ logger = setup_logger('company_scorer')
 # Sector name normalization
 # Different data sources use different sector naming conventions
 SECTOR_ALIASES = {
-    'Consumer Cyclical': 'Consumer Discretionary',  # Yahoo Finance convention
-    'Consumer Defensive': 'Consumer Staples',        # Yahoo Finance convention
-    # Add more aliases as needed
+    'Consumer Cyclical': 'Consumer Discretionary',   # Yahoo Finance convention
+    'Consumer Defensive': 'Consumer Staples',         # Yahoo Finance convention
+    'Financial Services': 'Financials',               # Yahoo Finance convention
+    'Basic Materials': 'Materials',                   # Yahoo Finance / FMP convention
 }
 
 def normalize_sector(sector: str) -> str:
