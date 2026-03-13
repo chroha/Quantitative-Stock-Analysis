@@ -42,4 +42,8 @@ class StockAIAnalyst:
         prompt = build_executive_summary_prompt(data_bundle)
         return self.client.generate_text(prompt, model_hint="gemini-1.5-flash")
 
+    def get_last_generation_info(self) -> Optional[dict]:
+        """Get token usage and model stats from the last generation."""
+        return getattr(self.client, 'last_generation_info', None)
+
 

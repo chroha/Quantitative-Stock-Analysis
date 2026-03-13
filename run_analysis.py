@@ -347,6 +347,11 @@ def main():
             analyst = StockAIAnalyst()
             report = analyst.generate_report(aggregated_data)
             
+            if not report:
+                print(f"\n  {ICON.FAIL} [FAIL] AI Commentary Generation Failed. All models timed out or errored.")
+                print(f"  {ICON.WARN} Report generation aborted. No file was saved.")
+                return
+                
             # Append raw data appendix
             print(f"   Generating data appendix...")
             appendix = aggregator.get_raw_data_appendix(symbol)
@@ -366,6 +371,13 @@ def main():
                 
             print(f"\n[OK] AI Report Generated Successfully!")
             print(f"   Path: {report_path}")
+            
+            # Retrieve and display AI Model info 
+            gen_info = analyst.get_last_generation_info()
+            if gen_info:
+                print(f"   Model Used: {gen_info.get('model_name', 'Unknown')}")
+                print(f"   Tokens Consumed: {gen_info.get('total_tokens', 0):,} (Prompt: {gen_info.get('prompt_tokens', 0):,} | Output: {gen_info.get('candidates_tokens', 0):,})")
+
         else:
             print("  [ERROR] Data aggregation failed.")
 

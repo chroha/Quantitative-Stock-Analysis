@@ -23,12 +23,13 @@ class LLMClient:
     
     DEFAULT_MODELS = [
         "gemini-3-flash-preview",
-        "gemini-2.5-flash",
-        "gemini-2.5-flash-lite"
+        "gemini-3.1-flash-lite-preview",
+        "gemini-2.5-flash"
     ]
 
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key or settings.GOOGLE_AI_KEY
+        self.last_generation_info = None  # To track token usage and model stats
         if not self.api_key:
             logger.warning("Google AI Key not provided. AI generation will be disabled.")
 
@@ -54,10 +55,10 @@ class LLMClient:
                 if response:
                     return response
             except Exception as e:
-                logger.warning(f"Model {model} failed: {e}")
+                logger.warning(f"Model {model} failed due to timeout or error. Attempting next fallback model... Details: {e}")
                 continue
                 
-        logger.error("All models failed to generate text.")
+        logger.error("All models failed to generate valid text.")
         return None
 
     def _call_api(self, model_name: str, prompt: str) -> Optional[str]:
@@ -77,7 +78,8 @@ class LLMClient:
         max_retries = 1
         for attempt in range(max_retries + 1):
             try:
-                response = requests.post(url, json=payload, timeout=120)
+                # Reduced timeout to 45 seconds for faster failover
+                response = requests.post(url, json=payload, timeout=45)
                 
                 if response.status_code == 200:
                     result = response.json()
@@ -94,6 +96,14 @@ class LLMClient:
                         if content_parts:
                             text = content_parts[0].get("text", "")
                             if text:
+                                # Track token usage and model info on success
+                                usage = result.get("usageMetadata", {})
+                                self.last_generation_info = {
+                                    'model_name': model_name,
+                                    'total_tokens': usage.get("totalTokenCount", 0),
+                                    'prompt_tokens': usage.get("promptTokenCount", 0),
+                                    'candidates_tokens': usage.get("candidatesTokenCount", 0)
+                                }
                                 return text
                         return None
                     return None
