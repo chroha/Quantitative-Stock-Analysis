@@ -132,6 +132,14 @@ class BenchmarkCalculator:
         self.margins_df = margins_df
         self.div_yield_df = div_yield_df
         
+        # Normalize industry name columns across all DataFrames.
+        # Damodaran HTML parsing produces names with irregular whitespace
+        # (e.g. "Oil/Gas  (Integrated)" with double spaces), which would
+        # silently break the isin() matching in aggregate_sector().
+        # We collapse all internal whitespace to a single space here so that
+        # industry_mapper.py names always match.
+        self._normalize_all_industry_names()
+        
         logger.info(f"ROC data: {len(self.roc_df)} industries")
         logger.info(f"WACC data: {len(self.wacc_df)} industries")
         logger.info(f"Beta data: {len(self.beta_df)} industries")
@@ -152,6 +160,47 @@ class BenchmarkCalculator:
     
 
     
+    def _normalize_industry_names(self, df: pd.DataFrame, col: str) -> None:
+        """
+        Normalize a single DataFrame's industry name column in-place.
+        Collapses any run of whitespace to a single space and strips
+        leading/trailing whitespace.
+
+        Args:
+            df: DataFrame to modify
+            col: Name of the industry-name column in this DataFrame
+        """
+        if df is not None and col in df.columns:
+            df[col] = (
+                df[col]
+                .astype(str)
+                .str.strip()
+                .str.replace(r'\s+', ' ', regex=True)
+            )
+
+    def _normalize_all_industry_names(self) -> None:
+        """
+        Normalize industry name columns for every loaded DataFrame.
+        Each Damodaran HTML source uses a slightly different column header
+        for the industry name, so we look up the correct column name per
+        DataFrame via the *_COLUMNS constants.
+        """
+        pairs = [
+            (self.roc_df,        self.ROC_COLUMNS['industry']),
+            (self.wacc_df,       self.WACC_COLUMNS['industry']),
+            (self.beta_df,       self.BETA_COLUMNS['industry']),
+            (self.roe_df,        self.ROE_COLUMNS['industry']),
+            (self.pbv_df,        self.PBV_COLUMNS['industry']),
+            (self.pe_df,         self.PE_COLUMNS['industry']),
+            (self.ps_df,         self.PS_COLUMNS['industry']),
+            (self.ev_ebitda_df,  self.EV_EBITDA_COLUMNS['industry']),
+            (self.margins_df,    self.MARGIN_COLUMNS['industry']),
+            (self.div_yield_df,  self.DIV_YIELD_COLUMNS['industry']),
+        ]
+        for df, col in pairs:
+            self._normalize_industry_names(df, col)
+        logger.info("Industry name whitespace normalization complete")
+
     def _get_column_safe(self, df: pd.DataFrame, expected_name: str, alternatives: List[str] = None) -> Optional[str]:
         """
         Safely get column name, trying alternatives if needed.

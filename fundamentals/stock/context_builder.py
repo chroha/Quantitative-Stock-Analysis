@@ -10,6 +10,7 @@ from typing import Dict, Any, List, Optional
 from utils.metric_registry import (
     FINANCIAL_METRICS, TECHNICAL_INDICATORS, VALUATION_MODELS, MetricFormat
 )
+from utils.helpers import format_large_number
 
 class ContextBuilder:
     """Builds AI context from aggregated data bundle."""
@@ -232,6 +233,15 @@ class ContextBuilder:
             if isinstance(obj, dict): return obj.get('value')
             return obj
 
+        # Format enterprise value to human-readable B/M/T to prevent AI from
+        # displaying a raw integer (e.g. 47330594816 instead of "$47.33B").
+        # Reuses utils.helpers.format_large_number to avoid duplicating unit logic.
+        raw_ev = get_val('std_enterprise_value')
+        if isinstance(raw_ev, (int, float)) and raw_ev is not None:
+            formatted_ev = f"${format_large_number(raw_ev)}"
+        else:
+            formatted_ev = raw_ev
+
         return {
             "ownership": {
                 "insiders_pct": get_val('std_held_percent_insiders'),
@@ -242,7 +252,7 @@ class ContextBuilder:
                 "float_pct": get_val('std_short_percent_of_float')
             },
             "valuation_extended": {
-                "enterprise_value": get_val('std_enterprise_value'),
+                "enterprise_value": formatted_ev,
                 "ev_to_ebitda": get_val('std_enterprise_to_ebitda')
             },
             "analyst_details": {
@@ -650,9 +660,9 @@ class ContextBuilder:
         macd = mom_cat.get('macd', {})
         val = macd.get('macd')
         lines.append(f"| MACD Line | MACD线 | {fmt(val, MetricFormat.DECIMAL)} | {tech_src(val)} | `12EMA - 26EMA` |")
-        val = macd.get('signal')
+        val = macd.get('signal_line')  # Key from momentum_indicators.calculate_macd()
         lines.append(f"| Signal Line | 信号线 | {fmt(val, MetricFormat.DECIMAL)} | {tech_src(val)} | `9EMA of MACD` |")
-        val = macd.get('hist')
+        val = macd.get('histogram')    # Key from momentum_indicators.calculate_macd()
         lines.append(f"| MACD Hist | MACD柱 | {fmt(val, MetricFormat.DECIMAL)} | {tech_src(val)} | `MACD - Signal` |")
         
         # ADX
