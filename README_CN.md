@@ -1,4 +1,4 @@
-﻿# Quantitative Stock Analysis System (量化股票分析系统)
+# Quantitative Stock Analysis System (量化股票分析系统)
 
 [English Version](README.md)
 
@@ -10,7 +10,7 @@
 
 ### 1. 全自动分析流水线 (`run_pipeline.py`)
 
-一条龙全自动分析脚本，串联所有核心功能：
+一条龙全自动分析脚本，串联所有核心功能（并包含交互式的 **Fast Scan 快速扫描模式**）：
 
 - **自动化流程**:
   1. **清理缓存**: 自动清理旧数据（智能保留行业基准 CSV）。
@@ -18,6 +18,7 @@
   3. **批量分析**: 对输入的所有股票执行深度分析 (`run_analysis.py`)。
   4. **生成报表**: 自动汇总所有评分至 CSV 表格 (`run_getform.py`)。
   5. **宏观策略**: 执行宏观经济分析模块 (`run_macro_report.py`)。
+- **快速扫描 (Fast Scan)**: 交互时可选跳过耗时的AI模型推断、估值计算与宏观流程。专注于基础财务与技术打分，并生成纯文本快速扫描报告 (`stock_scan_*.txt`)，按得分自动排序。
 - **用法**: `python run_pipeline.py AAPL MSFT`
 
 ### 2. 个股分析 (`run_analysis.py`)
@@ -49,15 +50,7 @@
   - **盈利意外分析**: 最近4季度 Earnings Surprise 详细表，含平均超预期%和正向次数统计
   - **市场情报附录**: 可点击的新闻超链接（via Finnhub）、内部人士情绪表 (MSPR)、内部人士交易记录及同类标的列表
 
-### 3. 批量选股扫描 (`run_scanner.py`)
-
-- **批量处理**: 支持一次性扫描多个自选股。
-- **快速评分**: 略过耗时的估值和AI步骤，专注于财务与技术面打分。
-- **自动排名**: 结果按财务健康度 (Financial Score) 自动排序。
-- **降级处理**: 智能识别并标记数据不足（如上市不足5年）的股票，并在报告中提供“可靠性降低”的提示。
-- **输出**: 在控制台打印摘要，并生成包含详细指标的汇总文本报告。
-
-### 4. 宏观策略分析 (`run_macro_report.py`)
+### 3. 宏观策略分析 (`run_macro_report.py`)
 
 全新的宏观经济分析模块，用于生成自上而下的市场策略报告：
 
@@ -96,7 +89,6 @@
 ├── utils/                  # 通用工具 (日志管理, 安全遮罩)
 ├── run_analysis.py         # 个股深度分析入口
 ├── run_pipeline.py         # 全自动分析流水线
-├── run_scanner.py          # 批量扫描入口
 ├── run_getform.py          # 数据表单生成工具
 └── run_macro_report.py     # 宏观策略报告入口
 ```
@@ -207,13 +199,13 @@ python run_analysis.py AAPL
 # 或者直接运行 python run_analysis.py 按提示输入
 ```
 
-### 运行批量扫描 (筛选模式)
+### 运行快速扫描 (Fast Scan 筛选模式)
 
 ```bash
-python run_scanner.py AAPL MSFT NVDA TSLA
-# 或者
-python run_scanner.py
-# (根据提示输入 CSV 列表或手动输入代码)
+python run_pipeline.py AAPL MSFT NVDA TSLA
+# 当程序询问:
+# "Run fast scan mode (skip AI generation)? (y/N): y"
+# 输入 y 即可跳过沉重的 AI 分析环节，输出轻量级 .txt 扫描报告
 ```
 
 ### 运行数据汇总 (报表模式)

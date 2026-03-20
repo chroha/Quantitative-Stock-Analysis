@@ -64,6 +64,7 @@ def main():
     
     # --- Input ---
     force_fetch = "--force-fetch" in sys.argv
+    fast_scan_mode = os.getenv('FAST_SCAN_MODE') == '1'
     
     if len(sys.argv) > 1:
         # Filter out flags to get the symbol
@@ -78,6 +79,12 @@ def main():
     if not symbol:
         print("[ERROR] Symbol is required.")
         return
+
+    is_pipeline = os.getenv('LOG_MODE') == 'pipeline_quiet'
+    if not is_pipeline and not fast_scan_mode:
+        choice = input("  Run fast scan mode (skip Valuation and AI)? (y/N): ").strip().lower()
+        if choice == 'y':
+            fast_scan_mode = True
 
     output_dir = os.path.join(current_dir, DATA_CACHE_STOCK)
     if not os.path.exists(output_dir):
@@ -288,9 +295,13 @@ def main():
         # ==============================================================================
         # STEP 5: Valuation
         # ==============================================================================
-        print_step(5, 6, "Valuation Analysis")
-        val_calc = ValuationCalculator(benchmark_data_path=benchmark_dir)
-        val_result = val_calc.calculate_valuation(stock_data)
+        val_result = None
+        if fast_scan_mode:
+            print_step(5, 6, "Valuation Analysis (Skipped in Fast Scan)")
+        else:
+            print_step(5, 6, "Valuation Analysis")
+            val_calc = ValuationCalculator(benchmark_data_path=benchmark_dir)
+            val_result = val_calc.calculate_valuation(stock_data)
         
         if val_result:
             fv = val_result.get('weighted_fair_value')
@@ -323,6 +334,20 @@ def main():
         # ==============================================================================
         # STEP 6: AI Commentary
         # ==============================================================================
+        if fast_scan_mode:
+            print_step(6, 6, "AI Commentary Generation (Skipped in Fast Scan)")
+            print("\n" + "="*80)
+            print("  FAST SCAN ANALYSIS COMPLETE")
+            print("="*80)
+            
+            # Since fast scan doesn't generate AI markdown, output a standalone TXT if not pipeline
+            if not is_pipeline:
+                from fundamentals.reporting.fast_scan_reporter import FastScanReporter
+                print(f"  {ICON.INFO} Generating standalone Fast Scan compiled report...")
+                FastScanReporter.generate_report([symbol], current_dir)
+                
+            return
+
         print_step(6, 6, "AI Commentary Generation")
         
         # Ask user whether to generate AI commentary

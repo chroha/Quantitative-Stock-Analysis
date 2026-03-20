@@ -101,7 +101,7 @@ def update_benchmarks():
         print(f"  {ICON.FAIL} Benchmark update failed")
         sys.exit(1)
 
-def run_stock_analysis(symbols: List[str]):
+def run_stock_analysis(symbols: List[str], fast_scan: bool = False):
     """Runs run_analysis.py for each symbol with API Key rotation."""
     print_step(3, 5, "Stock Analysis Batch")
     
@@ -125,6 +125,8 @@ def run_stock_analysis(symbols: List[str]):
             env = os.environ.copy()
             env['_KEY_SET_INDEX'] = str(key_index)
             env['LOG_MODE'] = 'pipeline_quiet' # Clean output
+            if fast_scan:
+                env['FAST_SCAN_MODE'] = '1'
             
             cmd = [sys.executable, analysis_script, symbol]
             subprocess.run(cmd, check=True, env=env)
@@ -183,15 +185,28 @@ def main():
         symbols = [s.strip().upper() for s in inp.replace(',', ' ').split() if s.strip()]
     
     print(f"\n  Pipeline targets: {', '.join(symbols)}")
+    
+    fast_scan = False
+    choice = input("  Run fast scan mode (skip AI generation)? (y/N): ").strip().lower()
+    if choice == 'y':
+        fast_scan = True
+
     print("  Starting execution...")
     
     # 2. Pipeline Execution
     try:
         clean_cache()
         update_benchmarks()
-        run_stock_analysis(symbols)
-        run_summary(symbols)
-        run_macro()
+        run_stock_analysis(symbols, fast_scan)
+        
+        if not fast_scan:
+            run_summary(symbols)
+            run_macro()
+        else:
+            print(f"  {ICON.INFO} Generating Fast Scan compiled report...")
+            from fundamentals.reporting.fast_scan_reporter import FastScanReporter
+            FastScanReporter.generate_report(symbols, current_dir)
+            print(f"  {ICON.INFO} Summary and Macro skipped in Fast Scan mode.")
         
         print_separator()
         print(f"  {ICON.OK} PIPELINE EXECUTION COMPLETE")

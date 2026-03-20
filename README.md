@@ -4,13 +4,13 @@
 
 ## Introduction
 
-This is a quantitative stock analysis and screening tool built for personal use. It is designed to help me quickly and comprehensively evaluate US stocks across fundamentals, technicals, and valuation. It automatically acquires data, calculates complex financial metrics, performs multi-dimensional scoring based on designed quantitative logic, and generates investment reports to assist in decision-making.
+This is a quantitative stock analysis and screening tool built for personal use. It is designed to help me quickly and comprehensively evaluate US stocks across fundamentals, technicals, and valuation. It automatically acquires data, calculates complex financial metrics, performs multi-dimensional scoring based on designed quantitative logic, and generates investment reports to assist in decision-decision-making.
 
 ## Core Features
 
 ### 1. Automated Analysis Pipeline (`run_pipeline.py`)
 
-A "One-Stop Shop" script that orchestrates the entire workflow:
+A "One-Stop Shop" script that orchestrates the entire workflow, with an optional interactive **Fast Scan Mode**:
 
 - **Automated Workflow**:
   1. **Clean Cache**: Clears old data (intelligently matches industry benchmark CSVs).
@@ -18,6 +18,7 @@ A "One-Stop Shop" script that orchestrates the entire workflow:
   3. **Batch Analysis**: Runs deep-dive analysis (`run_analysis.py`) for all input stocks.
   4. **Report Generation**: Aggregates all scores into a Summary CSV (`run_getform.py`).
   5. **Macro Strategy**: Runs the macro analysis module (`run_macro_report.py`).
+- **Fast Scan Mode**: Interactively prompts to skip time-consuming valuation, AI analysis, and macro steps. Generates a rapid, auto-ranked plaintext summary report (`stock_scan_*.txt`) sorted by Financial Score.
 - **Usage**: `python run_pipeline.py AAPL MSFT`
 
 ### 2. Stock Analysis (`run_analysis.py`)
@@ -49,15 +50,7 @@ Performs a full-pipeline analysis for a single stock:
   - **Earnings Surprise Analysis**: Detailed 4-quarter surprise table with average beat% and consistency metrics
   - **Market Intelligence Appendix**: Clickable news headlines (via Finnhub), insider sentiment table (MSPR), insider transactions, and peer list
 
-### 3. Batch Stock Scanner (`run_scanner.py`)
-
-- **Batch Processing**: Scans a user-defined list of stocks in one go.
-- **Rapid Scoring**: Skips time-consuming valuation and AI steps to focus on rapid financial and technical scoring.
-- **Auto-Ranking**: Automatically ranks results by Financial Score.
-- **Graceful Degradation**: Intelligently detects and flags stocks with insufficient data (e.g., < 5 years history) in the final report with "reduced reliability" notes.
-- **Output**: Prints a summary to the console and generates a detailed text report file.
-
-### 4. Macro Strategy Analysis (`run_macro_report.py`)
+### 3. Macro Strategy Analysis (`run_macro_report.py`)
 
 A macroeconomic analysis module for top-down market strategy:
 
@@ -97,7 +90,6 @@ A macroeconomic analysis module for top-down market strategy:
 ├── utils/                  # Utilities (Logger, Schema, Helpers)
 ├── run_analysis.py         # Single Stock Analysis Entry
 ├── run_pipeline.py         # Automated Analysis Pipeline
-├── run_scanner.py          # Batch Scanner Entry
 ├── run_getform.py          # Form Generation Tool
 └── run_macro_report.py     # Macro Strategy Report Entry
 ```
@@ -209,12 +201,13 @@ python run_analysis.py AAPL
 python run_analysis.py
 ```
 
-### Run Batch Scanner (Screening Mode)
+### Fast Scan Mode (Screening Mode)
 
 ```bash
-python run_scanner.py AAPL MSFT NVDA TSLA
-# Or run without arguments to verify/input list
-python run_scanner.py
+python run_pipeline.py AAPL MSFT NVDA TSLA
+# When prompted:
+# "Run fast scan mode (skip AI generation)? (y/N): y"
+# Generates a rapid lightweight .txt scan report.
 ```
 
 ### Run Data Aggregation (Report Mode)
