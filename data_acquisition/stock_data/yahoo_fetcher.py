@@ -73,9 +73,11 @@ class YahooFetcher(BaseFetcher):
             
             logger.info(f"Fetched company profile for {self.symbol}")
             
+            company_name = info.get('longName') or info.get('shortName')
+            
             return CompanyProfile(
                 std_symbol=self.symbol,
-                std_company_name=TextFieldWithSource(value=info.get('longName', ''), source='yahoo') if info.get('longName') else None,
+                std_company_name=TextFieldWithSource(value=company_name, source='yahoo') if company_name else None,
                 std_industry=TextFieldWithSource(value=info.get('industry', ''), source='yahoo') if info.get('industry') else None,
                 std_sector=TextFieldWithSource(value=info.get('sector', ''), source='yahoo') if info.get('sector') else None,
                 std_market_cap=self._create_field_with_source(info.get('marketCap')),

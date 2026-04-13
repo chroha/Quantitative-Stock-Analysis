@@ -227,9 +227,9 @@ class ContextBuilder:
             if isinstance(obj, dict): return obj.get('value')
             return obj
             
-        analyst_targets = raw_data.get('analyst_targets', {})
+        forecast_data = raw_data.get('forecast_data', {})
         def get_target(key):
-            obj = analyst_targets.get(key)
+            obj = forecast_data.get(key)
             if isinstance(obj, dict): return obj.get('value')
             return obj
 
@@ -341,10 +341,36 @@ class ContextBuilder:
         current_revenue_growth_5y = growth.get('rev_cagr', {}).get('val', 0) if growth.get('rev_cagr') else 0
         
         surprises = forecast_data.get('std_earnings_surprise_history', [])
+        if isinstance(surprises, dict): surprises = surprises.get('value', [])
+        if not isinstance(surprises, list): surprises = []
+        
         surprise_summary = None
-        if surprises and isinstance(surprises, list):
-            avg_surprise = sum(s.get('surprise_percent', 0) for s in surprises) / len(surprises) if surprises else 0
-            positive_count = sum(1 for s in surprises if s.get('surprise_percent', 0) > 0)
+        if surprises:
+            def get_surprise_pct(s):
+                spct = s.get('surprise_percent')
+                if spct is None: spct = s.get('surprisePercent')
+                if spct is None:
+                    act = s.get('actual')
+                    est = s.get('estimate')
+                    if act is not None and est is not None and est != 0:
+                        spct = (act - est) / abs(est) * 100
+                    else:
+                        spct = 0
+                return spct
+
+            def get_surprise_amt(s):
+                amt = s.get('surprise')
+                if amt is None:
+                    act = s.get('actual')
+                    est = s.get('estimate')
+                    if act is not None and est is not None:
+                        amt = act - est
+                    else:
+                        amt = 0
+                return amt
+
+            avg_surprise = sum(get_surprise_pct(s) for s in surprises) / len(surprises) if surprises else 0
+            positive_count = sum(1 for s in surprises if get_surprise_pct(s) > 0)
             
             surprise_summary = {
                 "avg_surprise_pct": avg_surprise,
@@ -355,7 +381,8 @@ class ContextBuilder:
                         "period": s.get('period', 'N/A'),
                         "actual": s.get('actual', 0),
                         "estimate": s.get('estimate', 0),
-                        "surprise_pct": s.get('surprise_percent', 0)
+                        "surprise": get_surprise_amt(s),
+                        "surprise_pct": get_surprise_pct(s)
                     }
                     for s in surprises[:4]
                 ]
@@ -829,15 +856,14 @@ class ContextBuilder:
         lines.append("| Category | English Name | 中文名称 | Value (数值) | Source (来源) | Logic (逻辑) |")
         lines.append("|---|---|---|---|---|---|")
         
-        # Supplemental Logic (mix of profile and analyst_targets)
+        # Supplemental Logic (mix of profile and forecast_data)
         # Re-using internal val extraction
-        targets = raw_data.get('analyst_targets', {})
-
-        val, src = get_val_src(targets, 'std_recommendation_key', default_src="Yahoo")
+        
+        val, src = get_val_src(profile, 'std_recommendation_key', default_src="Yahoo")
         if val == 'N/A' or val is None: src = "N/A"
         lines.append(f"| **Analyst** | Recommendation | 评级建议 | {fmt(val, MetricFormat.STRING)} | {src} | `recommendationKey` |")
         
-        val, src = get_val_src(targets, 'std_number_of_analysts')
+        val, src = get_val_src(forecast_data, 'std_number_of_analysts')
         lines.append(f"| | Num Analysts | 分析师数量 | {fmt(val, MetricFormat.DECIMAL)} | {src} | `numberOfAnalystOpinions` |")
         
         val, src = get_val_src(profile, 'std_52_week_change')

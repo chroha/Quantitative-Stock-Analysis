@@ -31,12 +31,12 @@ class AnalystTargetsModel(BaseValuationModel):
     ) -> Optional[float]:
         """Use median analyst price target as fair value."""
         try:
-            if not stock_data.analyst_targets:
-                logger.warning(f"{stock_data.symbol}: No analyst targets available")
+            if not stock_data.forecast_data:
+                logger.warning(f"{stock_data.symbol}: No forecast data available")
                 return None
             
             # Use consensus price target (closest to median)
-            consensus_target = stock_data.analyst_targets.std_price_target_consensus
+            consensus_target = stock_data.forecast_data.std_price_target_consensus
             
             if consensus_target is None or consensus_target.value is None or consensus_target.value <= 0:
                 logger.warning(f"{stock_data.symbol}: Invalid analyst consensus target")
