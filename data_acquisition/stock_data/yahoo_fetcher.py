@@ -142,11 +142,19 @@ class YahooFetcher(BaseFetcher):
             
             info = self.ticker.info
             
+            # Calculate dynamic fields
+            price = info.get('currentPrice') or info.get('previousClose') or info.get('regularMarketPrice')
+            eps_current = info.get('epsCurrentYear')
+            fwd_pe_current = None
+            if price and eps_current and eps_current > 0:
+                fwd_pe_current = price / eps_current
+
             # Create ForecastData object
             forecast = ForecastData(
                 # Forward Metrics
                 std_forward_eps=self._create_field_with_source(info.get('forwardEps')),
                 std_forward_pe=self._create_field_with_source(info.get('forwardPE')),
+                std_forward_pe_current_year=self._create_field_with_source(fwd_pe_current),
                 
                 # Analyst Targets
                 std_price_target_low=self._create_field_with_source(info.get('targetLowPrice')),
@@ -162,8 +170,7 @@ class YahooFetcher(BaseFetcher):
                 
                 # Growth - Map generic earningsGrowth/revenueGrowth to current year/next year if appropriate?
                 # Yahoo's 'earningsGrowth' is usually quarterly yoy. 
-                # We'll map what we can.
-                std_earnings_growth_current_year=self._create_field_with_source(info.get('earningsGrowth')),
+                std_quarterly_earnings_growth_yoy=self._create_field_with_source(info.get('earningsGrowth')),
                 std_revenue_growth_next_year=self._create_field_with_source(info.get('revenueGrowth')), 
                 
                 # Analyst Ratings (Partial)

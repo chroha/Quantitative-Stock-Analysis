@@ -369,6 +369,15 @@ FORECAST_FIELDS: Dict[str, FieldDefinition] = {
         av_names=None,
         priority=[DataSource.YAHOO, DataSource.FMP]
     ),
+    'std_forward_pe_current_year': FieldDefinition(
+        unified_name='std_forward_pe_current_year',
+        description='Forward P/E ratio (Current Year)',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=None,
+        av_names=None,
+        priority=[DataSource.YAHOO, DataSource.FMP]
+    ),
     'std_forward_revenue': FieldDefinition(
         unified_name='std_forward_revenue',
         description='Forward revenue estimate',
@@ -506,14 +515,23 @@ FORECAST_FIELDS: Dict[str, FieldDefinition] = {
     ),
     
     # === Growth Estimates === 
-    'std_earnings_growth_current_year': FieldDefinition(
-        unified_name='std_earnings_growth_current_year',
-        description='Current year earnings growth',
+    'std_quarterly_earnings_growth_yoy': FieldDefinition(
+        unified_name='std_quarterly_earnings_growth_yoy',
+        description='Quarterly earnings growth YoY',
         yahoo_names=['earningsGrowth'],
         edgar_tags=None,
         fmp_names=None,
         av_names=None,
-        priority=[DataSource.YAHOO, DataSource.FMP]
+        priority=[DataSource.YAHOO]
+    ),
+    'std_earnings_growth_current_year': FieldDefinition(
+        unified_name='std_earnings_growth_current_year',
+        description='Current year earnings growth',
+        yahoo_names=None,
+        edgar_tags=None,
+        fmp_names=None,
+        av_names=None,
+        priority=[DataSource.FMP, DataSource.YAHOO]
     ),
     'std_earnings_growth_next_year': FieldDefinition(
         unified_name='std_earnings_growth_next_year',

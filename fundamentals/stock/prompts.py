@@ -112,7 +112,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 |------|------|------|----|
 | ROIC | X% | X/{g(prof, 'roic')} | [简评] |
 | ROE | X% | X/{g(prof, 'roe')} | [简评] |
-| 营业利润率 | X% | X/{g(prof, 'op_margin')} | [简评] |
+| 营业利润率(GAAP) | X% | X/{g(prof, 'op_margin')} | [简评] |
 | 毛利率 | X% | X/{g(prof, 'gross_margin')} | [简评] |
 | 净利率 | X% | X/{g(prof, 'net_margin')} | [简评] |
 
@@ -271,7 +271,7 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 |--------|-------|-------|---------|
 | ROIC | X% | X/{g(prof, 'roic')} | [Brief Comment] |
 | ROE | X% | X/{g(prof, 'roe')} | [Brief Comment] |
-| Op Margin | X% | X/{g(prof, 'op_margin')} | [Brief Comment] |
+| Op Margin(GAAP) | X% | X/{g(prof, 'op_margin')} | [Brief Comment] |
 | Gross Margin | X% | X/{g(prof, 'gross_margin')} | [Brief Comment] |
 | Net Margin | X% | X/{g(prof, 'net_margin')} | [Brief Comment] |
 

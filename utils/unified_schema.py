@@ -164,6 +164,10 @@ class ForecastData(BaseModel):
         None,
         description="Forward P/E ratio based on forward EPS"
     )
+    std_forward_pe_current_year: Optional[FieldWithSource] = Field(
+        None,
+        description="Forward P/E ratio based on current year estimate"
+    )
     std_forward_revenue: Optional[FieldWithSource] = Field(
         None,
         description="Forward revenue estimate - Next fiscal year (USD)"
@@ -257,6 +261,10 @@ class ForecastData(BaseModel):
     std_earnings_growth_current_year: Optional[FieldWithSource] = Field(
         None,
         description="Estimated earnings growth rate for current year (decimal, e.g., 0.15 = 15%)"
+    )
+    std_quarterly_earnings_growth_yoy: Optional[FieldWithSource] = Field(
+        None,
+        description="Quarterly earnings growth rate YoY (decimal)"
     )
     std_earnings_growth_next_year: Optional[FieldWithSource] = Field(
         None,

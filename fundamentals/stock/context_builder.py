@@ -393,9 +393,10 @@ class ContextBuilder:
             "current_eps": current_eps,
             "current_earnings_growth_5y": current_earnings_growth_5y,
             "current_revenue_growth_5y": current_revenue_growth_5y,
-            "forward_eps": get_val('std_forward_eps'),
-            "forward_pe": get_val('std_forward_pe'),
+            "forward_eps": get_val('std_eps_estimate_current_year') or get_val('std_forward_eps'),
+            "forward_pe": get_val('std_forward_pe_current_year') or get_val('std_forward_pe'),
             "earnings_growth_current_year": get_val('std_earnings_growth_current_year'),
+            "quarterly_earnings_growth_yoy": get_val('std_quarterly_earnings_growth_yoy'),
             "revenue_growth_next_year": get_val('std_revenue_growth_next_year'),
             "price_target_low": get_val('std_price_target_low'),
             "price_target_high": get_val('std_price_target_high'),
@@ -799,14 +800,23 @@ class ContextBuilder:
         lines.append("|---|---|---|---|---|---|")
         
         # Forward Logic
+        val, src = get_val_src(forecast_data, 'std_eps_estimate_current_year')
+        lines.append(f"| **Estimates** | Current Year EPS (FY1) | 本年EPS预期 (FY1) | {fmt(val, MetricFormat.CURRENCY)} | {src} | `forecast_data.std_eps_estimate_current_year` |")
+
         val, src = get_val_src(forecast_data, 'std_forward_eps')
-        lines.append(f"| **Estimates** | Forward EPS | 前瞻每股收益 | {fmt(val, MetricFormat.CURRENCY)} | {src} | `forecast_data.std_forward_eps` |")
+        lines.append(f"| | Next Year EPS (FY2) | 明年EPS预期 (FY2) | {fmt(val, MetricFormat.CURRENCY)} | {src} | `forecast_data.std_forward_eps` |")
+        
+        val, src = get_val_src(forecast_data, 'std_forward_pe_current_year')
+        lines.append(f"| | Current Year P/E (FY1) | 本年前瞻市盈率 (FY1) | {fmt(val, MetricFormat.DECIMAL)} | {src} | `forecast_data.std_forward_pe_current_year` |")
         
         val, src = get_val_src(forecast_data, 'std_forward_pe')
-        lines.append(f"| | Forward P/E | 前瞻市盈率 | {fmt(val, MetricFormat.DECIMAL)} | {src} | `forecast_data.std_forward_pe` |")
+        lines.append(f"| | Next Year P/E (FY2) | 明年前瞻市盈率 (FY2) | {fmt(val, MetricFormat.DECIMAL)} | {src} | `forecast_data.std_forward_pe` |")
         
         val, src = get_val_src(forecast_data, 'std_earnings_growth_current_year')
-        lines.append(f"| | Earnings Growth (CY) | 本年盈利增长 | {fmt(val, MetricFormat.PERCENT)} | {src} | `forecast_data.std_earnings_growth_current_year` |")
+        lines.append(f"| | Full Year Earnings Growth | 本年预计总盈利增长 | {fmt(val, MetricFormat.PERCENT)} | {src} | `forecast_data.std_earnings_growth_current_year` |")
+        
+        val, src = get_val_src(forecast_data, 'std_quarterly_earnings_growth_yoy')
+        lines.append(f"| | Quarterly Earnings Growth YoY | 最近季度盈利同比 | {fmt(val, MetricFormat.PERCENT)} | {src} | `forecast_data.std_quarterly_earnings_growth_yoy` |")
         
         val, src = get_val_src(forecast_data, 'std_revenue_growth_next_year')
         lines.append(f"| | Revenue Growth (NY) | 明年营收增长 | {fmt(val, MetricFormat.PERCENT)} | {src} | `forecast_data.std_revenue_growth_next_year` |")
@@ -829,7 +839,7 @@ class ContextBuilder:
         
         if surprises:
             lines.append("##### Earnings Surprise详细记录 (Latest 4 Quarters)\n")
-            lines.append("| Period | Actual EPS | Estimate EPS | Surprise | Surprise % |")
+            lines.append("| Period(日历季) | Actual EPS | Estimate EPS | Surprise | Surprise % |")
             lines.append("|--------|-----------|-------------|----------|-----------|")
             for s in surprises[:4]:
                 # Surprise % might be missing or raw. Finnhub sometimes returns it as 'surprisePercent' or we calculate it.
