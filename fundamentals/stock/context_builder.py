@@ -515,12 +515,16 @@ class ContextBuilder:
             # Source derivation
             base_src = get_raw_src(op_inc_item, "Yahoo")
             
-            if pretax and pretax != 0:
+            if pretax and pretax != 0 and tax_exp is not None:
                 tax_rate = abs(safe_div(tax_exp, pretax)) 
                 tax_src = f"Calculated ({get_raw_src(tax_exp_item, 'Yahoo')})"
             
-            nopat_val = op_inc * (1 - tax_rate)
-            nopat_src = f"Calculated ({base_src})"
+            if op_inc is not None:
+                nopat_val = op_inc * (1 - tax_rate)
+                nopat_src = f"Calculated ({base_src})"
+            else:
+                nopat_val = None
+                nopat_src = "Calculated (Missing Input)"
             
             lines.append(f"| NOPAT | 税后营业利润 | {fmt(nopat_val, MetricFormat.CURRENCY_LARGE)} | {nopat_src} | `Operating Income * (1 - {tax_rate:.1%})` |")
         else:

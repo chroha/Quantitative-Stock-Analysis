@@ -87,9 +87,9 @@ class CurrencyNormalizer:
         try:
             symbol = f"{base}{target}=X"
             ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1d")
+            hist = ticker.history(period="5d")
             if not hist.empty:
-                return hist['Close'].iloc[-1]
+                return float(hist['Close'].iloc[-1])
             return 1.0
         except Exception as e:
             logger.warning(f"FX fetch failed for {base}{target}: {e}")
@@ -117,7 +117,7 @@ class CurrencyNormalizer:
                             continue
                             
                         old_val = val_obj.value
-                        new_val = old_val * fx_rate
+                        new_val = float(old_val * fx_rate)
                         
                         # Use setattr with a fresh FieldWithSource
                         new_obj = FieldWithSource(value=new_val, source='normalized')
