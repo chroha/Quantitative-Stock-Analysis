@@ -264,14 +264,59 @@ class ProfitabilityCalculator(CalculatorBase):
         
         # Find latest Annual (FY) or TTM financial data
         latest_income = next((s for s in stock_data.income_statements if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
-        latest_balance = next((s for s in stock_data.balance_sheets if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+        
+        # For balance sheet: prefer the one aligned with latest_income period to avoid
+        # incomplete quarterly snapshots (e.g., FMP Q1 data mis-labeled as FY) that
+        # have unrealistically low total_debt, which would inflate IC denominator.
+        latest_balance = None
+        if latest_income:
+            income_period = getattr(latest_income, 'std_period', None)
+            # First try to find a BS from same or earlier period as income statement
+            for bs in stock_data.balance_sheets:
+                if getattr(bs, 'std_period_type', '') not in ['FY', 'TTM']:
+                    continue
+                bs_period = getattr(bs, 'std_period', None)
+                if bs_period and income_period and bs_period <= income_period:
+                    latest_balance = bs
+                    break
+            # Fallback: any FY/TTM balance sheet
+            if latest_balance is None:
+                latest_balance = next((s for s in stock_data.balance_sheets if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+        else:
+            latest_balance = next((s for s in stock_data.balance_sheets if getattr(s, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+        
+        # Sanity check: debt drop > 95% in one period is almost certainly corrupt data.
+        # 5% threshold avoids false positives on companies that legitimately reduced debt.
+        # prev_debt > 1e8 guard prevents issues on tiny absolute values.
+        if latest_balance is not None:
+            debt_field = getattr(latest_balance, 'std_total_debt', None)
+            selected_debt = debt_field.value if debt_field and hasattr(debt_field, 'value') else None
+            if selected_debt is not None:
+                # Find the next older FY BS for comparison
+                selected_period = getattr(latest_balance, 'std_period', '')
+                for bs in stock_data.balance_sheets:
+                    if getattr(bs, 'std_period_type', '') not in ['FY', 'TTM']:
+                        continue
+                    bs_period = getattr(bs, 'std_period', '')
+                    if bs_period < selected_period:
+                        prev_debt_field = getattr(bs, 'std_total_debt', None)
+                        prev_debt = prev_debt_field.value if prev_debt_field and hasattr(prev_debt_field, 'value') else None
+                        if (prev_debt and prev_debt > 1e8
+                                and selected_debt < prev_debt * 0.05):
+                            self.logger.warning(
+                                f"Balance sheet {selected_period} total_debt={selected_debt/1e9:.2f}B is <5% of "
+                                f"prior period {bs_period} debt={prev_debt/1e9:.2f}B. "
+                                f"Likely incomplete data — falling back to {bs_period} for ROIC calculation."
+                            )
+                            latest_balance = bs
+                        break
         
         if not latest_income or not latest_balance:
             latest_income = stock_data.income_statements[0]
             latest_balance = stock_data.balance_sheets[0]
             self.logger.warning("No Annual (FY) or TTM statements found. Using latest available.")
         else:
-             self.logger.debug(f"Using Latest Annual/TTM Report: {latest_income.std_period}")
+             self.logger.debug(f"Using Latest Annual/TTM Report: IS={latest_income.std_period}, BS={latest_balance.std_period}")
         
         # Extract values WITH sources
         # Income inputs

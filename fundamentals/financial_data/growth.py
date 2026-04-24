@@ -244,8 +244,53 @@ class GrowthCalculator(CalculatorBase):
         
         # Calculate FCF to Debt
         if stock_data.cash_flows and stock_data.balance_sheets:
-            latest_cf = stock_data.cash_flows[0]
-            latest_bs = stock_data.balance_sheets[0]
+            
+            # Use the latest FY/TTM cash flow for both FCF value AND the BS anchor period.
+            # cash_flows[0] may be a quarterly snapshot (e.g., Q1) with negative FCF,
+            # which would produce an incorrect or negative FCF/Debt ratio.
+            annual_cf = next((cf for cf in stock_data.cash_flows
+                              if getattr(cf, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+            latest_cf = annual_cf if annual_cf is not None else stock_data.cash_flows[0]
+            cf_anchor_period = getattr(annual_cf, 'std_period', None) if annual_cf else None
+            
+            latest_bs = None
+            if cf_anchor_period:
+                for bs in stock_data.balance_sheets:
+                    if getattr(bs, 'std_period_type', '') not in ['FY', 'TTM']:
+                        continue
+                    if getattr(bs, 'std_period', '') <= cf_anchor_period:
+                        latest_bs = bs
+                        break
+            if latest_bs is None:
+                latest_bs = next((bs for bs in stock_data.balance_sheets
+                                  if getattr(bs, 'std_period_type', '') in ['FY', 'TTM']),
+                                 stock_data.balance_sheets[0])
+            
+            # Sanity check: debt drop > 95% in one period is almost certainly corrupt data
+            # (e.g., FMP Q1 partial balance sheet mis-labeled as FY).
+            # The 5% threshold avoids false positives on companies that legitimately reduced
+            # debt significantly. We also skip if prev_debt itself was < $100M to avoid
+            # division issues on near-zero absolute values.
+            debt_field = getattr(latest_bs, 'std_total_debt', None)
+            selected_debt = debt_field.value if debt_field and hasattr(debt_field, 'value') else None
+            selected_period = getattr(latest_bs, 'std_period', '')
+            if selected_debt is not None:
+                for bs in stock_data.balance_sheets:
+                    if getattr(bs, 'std_period_type', '') not in ['FY', 'TTM']:
+                        continue
+                    bs_period = getattr(bs, 'std_period', '')
+                    if bs_period < selected_period:
+                        prev_debt_f = getattr(bs, 'std_total_debt', None)
+                        prev_debt = prev_debt_f.value if prev_debt_f and hasattr(prev_debt_f, 'value') else None
+                        if (prev_debt and prev_debt > 1e8  # skip when prev debt was already tiny
+                                and selected_debt < prev_debt * 0.05):  # >95% drop = suspect
+                            self.logger.warning(
+                                f"FCF/Debt: BS {selected_period} total_debt={selected_debt/1e9:.2f}B is <5% of "
+                                f"prior {bs_period} debt={prev_debt/1e9:.2f}B. "
+                                f"Likely incomplete data — falling back to {bs_period}."
+                            )
+                            latest_bs = bs
+                        break
             
             # Get latest FCF value/source
             # If standard field is empty, fallback to calculated "Latest FCF"

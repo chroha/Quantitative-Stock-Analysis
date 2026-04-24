@@ -42,12 +42,13 @@ class DCFModel(BaseValuationModel):
     ) -> Optional[float]:
         """Calculate fair value using simplified DCF."""
         try:
-            # 1. Get latest Free Cash Flow
-            if not stock_data.cash_flows:
-                logger.warning(f"{stock_data.symbol}: No cash flow statements")
-                return None
+            # 1. Get latest Free Cash Flow from the latest FY/TTM cash flow statement.
+            # cash_flows[0] may be a quarterly snapshot (e.g., Q1) with negative or partial FCF,
+            # which would cause DCF to return N/A. Prefer annual data for a stable base.
+            annual_cf_for_fcf = next((cf for cf in stock_data.cash_flows
+                                      if getattr(cf, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+            latest_cf = annual_cf_for_fcf if annual_cf_for_fcf is not None else stock_data.cash_flows[0]
             
-            latest_cf = stock_data.cash_flows[0]
             if not latest_cf.std_free_cash_flow or latest_cf.std_free_cash_flow.value is None:
                 logger.warning(f"{stock_data.symbol}: No FCF data")
                 return None
@@ -107,7 +108,52 @@ class DCFModel(BaseValuationModel):
                 logger.warning(f"{stock_data.symbol}: No balance sheet for debt adjustment")
                 return None
             
-            latest_bs = stock_data.balance_sheets[0]
+            # Select FY/TTM balance sheet aligned with the latest annual cash flow to avoid
+            # incomplete quarterly snapshots (e.g. FMP Q1 data mis-labeled as FY) that
+            # have near-zero total_debt, which produces a large negative net_debt and
+            # pushes the DCF fair value far above realistic levels.
+            annual_cf_period = None
+            if stock_data.cash_flows:
+                annual_cf = next((cf for cf in stock_data.cash_flows
+                                  if getattr(cf, 'std_period_type', 'FY') in ['FY', 'TTM']), None)
+                annual_cf_period = getattr(annual_cf, 'std_period', None) if annual_cf else None
+            
+            latest_bs = None
+            if annual_cf_period:
+                for bs in stock_data.balance_sheets:
+                    if getattr(bs, 'std_period_type', '') not in ['FY', 'TTM']:
+                        continue
+                    if getattr(bs, 'std_period', '') <= annual_cf_period:
+                        latest_bs = bs
+                        break
+            if latest_bs is None:
+                latest_bs = next((bs for bs in stock_data.balance_sheets
+                                  if getattr(bs, 'std_period_type', '') in ['FY', 'TTM']),
+                                 stock_data.balance_sheets[0])
+            
+            # Sanity check: debt drop > 95% in one period is almost certainly corrupt data.
+            # 5% threshold avoids false positives on companies that legitimately reduced debt.
+            # prev_debt > 1e8 guard prevents issues on tiny absolute values.
+            debt_field = getattr(latest_bs, 'std_total_debt', None)
+            selected_debt = debt_field.value if debt_field and hasattr(debt_field, 'value') else None
+            selected_period = getattr(latest_bs, 'std_period', '')
+            if selected_debt is not None:
+                for bs in stock_data.balance_sheets:
+                    if getattr(bs, 'std_period_type', '') not in ['FY', 'TTM']:
+                        continue
+                    bs_period = getattr(bs, 'std_period', '')
+                    if bs_period < selected_period:
+                        prev_debt_f = getattr(bs, 'std_total_debt', None)
+                        prev_debt = prev_debt_f.value if prev_debt_f and hasattr(prev_debt_f, 'value') else None
+                        if (prev_debt and prev_debt > 1e8
+                                and selected_debt < prev_debt * 0.05):
+                            logger.warning(
+                                f"{stock_data.symbol}: DCF BS {selected_period} total_debt={selected_debt/1e9:.2f}B "
+                                f"is <5% of prior {bs_period} debt={prev_debt/1e9:.2f}B. "
+                                f"Likely incomplete data — falling back to {bs_period}."
+                            )
+                            latest_bs = bs
+                        break
             
             # Net Debt = Total Debt - Cash
             total_debt = 0

@@ -58,7 +58,7 @@ class LLMClient:
                 logger.warning(f"Model {model} failed due to timeout or error. Attempting next fallback model... Details: {e}")
                 continue
                 
-        logger.error("All models failed to generate valid text.")
+        logger.error("All models failed to generate valid text. Check individual model warnings above for specific failure reasons (SAFETY block, 404, timeout, etc.).")
         return None
 
     def _call_api(self, model_name: str, prompt: str) -> Optional[str]:
@@ -89,7 +89,7 @@ class LLMClient:
                         finish_reason = candidate.get("finishReason", "UNKNOWN")
                         
                         if finish_reason not in ["", "STOP", "MAX_TOKENS"]:
-                            logger.warning(f"Generation stopped: {finish_reason} ({model_name})")
+                            logger.warning(f"Generation stopped by API: finish_reason='{finish_reason}' model={model_name}. This may indicate a SAFETY block or content policy rejection.")
                             return None
 
                         content_parts = candidate.get("content", {}).get("parts", [])
@@ -115,6 +115,7 @@ class LLMClient:
                 
                 # 404 means model not found, silent fail to next
                 if response.status_code == 404:
+                    logger.warning(f"Model {model_name} not found (404). Skipping.")
                     return None
                     
                 logger.warning(f"API Error {model_name} ({response.status_code}): {response.text[:200]}")

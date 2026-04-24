@@ -531,10 +531,35 @@ class ContextBuilder:
             lines.append(f"| NOPAT | 税后营业利润 | N/A | Missing Data | `Operating Income * (1 - Tax Rate)` |")
 
         # 2. Invested Capital
+        # Use the FY/TTM balance sheet aligned with latest income statement to avoid
+        # using an incomplete quarterly snapshot (e.g., FMP Q1 mis-labeled as FY).
         ic_val = None
         ic_src = "Calculated"
+        _anchor_period = stmts[0].get('std_period', '') if stmts else ''
+        _annual_bs = None
         if bs_stmts:
-            curr_bs = bs_stmts[0]
+            for _bs in bs_stmts:
+                if _bs.get('std_period_type', '') not in ['FY', 'TTM']:
+                    continue
+                if _bs.get('std_period', '') <= _anchor_period:
+                    _annual_bs = _bs
+                    break
+            if _annual_bs is None:
+                _annual_bs = bs_stmts[0]
+            # Sanity check: debt drop > 95% in one period is almost certainly corrupt data
+            _sel_debt_raw = get_raw_val(_annual_bs.get('std_total_debt', 0)) or 0
+            _sel_period = _annual_bs.get('std_period', '')
+            for _bs2 in bs_stmts:
+                if _bs2.get('std_period_type', '') not in ['FY', 'TTM']:
+                    continue
+                if _bs2.get('std_period', '') < _sel_period:
+                    _prev_debt = get_raw_val(_bs2.get('std_total_debt', 0)) or 0
+                    if _prev_debt > 1e8 and _sel_debt_raw < _prev_debt * 0.05:
+                        _annual_bs = _bs2  # fall back to prior reliable period
+                    break
+        
+        if _annual_bs:
+            curr_bs = _annual_bs
             equity_item = curr_bs.get('std_shareholder_equity', 0)
             debt_item = curr_bs.get('std_total_debt', 0)
             cash_item = curr_bs.get('std_cash', 0)
@@ -763,9 +788,9 @@ class ContextBuilder:
              lines.append(f"| Operating Cash Flow | 经营现金流 | N/A | Missing Data | `std_operating_cash_flow` |")
              lines.append(f"| Capital Expenditure | 资本支出 | N/A | Missing Data | `std_capex` |")
         
-        # Balance Sheet Items
-        if bs_stmts:
-            curr_bs = bs_stmts[0]
+        # Balance Sheet Items (use the same reliable FY/TTM BS selected above for IC)
+        if _annual_bs:
+            curr_bs = _annual_bs
             val, src = get_val_src(curr_bs, 'std_total_debt')
             lines.append(f"| Total Debt | 总债务 | {fmt(val, MetricFormat.CURRENCY_LARGE)} | {src} | `std_total_debt` |")
             val, src = get_val_src(curr_bs, 'std_cash')
