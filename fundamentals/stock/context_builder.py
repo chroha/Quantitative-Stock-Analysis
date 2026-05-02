@@ -253,6 +253,22 @@ class ContextBuilder:
         else:
             formatted_ev = raw_ev
 
+        # Format percentage metrics explicitly to prevent the LLM from hallucinating
+        # scale. If the raw value is 33.01, the LLM might interpret it as "33.01%"
+        # instead of "3301%". Passing it as a formatted string locks in the correct value.
+        def format_pct(val):
+            if isinstance(val, (int, float)):
+                return f"{val * 100:.2f}%"
+            return val
+            
+        stock_52w_raw = get_val('std_52_week_change')
+        sp500_52w_raw = get_val('std_sandp_52_week_change')
+        
+        if isinstance(stock_52w_raw, (int, float)) and isinstance(sp500_52w_raw, (int, float)):
+            alpha_raw = stock_52w_raw - sp500_52w_raw
+        else:
+            alpha_raw = sp500_52w_raw
+
         return {
             "ownership": {
                 "insiders_pct": get_val('std_held_percent_insiders'),
@@ -273,17 +289,11 @@ class ContextBuilder:
                 "num_analysts": get_target('std_number_of_analysts') or "N/A"
             },
             "relative_strength": {
-                "stock_52w_change": get_val('std_52_week_change'),
+                "stock_52w_change": format_pct(stock_52w_raw),
                 # Renamed from 'sp500_52w_change' to 'alpha_vs_sp500' to prevent the LLM
                 # from interpreting this field as "what the S&P 500 returned" rather than
                 # "how much this stock outperformed/underperformed the market".
-                # Value = stock_52W_change - sp500_52W_change (computed below).
-                "alpha_vs_sp500": (
-                    (get_val('std_52_week_change') - get_val('std_sandp_52_week_change'))
-                    if (isinstance(get_val('std_52_week_change'), (int, float))
-                        and isinstance(get_val('std_sandp_52_week_change'), (int, float)))
-                    else get_val('std_sandp_52_week_change')  # fallback if either is missing
-                )
+                "alpha_vs_sp500": format_pct(alpha_raw)
             },
             "liquidity_risk": {
                  "current_ratio": get_val('std_current_ratio'),
