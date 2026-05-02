@@ -274,10 +274,11 @@ class ContextBuilder:
             },
             "relative_strength": {
                 "stock_52w_change": get_val('std_52_week_change'),
-                # FIX: Compute Alpha = stock52W - sp500_52W, not the raw S&P index return.
-                # The raw SandP52WeekChange is the market's own return; showing it as "vs S&P"
-                # would display the same value for every stock and is misleading.
-                "sp500_52w_change": (
+                # Renamed from 'sp500_52w_change' to 'alpha_vs_sp500' to prevent the LLM
+                # from interpreting this field as "what the S&P 500 returned" rather than
+                # "how much this stock outperformed/underperformed the market".
+                # Value = stock_52W_change - sp500_52W_change (computed below).
+                "alpha_vs_sp500": (
                     (get_val('std_52_week_change') - get_val('std_sandp_52_week_change'))
                     if (isinstance(get_val('std_52_week_change'), (int, float))
                         and isinstance(get_val('std_sandp_52_week_change'), (int, float)))
@@ -822,15 +823,21 @@ class ContextBuilder:
              lines.append(f"| EBITDA | EBITDA | N/A | Missing Data | `std_ebitda` |")
         
         # Cash Flow Details
+        # FIX: Use the same FY/TTM priority logic as the FCF appendix to ensure
+        # the displayed OCF/CapEx reflects annual figures, not a partial Q1 snapshot.
         if cf_stmts:
-             # FIX: Correct key is std_operating_cash_flow
-             val, src = get_val_src(cf_stmts[0], 'std_operating_cash_flow')
-             lines.append(f"| Operating Cash Flow | 经营现金流 | {fmt(val, MetricFormat.CURRENCY_LARGE)} | {src} | `std_operating_cash_flow` |")
-             val, src = get_val_src(cf_stmts[0], 'std_capex')
-             lines.append(f"| Capital Expenditure | 资本支出 | {fmt(val, MetricFormat.CURRENCY_LARGE)} | {src} | `std_capex` |")
+            _annual_cf_val = next(
+                (cf for cf in cf_stmts
+                 if cf.get('std_period_type', '') in ['FY', 'TTM']),
+                cf_stmts[0]  # fallback to first if no annual statement found
+            )
+            val, src = get_val_src(_annual_cf_val, 'std_operating_cash_flow')
+            lines.append(f"| Operating Cash Flow | 经营现金流 | {fmt(val, MetricFormat.CURRENCY_LARGE)} | {src} | `std_operating_cash_flow` |")
+            val, src = get_val_src(_annual_cf_val, 'std_capex')
+            lines.append(f"| Capital Expenditure | 资本支出 | {fmt(val, MetricFormat.CURRENCY_LARGE)} | {src} | `std_capex` |")
         else:
-             lines.append(f"| Operating Cash Flow | 经营现金流 | N/A | Missing Data | `std_operating_cash_flow` |")
-             lines.append(f"| Capital Expenditure | 资本支出 | N/A | Missing Data | `std_capex` |")
+            lines.append(f"| Operating Cash Flow | 经营现金流 | N/A | Missing Data | `std_operating_cash_flow` |")
+            lines.append(f"| Capital Expenditure | 资本支出 | N/A | Missing Data | `std_capex` |")
         
         # Balance Sheet Items (use the same reliable FY/TTM BS selected above for IC)
         if _annual_bs:
