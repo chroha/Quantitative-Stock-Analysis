@@ -94,8 +94,19 @@ class ContextBuilder:
                 metrics = cat_val.get('metrics', {})
                 if metric_name in metrics:
                     m = metrics[metric_name]
+                    raw_val = m.get('value', 0)
+
+                    # Cap earnings_quality display: OCF/NI can diverge wildly when NI → 0.
+                    # Values beyond ±10 (i.e. >1000%) convey no useful signal to the LLM
+                    # and can trigger hallucinated commentary. Replace with None (→ "N/A").
+                    # This does NOT affect the score, which is computed upstream and stored
+                    # separately in 'weighted_score'.
+                    if metric_name == 'earnings_quality_3y' and isinstance(raw_val, (int, float)):
+                        if abs(raw_val) > 10:
+                            raw_val = None  # render as N/A in report
+
                     return {
-                        "val": m.get('value', 0),
+                        "val": raw_val,
                         "score": m.get('weighted_score', 0),
                         "max": m.get('weight', 0),
                         "rank": m.get('interpretation', 'N/A').split('(')[-1].strip(')')
@@ -263,7 +274,15 @@ class ContextBuilder:
             },
             "relative_strength": {
                 "stock_52w_change": get_val('std_52_week_change'),
-                "sp500_52w_change": get_val('std_sandp_52_week_change')
+                # FIX: Compute Alpha = stock52W - sp500_52W, not the raw S&P index return.
+                # The raw SandP52WeekChange is the market's own return; showing it as "vs S&P"
+                # would display the same value for every stock and is misleading.
+                "sp500_52w_change": (
+                    (get_val('std_52_week_change') - get_val('std_sandp_52_week_change'))
+                    if (isinstance(get_val('std_52_week_change'), (int, float))
+                        and isinstance(get_val('std_sandp_52_week_change'), (int, float)))
+                    else get_val('std_sandp_52_week_change')  # fallback if either is missing
+                )
             },
             "liquidity_risk": {
                  "current_ratio": get_val('std_current_ratio'),
@@ -592,47 +611,72 @@ class ContextBuilder:
             lines.append(f"| Operating Income | 营业利润 | {fmt(val, MetricFormat.CURRENCY_LARGE)} | {src} | `Gross Profit - OpEx` |")
             
         # 4. Cash Flow (FCF)
+        # FIX: Prefer FY/TTM annual cash flow to avoid displaying a Q1-only
+        # quarterly snapshot (which may have negative OCF) as the "latest" FCF.
+        # This keeps the appendix display consistent with the FCF/Debt calculation.
         fcf_val = None
         if cf_stmts:
-            curr_cf = cf_stmts[0]
-            # FIX: Correct key is std_operating_cash_flow
+            # Prefer the latest FY or TTM cash flow statement
+            _annual_cf = next(
+                (cf for cf in cf_stmts
+                 if cf.get('std_period_type', '') in ['FY', 'TTM']),
+                cf_stmts[0]  # fallback to first if no annual found
+            )
+            curr_cf = _annual_cf
             ocf_item = curr_cf.get('std_operating_cash_flow', 0)
             capex_item = curr_cf.get('std_capex', 0)
-            
+            cf_period_type = curr_cf.get('std_period_type', '')
+
             ocf = get_raw_val(ocf_item)
             capex = get_raw_val(capex_item)
-            
+
             base_src = get_raw_src(ocf_item, "Yahoo")
+            period_tag = "Normalized" if cf_period_type in ['FY', 'TTM'] else "Normalized (Quarterly)"
             fcf_src = f"Calculated ({base_src})"
-            
+
             if ocf is not None and capex is not None:
                 fcf_val = ocf - abs(capex)
                 lines.append(f"| FCF (Latest) | 自由现金流 | {fmt(fcf_val, MetricFormat.CURRENCY_LARGE)} | {fcf_src} | `OCF({fmt(ocf, MetricFormat.CURRENCY_LARGE)}) - abs(CapEx)({fmt(abs(capex), MetricFormat.CURRENCY_LARGE)})` |")
             else:
-                # Logic string should indicate missing inputs
                 lines.append(f"| FCF (Latest) | 自由现金流 | N/A | Calculated (Missing) | `OCF - abs(CapEx)` |")
         else:
-             lines.append(f"| FCF (Latest) | 自由现金流 | N/A | Missing Data | `OCF - CapEx` |")
+            lines.append(f"| FCF (Latest) | 自由现金流 | N/A | Missing Data | `OCF - CapEx` |")
 
         # 5. SBC Impact
-        sbc_val = 0
-        rev_val = 0
+        # FIX: scoring system (capital_allocation.py) uses SBC/OCF as the denominator,
+        # not SBC/Revenue. Align the appendix display with the actual metric definition.
+        # If OCF is negative or zero (can happen in seasonal quarters), fallback to Revenue
+        # and flag it clearly, so readers know the denominator differs.
+        sbc_val = None
         if cf_stmts and stmts:
-            # FIX: Check correct key for SBC
             sbc_item = cf_stmts[0].get('std_stock_based_compensation', 0)
-            rev_item = stmts[0].get('std_revenue', 0)
-            
             sbc_val = get_raw_val(sbc_item)
-            rev_val = get_raw_val(rev_item)
             base_src = get_raw_src(sbc_item, "Yahoo")
-            
-            if rev_val and rev_val != 0:
-                sbc_pct = safe_div(sbc_val, rev_val)
-                lines.append(f"| SBC Impact | 股权激励 | {fmt(sbc_pct, MetricFormat.PERCENT)} | Calculated ({base_src}) | `SBC({fmt(sbc_val, MetricFormat.CURRENCY_LARGE)}) / Revenue` |")
+
+            # Prefer OCF from the FY/TTM annual CF (same as scoring logic)
+            _annual_cf_sbc = next(
+                (cf for cf in cf_stmts if cf.get('std_period_type', '') in ['FY', 'TTM']),
+                cf_stmts[0]
+            )
+            ocf_item_sbc = _annual_cf_sbc.get('std_operating_cash_flow', 0)
+            ocf_val_sbc = get_raw_val(ocf_item_sbc)
+
+            if sbc_val is not None and ocf_val_sbc and ocf_val_sbc > 0:
+                sbc_pct = safe_div(sbc_val, ocf_val_sbc)
+                lines.append(f"| SBC Impact | 股权激励 | {fmt(sbc_pct, MetricFormat.PERCENT)} | Calculated ({base_src}) | `SBC({fmt(sbc_val, MetricFormat.CURRENCY_LARGE)}) / OCF` |")
+            elif sbc_val is not None:
+                # Fallback: use Revenue if OCF is unavailable/negative
+                rev_item_sbc = stmts[0].get('std_revenue', 0)
+                rev_val_sbc = get_raw_val(rev_item_sbc)
+                if rev_val_sbc and rev_val_sbc != 0:
+                    sbc_pct = safe_div(sbc_val, rev_val_sbc)
+                    lines.append(f"| SBC Impact | 股权激励 | {fmt(sbc_pct, MetricFormat.PERCENT)} | Calculated ({base_src}) | `SBC({fmt(sbc_val, MetricFormat.CURRENCY_LARGE)}) / Revenue (OCF unavail)` |")
+                else:
+                    lines.append(f"| SBC Impact | 股权激励 | N/A | Low Revenue | `SBC / OCF (fallback Revenue)` |")
             else:
-                lines.append(f"| SBC Impact | 股权激励 | N/A | Low Revenue | `SBC / Revenue` |")
+                lines.append(f"| SBC Impact | 股权激励 | N/A | Missing Data | `SBC / OCF` |")
         else:
-            lines.append(f"| SBC Impact | 股权激励 | N/A | Missing Data | `SBC / Revenue` |")
+            lines.append(f"| SBC Impact | 股权激励 | N/A | Missing Data | `SBC / OCF` |")
         
         # 6. Dilution (Share Count CAGR)
         if stmts and len(stmts) > 1:
@@ -905,11 +949,20 @@ class ContextBuilder:
         val, src = get_val_src(forecast_data, 'std_number_of_analysts')
         lines.append(f"| | Num Analysts | 分析师数量 | {fmt(val, MetricFormat.DECIMAL)} | {src} | `numberOfAnalystOpinions` |")
         
-        val, src = get_val_src(profile, 'std_52_week_change')
-        lines.append(f"| **Risk/Trend** | 52W Change | 年涨跌幅 | {fmt(val, MetricFormat.PERCENT)} | {src} | `52WeekChange` |")
-        
-        val, src = get_val_src(profile, 'std_sandp_52_week_change')
-        lines.append(f"| | vs S&P 500 | 标普同期 | {fmt(val, MetricFormat.PERCENT)} | {src} | `SandP52WeekChange` |")
+        stock_52w_val, stock_52w_src = get_val_src(profile, 'std_52_week_change')
+        lines.append(f"| **Risk/Trend** | 52W Change | 年涨跌幅 | {fmt(stock_52w_val, MetricFormat.PERCENT)} | {stock_52w_src} | `52WeekChange` |")
+
+        # FIX: 'std_sandp_52_week_change' is the S&P 500 index's own 52W return, not the
+        # stock's relative Alpha. We compute Alpha = stock52W - sp500_52W so that the value
+        # consistently means "how much this stock outperformed / underperformed the market".
+        sp500_val, sp500_src = get_val_src(profile, 'std_sandp_52_week_change')
+        if isinstance(stock_52w_val, (int, float)) and isinstance(sp500_val, (int, float)):
+            alpha_val = stock_52w_val - sp500_val
+            alpha_src = stock_52w_src  # inherits stock data source
+        else:
+            alpha_val = sp500_val  # fallback: show raw value if either is missing
+            alpha_src = sp500_src
+        lines.append(f"| | vs S&P 500 | 标普超额Alpha | {fmt(alpha_val, MetricFormat.PERCENT)} | {alpha_src} | `52WeekChange - SandP52WeekChange` |")
         
         val, src = get_val_src(profile, 'std_audit_risk')
         lines.append(f"| | Audit Risk | 审计风险 | {fmt(val, MetricFormat.DECIMAL)} | {src} | `auditRisk` |")

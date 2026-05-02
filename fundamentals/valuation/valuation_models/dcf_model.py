@@ -86,7 +86,22 @@ class DCFModel(BaseValuationModel):
             
             # WACC = Risk-free + Beta * (Market Return - Risk-free)
             wacc = self.RISK_FREE_RATE + beta * (self.MARKET_RETURN - self.RISK_FREE_RATE)
-            
+
+            # Safety check: if WACC is too close to GROWTH_RATE, the Terminal Value
+            # formula denominator (wacc - growth_rate) approaches zero, causing the
+            # fair value to explode. This typically affects low-Beta defensive stocks
+            # (e.g., utilities, defense) where WACC can fall near 4-5%.
+            # Enforce a minimum spread of 2% to keep Terminal Value realistic.
+            MIN_SPREAD = 0.02
+            if wacc - self.GROWTH_RATE < MIN_SPREAD:
+                wacc_clamped = self.GROWTH_RATE + MIN_SPREAD
+                logger.warning(
+                    f"{stock_data.symbol}: WACC ({wacc*100:.1f}%) - GROWTH_RATE ({self.GROWTH_RATE*100:.1f}%) "
+                    f"spread < {MIN_SPREAD*100:.0f}%. Clamping WACC to {wacc_clamped*100:.1f}% "
+                    f"to prevent Terminal Value explosion (Beta={beta:.2f})."
+                )
+                wacc = wacc_clamped
+
             # 3. Project FCF for 5 years
             projected_fcfs = []
             for year in range(1, self.PROJECTION_YEARS + 1):
