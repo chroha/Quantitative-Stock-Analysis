@@ -326,7 +326,6 @@ class CompanyScorer:
             'net_income_cagr_5y': (growth.net_income_cagr_5y, metric_weights.get('net_income_cagr_5y', 8)),
             'revenue_cagr_5y': (growth.revenue_cagr_5y, metric_weights.get('revenue_cagr_5y', 6)),
             'earnings_quality_3y': (growth.earnings_quality_3y, metric_weights.get('earnings_quality_3y', 5)),
-            'fcf_to_debt_ratio': (growth.fcf_to_debt_ratio, metric_weights.get('fcf_to_debt_ratio', 4)),
         }
         
         for metric_name, (value, weight) in tier3_metrics.items():
@@ -340,6 +339,43 @@ class CompanyScorer:
             if details:
                 total_score += w_score
                 metric_details[metric_name] = details
+
+        # === FCF to Debt Ratio (special handling for debt-free companies) ===
+        # A company with no debt has zero financial leverage risk.
+        # When fcf_to_debt_is_debt_free=True, the ratio is undefined (not zero),
+        # so we award full marks instead of skipping (which would yield 0/N pts).
+        # This logic applies generically to any debt-free company, not just ISRG.
+        fcf_debt_weight = metric_weights.get('fcf_to_debt_ratio', 4)
+        if fcf_debt_weight > 0:
+            is_debt_free = getattr(growth, 'fcf_to_debt_is_debt_free', False)
+            fcf_debt_value = self._extract_value(growth.fcf_to_debt_ratio)
+
+            if is_debt_free:
+                # Debt-free: award full score for this metric
+                full_weighted = fcf_debt_weight  # raw_score=100 → 100/100 * weight
+                total_score += full_weighted
+                metric_details['fcf_to_debt_ratio'] = {
+                    'value': None,
+                    'source': 'Calculated (yahoo)',
+                    'raw_score': 100,
+                    'weight': fcf_debt_weight,
+                    'weighted_score': round(full_weighted, 2),
+                    'tier': 'tier_3_absolute',
+                    'bucket': 'debt_free',
+                    'interpretation': 'Debt-Free (Max Score)'
+                }
+            elif fcf_debt_value is not None:
+                metric_config = {
+                    'scoring_mode': 'tier_3_absolute',
+                    'absolute_thresholds': TIER3_THRESHOLDS.get('fcf_to_debt_ratio', {})
+                }
+                w_score, details = self._score_single_metric(
+                    'fcf_to_debt_ratio', growth.fcf_to_debt_ratio,
+                    fcf_debt_weight, metric_config, global_defaults
+                )
+                if details:
+                    total_score += w_score
+                    metric_details['fcf_to_debt_ratio'] = details
         
         return {
             'score': round(total_score, 2),

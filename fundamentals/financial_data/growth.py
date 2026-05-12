@@ -164,8 +164,12 @@ class GrowthCalculator(CalculatorBase):
         
         result = CalculationResult(value=None)
         
-        if total_debt is not None and total_debt == 0:
-            result.add_warning('fcf_to_debt', 'data_missing', 'Company is debt-free', 'info', 0.0)
+        # A company is debt-free when total_debt is explicitly 0, OR when the data
+        # source reports no debt field at all (total_debt is None). Both cases indicate
+        # no meaningful financial leverage. We distinguish this from a genuine data
+        # error using a warning with severity 'info' rather than 'error'.
+        if total_debt is None or total_debt == 0:
+            result.add_warning('fcf_to_debt', 'data_missing', 'Company is debt-free (no debt reported)', 'info', 0.0)
             result.intermediate_values['debt_free'] = True
             result.source = debt_src
             return result
@@ -176,6 +180,7 @@ class GrowthCalculator(CalculatorBase):
         result.intermediate_values['debt_free'] = False
         
         return result
+
     
     def calculate_all(self, stock_data) -> GrowthMetrics:
         """Calculate all growth quality metrics from stock data."""

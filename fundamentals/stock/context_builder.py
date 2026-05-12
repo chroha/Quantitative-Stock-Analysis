@@ -320,13 +320,18 @@ class ContextBuilder:
         if news:
             # Sort by datetime desc if not already
             sorted_news = sorted(news, key=lambda x: x.get('datetime', 0), reverse=True)
+            from datetime import datetime as _dt
             for n in sorted_news[:5]:
+                ts = n.get('datetime', 0)
+                # Convert Unix timestamp to readable date string to prevent AI from
+                # misinterpreting or misformatting the raw integer as a date.
+                date_str = _dt.fromtimestamp(ts).strftime('%Y-%m-%d') if ts else 'N/A'
                 top_news.append({
                     "headline": n.get('headline'),
                     "summary": n.get('summary'),
                     "source": n.get('source'),
                     "url": n.get('url'),
-                    "date": n.get('datetime')
+                    "date": date_str
                 })
                 
         # 2. Sentiment
@@ -444,6 +449,7 @@ class ContextBuilder:
         # Access raw objects
         raw_data = data.get('initial_data', {})
         fin_score = data.get('financial_score', {})
+        fin_data = data.get('financial_data', {})  # financial_data_{symbol}_*.json
         tech_score = data.get('technical_score', {})
         val_data = data.get('valuation', {})
         forecast_data = raw_data.get('forecast_data', {})
@@ -546,17 +552,31 @@ class ContextBuilder:
             base_src = get_raw_src(op_inc_item, "Yahoo")
             
             if pretax and pretax != 0 and tax_exp is not None:
-                tax_rate = abs(safe_div(tax_exp, pretax)) 
+                tax_rate = abs(safe_div(tax_exp, pretax))
                 tax_src = f"Calculated ({get_raw_src(tax_exp_item, 'Yahoo')})"
             
-            if op_inc is not None:
+            # FIX: Prefer TTM NOPAT from financial_data (used by ROIC scorer) so readers
+            # can manually verify ROIC = roic_nopat / roic_invested_capital.
+            # Fallback: compute from latest-period operating income (single period).
+            fin_data_metrics = fin_data.get('metrics', {}).get('profitability', {})
+            roic_nopat_raw = fin_data_metrics.get('roic_nopat', {}).get('value')
+            if roic_nopat_raw is not None:
+                nopat_val = roic_nopat_raw
+                nopat_src = "Calculated (Yahoo)"
+                nopat_label = "NOPAT (TTM)"
+                nopat_logic = f"`TTM Operating Income * (1 - {tax_rate:.1%})` (matches ROIC calc)"
+            elif op_inc is not None:
                 nopat_val = op_inc * (1 - tax_rate)
                 nopat_src = f"Calculated ({base_src})"
+                nopat_label = "NOPAT (Period)"
+                nopat_logic = f"`Operating Income * (1 - {tax_rate:.1%})` (single period)"
             else:
                 nopat_val = None
                 nopat_src = "Calculated (Missing Input)"
+                nopat_label = "NOPAT"
+                nopat_logic = "`Operating Income * (1 - Tax Rate)`"
             
-            lines.append(f"| NOPAT | 税后营业利润 | {fmt(nopat_val, MetricFormat.CURRENCY_LARGE)} | {nopat_src} | `Operating Income * (1 - {tax_rate:.1%})` |")
+            lines.append(f"| {nopat_label} | 税后营业利润 | {fmt(nopat_val, MetricFormat.CURRENCY_LARGE)} | {nopat_src} | {nopat_logic} |")
         else:
             lines.append(f"| NOPAT | 税后营业利润 | N/A | Missing Data | `Operating Income * (1 - Tax Rate)` |")
 
@@ -654,36 +674,34 @@ class ContextBuilder:
             lines.append(f"| FCF (Latest) | 自由现金流 | N/A | Missing Data | `OCF - CapEx` |")
 
         # 5. SBC Impact
-        # FIX: scoring system (capital_allocation.py) uses SBC/OCF as the denominator,
-        # not SBC/Revenue. Align the appendix display with the actual metric definition.
-        # If OCF is negative or zero (can happen in seasonal quarters), fallback to Revenue
-        # and flag it clearly, so readers know the denominator differs.
-        sbc_val = None
-        if cf_stmts and stmts:
+        # FIX: The scoring system uses a 3-year average of SBC/OCF (sbc_impact_3y).
+        # Displaying a single-year ratio here would create a misleading discrepancy.
+        # We now read the exact value used by the scorer directly from financial_data,
+        # and clearly label it as a 3-year average so readers can verify the score.
+        fin_data_capital = fin_data.get('metrics', {}).get('capital_allocation', {})
+        sbc_3y_val = fin_data_capital.get('sbc_impact_3y', {}).get('value')
+        sbc_3y_src = fin_data_capital.get('sbc_impact_3y', {}).get('source', 'Calculated (Yahoo)')
+
+        if sbc_3y_val is not None:
+            # Also grab latest-year SBC amount for the logic column (informational only)
+            _sbc_item = cf_stmts[0].get('std_stock_based_compensation', 0) if cf_stmts else 0
+            _sbc_latest = get_raw_val(_sbc_item)
+            _sbc_amt_str = f"(Latest SBC: {fmt(_sbc_latest, MetricFormat.CURRENCY_LARGE)})" if _sbc_latest else ""
+            lines.append(f"| SBC Impact (3Y Avg) | 股权激励(3年均值) | {fmt(sbc_3y_val, MetricFormat.PERCENT)} | {sbc_3y_src} | `Avg(SBC/OCF) over 3 years {_sbc_amt_str}` |")
+        elif cf_stmts and stmts:
+            # Fallback: compute single-year ratio if financial_data is unavailable
             sbc_item = cf_stmts[0].get('std_stock_based_compensation', 0)
             sbc_val = get_raw_val(sbc_item)
             base_src = get_raw_src(sbc_item, "Yahoo")
-
-            # Prefer OCF from the FY/TTM annual CF (same as scoring logic)
             _annual_cf_sbc = next(
                 (cf for cf in cf_stmts if cf.get('std_period_type', '') in ['FY', 'TTM']),
                 cf_stmts[0]
             )
             ocf_item_sbc = _annual_cf_sbc.get('std_operating_cash_flow', 0)
             ocf_val_sbc = get_raw_val(ocf_item_sbc)
-
             if sbc_val is not None and ocf_val_sbc and ocf_val_sbc > 0:
                 sbc_pct = safe_div(sbc_val, ocf_val_sbc)
-                lines.append(f"| SBC Impact | 股权激励 | {fmt(sbc_pct, MetricFormat.PERCENT)} | Calculated ({base_src}) | `SBC({fmt(sbc_val, MetricFormat.CURRENCY_LARGE)}) / OCF` |")
-            elif sbc_val is not None:
-                # Fallback: use Revenue if OCF is unavailable/negative
-                rev_item_sbc = stmts[0].get('std_revenue', 0)
-                rev_val_sbc = get_raw_val(rev_item_sbc)
-                if rev_val_sbc and rev_val_sbc != 0:
-                    sbc_pct = safe_div(sbc_val, rev_val_sbc)
-                    lines.append(f"| SBC Impact | 股权激励 | {fmt(sbc_pct, MetricFormat.PERCENT)} | Calculated ({base_src}) | `SBC({fmt(sbc_val, MetricFormat.CURRENCY_LARGE)}) / Revenue (OCF unavail)` |")
-                else:
-                    lines.append(f"| SBC Impact | 股权激励 | N/A | Low Revenue | `SBC / OCF (fallback Revenue)` |")
+                lines.append(f"| SBC Impact (1Y) | 股权激励(单年) | {fmt(sbc_pct, MetricFormat.PERCENT)} | Calculated ({base_src}) | `SBC({fmt(sbc_val, MetricFormat.CURRENCY_LARGE)}) / OCF (fallback, 3Y data missing)` |")
             else:
                 lines.append(f"| SBC Impact | 股权激励 | N/A | Missing Data | `SBC / OCF` |")
         else:

@@ -67,9 +67,15 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 - **Analyst Price Targets**: Low/High/Consensus from analyst coverage
 - **Earnings Surprise History**: Latest 4 quarters showing actual vs. estimate with surprise %
 - **Market Intelligence**:
-    - **News**: Top 5 recent headlines with source and summary
+    - **News**: Top 5 recent headlines with source and summary (dates are formatted as YYYY-MM-DD strings)
     - **Insider Sentiment**: Monthly Share Purchase Ratio (MSPR) and Net Buy/Sell change
     - **Competitors**: List of key peer companies
+
+**SPECIAL METRIC RULES:**
+- **FCF/债务 (FCF/Debt)**: When `interpretation` is "Debt-Free (Max Score)", the company has NO debt.
+  Display value as "0" (no debt), and write comment as "公司无债务，财务风险极低" / "Company is debt-free; zero financial leverage risk."
+  This metric receives FULL marks, NOT 0.
+- **News dates**: All news dates in `market_intelligence.news[].date` are pre-formatted as YYYY-MM-DD strings. Use them directly — do NOT convert or reformat them.
 
 **How to use this data:**
 1. **REQUIRED in Section III (估值分析)**: Display Forward Metrics table comparing forward vs current multiples
