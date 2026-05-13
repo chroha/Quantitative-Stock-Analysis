@@ -79,7 +79,7 @@ class LLMClient:
         for attempt in range(max_retries + 1):
             try:
                 # Reduced timeout to 45 seconds for faster failover
-                response = requests.post(url, json=payload, timeout=45)
+                response = requests.post(url, json=payload, timeout=100)
                 
                 if response.status_code == 200:
                     result = response.json()
@@ -109,7 +109,7 @@ class LLMClient:
                     return None
                 
                 # Retry on Rate Limit (429) or Service Unavailable (503)
-                if response.status_code in [429, 503]:
+                if response.status_code in [429, 500, 502, 503, 504]:
                     time.sleep(5 * (attempt + 1))
                     continue
                 
