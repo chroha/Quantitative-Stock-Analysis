@@ -1,425 +1,443 @@
-# Quantitative Stock Analysis System
+# Quantitative Stock Analysis System (量化股票分析系统)
 
-[中文版文档](README_CN.md)
 
-## Introduction
+## 简介
 
-This is a quantitative stock analysis and screening tool built for personal use. It is designed to help me quickly and comprehensively evaluate US stocks across fundamentals, technicals, and valuation. It automatically acquires data, calculates complex financial metrics, performs multi-dimensional scoring based on designed quantitative logic, and generates investment reports to assist in decision-decision-making.
+这是一个量化股票分析与筛选工具，平时自用，用于帮我快速对美股进行基本面、技术面和估值的全方位评估。它能够自动获取数据、计算复杂的财务指标、并按设计的量化方式进行打分，最终生成投资报告辅助决策。
 
-## Core Features
+## 核心功能
 
-### 1. Automated Analysis Pipeline (`run_pipeline.py`)
+### 1. 全自动分析流水线 (`run_pipeline.py`)
 
-A "One-Stop Shop" script that orchestrates the entire workflow, with an optional interactive **Fast Scan Mode**:
+一条龙全自动分析脚本，串联所有核心功能（并包含交互式的 **Fast Scan 快速扫描模式**）：
 
-- **Automated Workflow**:
-  1. **Clean Cache**: Clears old data (intelligently matches industry benchmark CSVs).
-  2. **Update Benchmarks**: Checks/Updates industry baselines.
-  3. **Batch Analysis**: Runs deep-dive analysis (`run_analysis.py`) for all input stocks.
-  4. **Report Generation**: Aggregates all scores into a Summary CSV (`run_getform.py`).
-  5. **Macro Strategy**: Runs the macro analysis module (`run_macro_report.py`).
-- **Fast Scan Mode**: Interactively prompts to skip time-consuming valuation, AI analysis, and macro steps. Generates a rapid, auto-ranked plaintext summary report (`stock_scan_*.txt`) sorted by Financial Score.
-- **Usage**: `python run_pipeline.py AAPL MSFT`
+- **自动化流程**:
+  1. **清理缓存**: 自动清理旧数据（智能保留行业基准 CSV）。
+  2. **更新基准**: 检查并更新行业评分基准。
+  3. **批量分析**: 对输入的所有股票执行深度分析 (`run_analysis.py`)。
+  4. **生成报表**: 自动汇总所有评分至 CSV 表格 (`run_getform.py`)。
+  5. **宏观策略**: 执行宏观经济分析模块 (`run_macro_report.py`)。
+- **快速扫描 (Fast Scan)**: 交互时可选跳过耗时的AI模型推断、估值计算与宏观流程。专注于基础财务与技术打分，并生成纯文本快速扫描报告 (`stock_scan_*.txt`)，按得分自动排序。
+- **用法**: `python run_pipeline.py AAPL MSFT`
 
-### 2. Stock Analysis (`run_analysis.py`)
+### 2. 个股分析 (`run_analysis.py`)
 
-Performs a full-pipeline analysis for a single stock:
+针对单个股票进行全流程分析：
 
-- **Data Acquisition**: Employs a multi-tier cascading data source strategy:
-  - **T1 Yahoo Finance**: Primary source for real-time quotes and historical financials.
-  - **T2 SEC EDGAR**: Official XBRL data directly from the U.S. Securities and Exchange Commission.
-  - **T3 FMP**: Supplements with analyst estimates and structured data.
-  - **T4 Alpha Vantage**: Final fallback to fill gaps for less-covered stocks.
-  - **T5 Finnhub**: Company news, insider sentiment/transactions, peer companies, and supplemental forecast data:
-    - Forward EPS/PE (next 12-month estimates)
-    - Earnings & revenue growth estimates (current/next year)
-    - Analyst price targets (low/high/consensus)
-    - Earnings Surprise History (latest 4 quarters)
-  - **Completeness Scorecard**: Visualizes data health, history depth (Year-by-Year matrix), and missing fields in real-time.
-- **Financial Scoring**: Scores the company (0-100) based on 20+ weighted metrics including ROIC, ROE, margins, growth rates, benchmarked against industry standards.
-- **Technical Scoring**: Evaluates current trend and momentum using RSI, MACD, and Moving Averages (SMA/EMA).
-- **Valuation Models**:
-  - Discounted Cash Flow (DCF)
-  - Dividend Discount Model (DDM)
-  - Relative Valuation (PE/PB/PS/EV-EBITDA Multiples)
-  - Value Investing (Graham Number, Peter Lynch Fair Value, PEG Ratio)
-  - Analyst Consensus Targets
-- **Data Provenance**: Tracks the exact source (Yahoo, FMP, Finnhub, Edgar) for every data point in the final report.
-- **AI Investment Commentary**: Uses Google Gemini to generate bilingual (CN/EN) analysis reports including:
-  - **Forward Metrics Analysis**: Current vs forward P/E, EPS comparison tables with auto-calculated changes
-  - **Earnings Surprise Analysis**: Detailed 4-quarter surprise table with average beat% and consistency metrics
-  - **Market Intelligence Appendix**: Clickable news headlines (via Finnhub), insider sentiment table (MSPR), insider transactions, and peer list
+- **数据获取**: 采用多层级联数据源策略：
+  - **T1 Yahoo Finance**: 主要数据源，提供实时行情和历史财报。
+  - **T2 SEC EDGAR**: 官方 XBRL 数据源,直接从美国证监会获取原始财务报表。
+  - **T3 FMP**: 补充分析师预期和其他结构化数据。
+  - **T4 Alpha Vantage**: 最终后备源，填补冷门股票的数据空缺。
+  - **T5 Finnhub**: 公司新闻、内部人士情绪/交易记录、同类标的，及前瞻数据补充：
+    - Forward EPS/PE（前瞻每股收益/市盈率）
+    - 盈利与营收增长预期（本年/明年）
+    - 分析师目标价（最低/最高/共识）
+    - Earnings Surprise History（最近4季度盈利意外）
+  - **数据完整性评分卡**: 实时可视化数据健康度、历史深度（逐年矩阵）及缺失字段。
+- **财务评分**: 基于 ROIC, ROE, 利润率, 增长率, 资本配置等 20+ 个指标进行加权打分 (0-100)。评分考虑了行业基准。
+- **技术评分**: 结合 RSI, MACD, 均线系统 (SMA/EMA) 评估当前趋势与动能。
+- **估值模型**:
+  - 现金流折现 (DCF)
+  - 股利折现 (DDM)
+  - 相对估值 (PE/PB/PS/EV-EBITDA 倍数)
+  - 价值投资模型 (格雷厄姆数, 彼得林奇公允价值, PEG比率)
+  - 分析师一致预期
+- **数据溯源**: 最终报告中每个数据点都会追踪确切来源 (Yahoo, FMP, Finnhub, Edgar).
+- **AI 投资点评**: 调用 Google Gemini 模型，生成深度中文分析报告，包含：
+  - **前瞻估值指标**: 当前 vs 前瞻 P/E, EPS对比表，自动计算变化百分比
+  - **盈利意外分析**: 最近4季度 Earnings Surprise 详细表，含平均超预期%和正向次数统计
+  - **市场情报附录**: 可点击的新闻超链接（via Finnhub）、内部人士情绪表 (MSPR)、内部人士交易记录及同类标的列表
 
-### 3. Macro Strategy Analysis (`run_macro_report.py`)
+### 3. 宏观策略分析 (`run_macro_report.py`)
 
-A macroeconomic analysis module for top-down market strategy:
+全新的宏观经济分析模块，用于生成自上而下的市场策略报告：
 
-- **AI Macro Strategy**: Generates "Institutional Grade CIO" bilingual (CN/EN) commentary by analyzing macro anomalies and divergences — including scenario probabilities and trade structures.
-- **Global Market News Intelligence**: Fetches and displays categorized market news (General/Forex/Crypto) via Finnhub, with AI-powered Chinese headline translation (merged into a single API call).
-- **Data Aggregation**: Integrates full-spectrum data from FRED (Rates/Inflation), Yahoo Finance (Global Markets), and Finnhub (Market News).
-- **Quantitative Framework**: Includes Economic Cycle positioning, ERP extreme valuations, and Aussie Terms of Trade analysis.
-- **Smart API Rotation**: Supports multi-key configuration in `.env` (comma-separated), automatically load-balancing requests to bypass rate limits.
+- **AI 宏观策略解读**: 模拟“机构级 CIO”视角，自动识别市场异常与背离信号，生成包含深度诊断与行动建议的策略研报。
+- **全量数据整合**: 聚合 FRED (利率/通胀) 与 Yahoo Finance (全球市场/板块) 数据，构建完整宏观拼图。
+- **智能 API 轮替**: 支持在 `.env` 中配置多组 Key (逗号分隔)，系统自动负载均衡以突破频率限制。
+- **量化风险模型**: 包含经济周期定位、ERP 估值极值预警及澳洲市场贸易条件分析。
+- **前瞻日历与异动**: 集成未来7天财报日历 (S&P 500) 以及基于 Finviz 数据的高涨跌异动个股 Top 榜。
 
-## Directory Structure
+## 目录结构
 
 ```text
 .
-├── data_acquisition/       # Data Fetching Modules (Yahoo, EDGAR, FMP, Alpha Vantage, Finnhub)
-│   ├── orchestration/      # Data Pipeline Orchestrator & Strategies
-│   ├── benchmark_data/     # Industry Benchmark Data
-│   ├── stock_data/         # Stock Financial Data (incl. Finnhub fetcher)
-│   └── macro_data/         # Macro Economic Data (FRED, Yahoo)
-├── fundamentals/           # Core Analysis Logic
-│   ├── financial_data/     # Metric Calculation (Growth, Profitability)
-│   ├── financial_scorers/  # Financial Scoring Engine
-│   ├── technical_scorers/  # Technical Indicator Scoring
-│   ├── valuation/          # Valuation Models
-│   ├── stock/              # Stock AI Report: ContextBuilder, Prompts, Analyst
-│   ├── reporting/          # Shared AI Infrastructure: LLMClient, ReportAssembler
-│   └── macro_indicator/    # Macro Strategy Logic & Report Generation
-├── data/                   # [Unified Data Directory]
-│   └── cache/              # Cached data (gitignored)
-│       ├── stock/          # Per-stock analysis data (JSON)
-│       ├── macro/          # Macro economic snapshots
-│       └── benchmark/      # Industry benchmarks (JSON + CSV)
-├── devtools/               # Developer Tools (not part of production pipeline)
-│   └── debug_tools/        # Data auditor, model auditor, report auditor
-├── generated_reports/      # Final Reports (AI, Scan Summaries)
-├── report_example/         # Report Examples
-├── config/                 # Configuration (Thresholds & Settings)
-├── utils/                  # Utilities (Logger, Schema, Helpers)
-├── run_analysis.py         # Single Stock Analysis Entry
-├── run_pipeline.py         # Automated Analysis Pipeline
-├── run_getform.py          # Form Generation Tool
-└── run_macro_report.py     # Macro Strategy Report Entry
+├── data_acquisition/       # 数据获取模块 (Yahoo, EDGAR, FMP, Alpha Vantage, Finnhub)
+│   ├── orchestration/      # 数据管道编排器与策略层
+│   ├── benchmark_data/     # 行业基准数据获取
+│   ├── stock_data/         # 个股财务数据获取 (含 Finnhub fetcher)
+│   └── macro_data/         # 宏观经济数据 (FRED, Yahoo)
+├── fundamentals/           # 核心分析逻辑
+│   ├── financial_data/     # 财务指标计算 (Growth, Profitability, Capital)
+│   ├── financial_scorers/  # 财务评分引擎 (配置与权重)
+│   ├── technical_scorers/  # 技术指标评分
+│   ├── valuation/          # 估值模型集合
+│   ├── stock/              # 个股 AI 报告：ContextBuilder、Prompts、Analyst
+│   ├── reporting/          # 共享 AI 基础设施：LLMClient、ReportAssembler
+│   └── macro_indicator/    # 宏观策略分析与报告生成
+├── data/                   # [统一数据目录]
+│   └── cache/              # 缓存数据 (gitignore)
+│       ├── stock/          # 个股分析数据 (JSON)
+│       ├── macro/          # 宏观经济快照
+│       └── benchmark/      # 行业基准数据 (JSON + CSV)
+├── devtools/               # 开发者工具（不影响生产流程）
+│   └── debug_tools/        # 数据审计、模型审计、报告审计
+├── generated_reports/      # 最终报告 (AI 分析, 扫描汇总)
+├── report_example/         # 报告样例 (Markdown Report Examples)
+├── config/                 # 配置文件 (阈值与API设置)
+├── utils/                  # 通用工具 (日志管理, 安全遮罩)
+├── run_analysis.py         # 个股深度分析入口
+├── run_pipeline.py         # 全自动分析流水线
+├── run_getform.py          # 数据表单生成工具
+└── run_macro_report.py     # 宏观策略报告入口
 ```
 
-## Data Storage & Artifacts
+## 数据存放与产物
 
-### 1. User Config (`user_config/`)
+### 1. 用户配置 (`user_config/`)
 
-Private user configuration only, excluded by `.gitignore`:
+仅存放用户私密配置，由 `.gitignore` 排除：
 
-- **`.env`**: Private file storing your API Keys.
-- **`.env.example`**: Template to help new users get started.
+- **`.env`**: 存放 API Key 的私密文件。
+- **`.env.example`**: 配置模板，帮助新用户快速设置。
 
-### 2. Data Cache (`data/cache/`)
+### 2. 数据缓存 (`data/cache/`)
 
-All runtime data is stored here, excluded by `.gitignore`:
+系统运行过程中的所有数据存放于此，由 `.gitignore` 排除：
 
-- **`stock/`**: Per-stock analysis data
-  - `initial_data_{SYMBOL}_{DATE}.json` - Raw fetched data
-  - `financial_data_{SYMBOL}_{DATE}.json` - Calculated metrics
-  - `financial_score_{SYMBOL}_{DATE}.json` - Score details
-- **`macro/`**: Macro economic data
-  - `macro_latest.json` - Latest macro snapshot
-- **`benchmark/`**: Industry benchmark data
-  - `benchmark_data_{DATE}.json` - Industry scoring benchmarks
-  - `*_data.csv` - Damodaran raw data cache
+- **`stock/`**: 个股分析数据
+  - `initial_data_{SYMBOL}_{DATE}.json` - 原始获取数据
+  - `financial_data_{SYMBOL}_{DATE}.json` - 计算后的财务指标
+  - `financial_score_{SYMBOL}_{DATE}.json` - 评分明细
+- **`macro/`**: 宏观经济数据
+  - `macro_latest.json` - 最新宏观数据快照
+- **`benchmark/`**: 行业基准数据
+  - `benchmark_data_{DATE}.json` - 行业评分基准
+  - `*_data.csv` - Damodaran 原始数据缓存
 
-### 3. Analysis Reports (`generated_reports/`)
+### 3. 分析报告 (`generated_reports/`)
 
-Final human-readable reports:
+最终生成的供用户阅读的报告存放于此：
 
-- **Scanner Report**: `stock_scan_{DATE}.txt` (Batch scan summary)
-- **AI Report**: `ai_analysis_{SYMBOL}_{DATE}.md` (AI deep dive)
-- **Macro Report**: `macro_report_{DATE}.md` (Macro strategy analysis)
-- **Data Table**: `collated_scores_{DATE}.csv` (Aggregated CSV)
+- **扫描报告**: `stock_scan_{DATE}.txt` (批量扫描结果汇总)
+- **AI 报告**: `ai_analysis_{SYMBOL}_{DATE}.md` (AI 深度分析报告)
+- **宏观报告**: `macro_report_{DATE}.md` (宏观策略分析报告)
+- **数据表格**: `collated_scores_{DATE}.csv` (run_getform生成的汇总表)
 
-### 4. Report Examples
+### 4. 报告样例
 
-To see what the generated AI analysis reports look like, check out this example:
+如果您想查看生成的 AI 分析报告长什么样，可以参考以下样例：
 
-- **[Sample AI Analysis Report](report_example/ai_analysis_AAPL_example.md)**
-- **[Sample Macro Strategy Report](report_example/macro_report_example.md)**
+- **[美股 AI 分析报告样例](report_example/ai_analysis_AAPL_example.md)**
+- **[宏观策略分析报告样例](report_example/macro_report_example.md)**
 
-## Installation & Configuration
+## 安装与配置
 
-### 1. Requirements
+### 1. 环境依赖
 
-Ensure Python 3.8+ is installed, then install dependencies directly:
+请确保安装 Python 3.8+，然后直接安装所需库：
 
 ```bash
-pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil fredapi scipy pytz
+pip install yfinance requests pydantic python-dotenv pandas numpy python-dateutil fredapi scipy pytz finvizfinance
 ```
 
-### 2. API Key Configuration
+### 2. API Key 配置
 
-This system relies on external APIs to ensure data integrity. Create a `.env` file in the root directory and add your keys:
+本系统依赖外部 API 服务以保证数据的完整性。请在项目根目录下创建 `.env` 文件，并填入您的 Key：
 
-**File: `.env`**
+**文件: `.env`**
 
 ```env
-# [Required] Alpha Vantage: Fills gaps for missing/obscure financial data
+# [必填] Alpha Vantage: 用于补充 Yahoo Finance 缺失的冷门财务数据
 ALPHAVANTAGE_API_KEY=your_key_here
 
-# [Required] Financial Modeling Prep (FMP): For analyst targets, WACC, and supplementary financials
-# Supports multiple keys (comma-separated) for rotation
+# [必填] Financial Modeling Prep (FMP): 用于获取分析师一致预期、WACC 和补充财务数据
+# 支持多Key轮替 (逗号分隔)
 FMP_API_KEY=key1,key2
 
-# [Required] Google Gemini: For generating AI analysis reports
+# [必填] Google Gemini: 用于生成 AI 分析报告
 GEMINI_API_KEY=your_key_here
 
-# [Required] FRED API Key: For macro economic data
+# [必填] FRED API Key: 用于获取宏观经济数据
 FRED_API_KEY=your_key_here
 
-# [Required] Finnhub: Company news, insider sentiment/transactions, peers, market news
+# [必填] Finnhub: 公司新闻、内部人士情绪/交易、同类标的、市场新闻
 FINNHUB_API_KEY=your_key_here
 ```
 
-### 3. Get API Keys
+### 3. 获取 API Key
 
-- **Alpha Vantage**: [Get Key (Free)](https://www.alphavantage.co/support/#api-key) - Free tier has some endpoint limitations.
-- **FMP**: [Sign Up (Free Tier)](https://site.financialmodelingprep.com/) - Free tier has limitations (max 250 requests/day).
-- **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - Free to use.
-- **FRED**: [Get Key (Free)](https://fred.stlouisfed.org/) - Free to use.
-- **Finnhub**: [Get Key (Free)](https://finnhub.io/register) - Free tier covers all features used (news, sentiment, peers).
+- **Alpha Vantage**: [获取 Key (免费)](https://www.alphavantage.co/support/#api-key) - 免费版有部分端点限制。
+- **FMP**: [注册 (免费版)](https://site.financialmodelingprep.com/) - 免费层级有部分限制，每日最大请求250次，每股根据数据需补充情况消耗0-5次。
+- **Google Gemini**: [AI Studio](https://aistudio.google.com/app/apikey) - 免费使用。
+- **FRED**: [获取 Key (免费)](https://fred.stlouisfed.org/) - 免费使用。
+- **Finnhub**: [获取 Key (免费)](https://finnhub.io/register) - 免费版支持本系统所有功能（新闻、情绪、同类标的）。
 
-### 4. Advanced Configuration
+### 4. 高级配置
 
-The system behavior is highly customizable via `config/analysis_config.py`.
+系统行为高度可定制，所有关键阈值均在 `config/analysis_config.py` 中定义。
 
-- **Data Sufficiency**: Define how much data is required to run (e.g., `MIN_HISTORY_YEARS_GOOD`).
-- **Gap Analysis**: Toggle fallback data fetching (e.g., `FETCH_ON_MISSING_VALUATION`).
-- **Valuation Limits**: Set thresholds for "Undervalued" or "Overvalued" text assessments.
-- **Metric Bounds**: Define valid ranges for financial metrics (e.g., ROIC, ROE) to filter outliers.
+- **数据完整性 (Data Sufficiency)**: 定义分析所需的最少数据量 (如 `MIN_HISTORY_YEARS_GOOD`)。
+- **缺口分析 (Gap Analysis)**: 开关备用数据源的抓取逻辑 (如 `FETCH_ON_MISSING_VALUATION`)。
+- **估值阈值 (Valuation Limits)**: 设定低估/高估的文本评判标准。
+- **指标边界 (Metric Bounds)**: 定义财务指标的有效范围 (如 ROIC, ROE) 以过滤异常值。
 
-## Usage
+## 使用说明
 
-### Automated Pipeline (Recommended)
+### 全自动流水线 (推荐)
 
 ```bash
 python run_pipeline.py AAPL MSFT
-# Runs the full workflow: Clean -> Benchmark -> Analysis -> Summary -> Macro
+# 执行全流程：清理 -> 基准 -> 分析 -> 汇总 -> 宏观
 ```
 
-### Run Single Stock Analysis (Analysis Mode)
+### 运行个股分析 (分析模式)
 
 ```bash
 python run_analysis.py AAPL
-# Or run without arguments to enter interactive mode
-python run_analysis.py
+# 或者直接运行 python run_analysis.py 按提示输入
 ```
 
-### Fast Scan Mode (Screening Mode)
+### 运行快速扫描 (Fast Scan 筛选模式)
 
 ```bash
 python run_pipeline.py AAPL MSFT NVDA TSLA
-# When prompted:
+# 当程序询问:
 # "Run fast scan mode (skip AI generation)? (y/N): y"
-# Generates a rapid lightweight .txt scan report.
+# 输入 y 即可跳过沉重的 AI 分析环节，输出轻量级 .txt 扫描报告
 ```
 
-### Run Data Aggregation (Report Mode)
+### 运行数据汇总 (报表模式)
 
 ```bash
 python run_getform.py AAPL MSFT
-# Aggregates scores and valuations into a single CSV file
+# 将多个股票的评分和估值数据汇总为 CSV
 ```
 
-### System Cleanup (`run_clean_cache.py`)
+### 系统清理 (`run_clean_cache.py`)
 
 ```bash
 python run_clean_cache.py
-# Interactive tool to:
-# 1. Clear Cache (Normal Scan keeps benchmark CSVs, Full Scan deletes everything)
-# 2. Clear Generated Reports (Optional)
+# 交互式工具，用于：
+# 1. 清理缓存 (普通模式保留行业基准 CSV，全量模式删除所有内容)
+# 2. 清理生成的报告 (可选)
 ```
 
-### Run Macro Strategy Report (Macro Mode)
+### 运行宏观策略报告 (Macro Mode)
 
 ```bash
 python run_macro_report.py
-# Starts interactive menu to generate report or refresh data
+# 启动交互式菜单，选择生成报告或刷新数据
 ```
 
-## Development & Debugging
+## 开发与调试
 
-All developer tools are in `devtools/debug_tools/`. These do not affect the production pipeline.
+### 开发与调试
 
-### Data Audit Tools
+所有开发者工具均位于 `devtools/debug_tools/`，不影响生产流程。
 
-```bash
-# Full data pipeline audit (raw API → merge → schema)
+### 数据审计工具
+
+`ash
+
+# 完整数据管道审计（原始 API -> 合并 -> Schema）
+
 python devtools/debug_tools/run_data_auditor.py AAPL
 
-# Valuation model audit (checks DCF/DDM/PE calculation outputs)
+# 估值模型审计（验证 DCF/DDM/PE 计算输出）
+
 python devtools/debug_tools/run_model_auditor.py AAPL
 
-# AI report audit (checks context building and prompt generation)
+# AI 报告审计（验证上下文构建与 Prompt 生成）
+
 python devtools/debug_tools/run_report_auditor.py AAPL
-```
+`
 
-**What the data auditor does:**
+**数据审计功能说明:**
 
-1. **Captures Raw Data**: Saves exact API responses from Yahoo/FMP/EDGAR/Finnhub to `devtools/audit_output/`.
-2. **Isolates Fetchers**: Runs each data source in isolation to verify parsing logic.
-3. **Traces Pipeline**: Snapshots data as it flows through merging and currency normalization steps.
-4. **Reports**:
-    - `yahoo_unmapped_fields.txt`: Identifies API fields not utilized by our schema.
-    - `final_provenance_report.txt`: Shows the exact source (Yahoo vs FMP) of every data point.
+1. **原始数据抓取 (Raw Capture)**: 将 Yahoo/FMP/EDGAR/Finnhub 的 API 原始响应保存至 devtools/audit_output/。
+2. **隔离测试 (Isolation)**: 独立运行每个数据源的解析器，验证解析逻辑是否正确。
+3. **链路追踪 (Pipeline Trace)**: 对数据合并、货币标准化等中间状态进行快照保存。
+4. **诊断报告 (Reports)**:
+    - `yahoo_unmapped_fields.txt`: 识别 API 返回了但我们 schema 未使用的字段。
+    - `final_provenance_report.txt`: 精确追踪每个数据点（如营收）的具体来源（Yahoo 还是 FMP）。
+    - `data_gap_report.json`: 由 **Gap Analyzer** 生成，详细列出哪些字段缺失及其原因。
 
-## System Architecture
+## 系统架构
 
-The system is organized into three layers: **Data Acquisition**, **Analysis (Fundamentals)**, and **Reporting**.
+系统分三个层次组织：数据获取、分析（Fundamentals）和报告生成。
 
-### 1. Data Orchestrator (`data_acquisition/orchestration/`)
+### 1. 数据编排器 (data_acquisition/orchestration/)
 
-- **Role**: The "Conductor".
-- **Function**: Manages the multi-tier data strategy. It doesn't fetch data itself — it directs Fetchers based on a plan and triggers fallback sources when gaps are detected.
-- **Benefit**: Decouples business logic (flow control) from implementation details (API calls).
+- **角色**: "总指挥"。
+- **功能**: 管理多层数据获取策略的执行流程。它不直接获取数据，而是根据蓝图指挥各个 Fetcher 工作，并在发现数据缺口时自动触发备用数据源。
+- **价值**: 将业务逻辑（流程控制）与实现细节（API 调用）解耦。
 
-### 2. Gap Analyzer
+### 2. 缺口分析器 (Gap Analyzer)
 
-- **Role**: The "Inspector".
-- **Function**: Assesses data quality after each fetch phase, generating a Quality Report that identifies missing critical fields.
-- **Benefit**: Centralized quality standards. Changing a data requirement (e.g., "Must have EBITDA") is done in one place, affecting all fetchers and auditors consistently.
+- **角色**: "质检员"。
+- **功能**: 在每一层数据获取后生成质量报告，识别关键缺失字段。
+- **价值**: 集中管理数据质量标准。修改数据要求只需在一处调整，即可同时应用于所有数据获取和审计流程。
 
-### 3. Analysis Layer (`fundamentals/`)
+### 3. 分析层 (undamentals/)
 
-- **`stock/`**: Stock-domain AI pipeline — `ContextBuilder` (data prep), `Prompts` (prompt engineering), `StockAIAnalyst` (orchestration).
-- **`reporting/`**: Shared AI infrastructure — `LLMClient` (Gemini API wrapper), `ReportAssembler` (formatting).
-- **`macro_indicator/`**: Macro-domain logic — `MacroAIAnalyst` (CIO commentary generation), `MacroMarkdownReport` (bilingual report rendering).
+- **stock/**: 个股 AI 报告流程 - ContextBuilder（数据准备）、Prompts（提示词工程）、StockAIAnalyst（流程编排）。
+- **
+eporting/**: 共享 AI 基础设施 - LLMClient（Gemini API 封装）、ReportAssembler（格式化输出）。
+- **macro_indicator/**: 宏观分析逻辑 - MacroAIAnalyst（CIO 评论生成）、MacroMarkdownReport（双语报告渲染）。
 
-## Core Algorithms & Logic
+## 1. 数据编排器 (Data Orchestrator) `data_acquisition/orchestration/`
 
-The system incorporates a structured quantitative evaluation engine.
+- **角色**: “总指挥”。
+- **功能**: 管理 5 层数据获取策略的执行流程。它不直接获取数据，而是根据蓝图指挥各个 Fetcher 工作。
+- **价值**: 将业务逻辑（流程控制）与实现细节（API 调用）解耦，使数据管道更加健壮且易于维护。
 
-### 1. Synthetic Benchmarking Algorithm
+### 2. 缺口分析器 (Gap Analyzer)
 
-Since detailed industry distributions (e.g., specific P90/P10 breakpoints) are not directly available, the system uses a core algorithm to reconstruct them:
+- **角色**: “质检员”。
+- **功能**: 独立的质量检测组件。在每一层数据获取后生成《质量报告》，识别关键缺失字段（如“缺少研发费用”、“历史数据不足5年”）。
+- **价值**: 集中管理数据质量标准。修改数据要求（如“必须包含 EBITDA”）只需在一处调整，即可同时应用于所有数据获取和审计流程。
 
-- **Input**: Industry Mean ($\mu$) from Damodaran and Coefficient of Variation (CV) derived from volatility.
-- **Calculation**:
-  - Applies a **Damping Factor** (0.8~0.95) to correct for real-world "fat tails".
-  - Reconstructs percentiles using a Synthetic Z-Score formula: $P_{xx} = \mu \pm Z \times (\mu \times CV \times Damping)$.
-- **Significance**: Achieves **"Relative Fairness"**. In stable sectors (Utilities), slightly above average is excellent; in volatile sectors (Biotech), significant outperformance is required for high scores.
+## 核心算法与逻辑
 
-### 2. Dynamic Sector Scoring
+本系统除了数据展示外，也包含了一套量化评估逻辑。
 
-Instead of a "one-size-fits-all" approach, the system uses tailored weights for GICS 11 sectors (`scoring_config.py`):
+### 1. 合成统计学基准
 
-- **Technology**: High weight on **Growth** (Revenue/Net Income CAGR) and R&D.
-- **Financials/REITs**: Focus on **Capital Allocation** (Dividends/Buybacks) and **PB Ratio**.
-- **Energy/Utilities**: Prioritizes **Cash Flow** (FCF) and Debt Health.
-- *Adaptive Mechanism*: If a metric is missing, its weight is automatically redistributed to other metrics in the same category, ensuring a valid 0-100 score.
+当行业数据缺乏详细分布（即只有平均值而无 P90/P10 分位点）时，系统采用核心算法重构分布：
 
-#### Scoring Weights Visualization
+- **输入**: 从 Damodaran 获取的行业均值 ($\mu$) 和由波动率推导出的变异系数 (CV)。
+- **计算**:
+  - 引入 **阻尼系数 (Damping Factor)** (通常 0.8~0.95) 以修正现实数据的厚尾效应。
+  - 基于合成 Z-Score 公式反推关键分位点：$P_{xx} = \mu \pm Z \times (\mu \times CV \times Damping)$。
+- **意义**: 实现了**“行业相对公平”**。在公用事业等低波动行业，稍高于平均即可能被评为优秀；而在生物科技等高波动行业，需大幅超越平均值才能获得高分。
 
-![scoring_weights_overview](data/scoring_weights_overview.png)
-*Scoring Weights Overview*
+### 2. 动态权重评分
 
-![scoring_weights_detailed](data/scoring_weights_detailed.png)
-*Detailed Valuation Weights*
+系统不采用“一刀切”的评分标准，而是针对 GICS 11 个一级行业定制了权重配置 (`scoring_config.py`)：
 
-### 3. Valuation Blender
+- **科技股**: 高度重视 **Growth** (营收/净利 CAGR) 和研发投入。
+- **金融/REITs**: 核心参考 **Capital Allocation** (股息/回购) 和 **PB** (市净率)。
+- **能源/公用事业**: 侧重 **Cash Flow** (FCF) 和债务健康度。
+- *自适应机制*: 如果某指标因数据缺失无法计算，其权重会自动按比例分配给同类别的其他指标，确保最终得分为 0-100 的有效值。
 
-To avoid single-model bias, the system aggregates **10 Major Valuation Models** with sector-specific weighting (`valuation_config.py`):
+#### 财务数据权重分配可视化
 
-- **Absolute Valuation**:
-    1. **DCF (Discounted Cash Flow)**: For mature firms with predictable cash flows.
-    2. **DDM (Dividend Discount Model)**: For high-yield sectors (Banks, Utilities).
-- **Relative Valuation**:
-    3.  **PE (Price-to-Earnings)**: For profitable, stable firms.
-    4.  **PS (Price-to-Sales)**: Critical for high-growth, unprofitable firms (SaaS/Biotech).
-    5.  **PB (Price-to-Book)**: Floor logic for asset-heavy or financial firms.
-    6.  **EV/EBITDA**: Capital-neutral metric for manufacturing/heavy industry.
-- **Value Investing Models**:
-    7.  **Graham Number**: Conservative intrinsic value based on EPS and Book Value.
-    8.  **Peter Lynch Fair Value**: Growth-adjusted valuation using Net Income CAGR.
-    9.  **PEG Ratio**: Price/Earnings-to-Growth for growth stock evaluation.
-- **Market Consensus**:
-    10. **Analyst Targets**: Incorporates Wall Street sentiment as a reference.
+![scoring_weights_overview](data\scoring_weights_overview.png)
+*估值权重概览*
 
-#### Valuation Logic Visualization
+![scoring_weights_detailed](data\scoring_weights_detailed.png)
+*估值权重具体情况*
 
-![Valuation Weights Detailed](data/valuation_weights_detailed_en.png)
-*Detailed Valuation Weights & Logic*
+### 3. 综合估值模型
 
-![Valuation Weights Final](data/valuation_weights_final_en.png)
-*Final Valuation Synthesis*
+为了避免单一视角的偏见，系统融合了 **10 种主流估值方法**，并根据行业特性进行加权求和 (`valuation_config.py`)：
+
+- **绝对估值**:
+    1. **DCF (现金流折现)**: 适用于现金流预测相对准确的成熟企业。
+    2. **DDM (股息折现)**: 专用于高分红行业（如银行、公用事业）。
+- **相对估值**:
+    3.  **PE (市盈率)**: 盈利稳定型企业的标尺。
+    4.  **PS (市销率)**: 高增长但暂未盈利（SaaS/Biotech）企业的核心指标。
+    5.  **PB (市净率)**: 重资产或金融企业的底线逻辑。
+    6.  **EV/EBITDA**: 剔除资本结构和折旧影响，适用于制造业。
+- **价值投资模型**:
+    7.  **Graham Number (格雷厄姆估值)**: 基于 EPS 和账面价值的保守内在价值。
+    8.  **Peter Lynch (彼得林奇估值)**: 使用净利 CAGR 进行增长调整估值。
+    9.  **PEG Ratio (PEG 估值)**: 市盈增长比，成长股核心指标。
+- **市场预期**:
+    10. **Analyst Targets**: 纳入华尔街的一致预期目标价作为市场情绪参考。
+
+#### 估值逻辑可视化
+
+![Valuation Weights Detailed](data\valuation_weights_detailed_en.png)
+*详细估值权重与逻辑图*
+
+![Valuation Weights Final](data\valuation_weights_final_en.png)
+*最终估值合成逻辑*
 
 ---
 
-## Feedback & Issues
+## 问题反馈
 
-This system involves complex data fetching (from Yahoo/EDGAR/FMP/Alpha Vantage) and financial calculations.
+本系统涉及与多个数据源（Yahoo/EDGAR/FMP/Alpha Vantage）的交互及复杂的财务计算。
 
-If you encounter **bugs**, **calculation errors**, **data fetching failures**, or **incorrect field mappings**, please report them by opening an issue. Your feedback is crucial for improving the accuracy and robustness of the system. Thank you!
+如果您在使用过程中发现 **Bug**、**计算错误**、**数据抓取失败** 或 **字段映射错误**，欢迎提交 Issue 进行反馈。您的反馈对于提升系统的准确性和健壮性非常重要，谢谢！
 
-## Risk Warning & Disclaimer
+## 风险提示及免责声明
 
-Investing in financial markets involves risks. The views, analyses, and scores presented in this report are logical deductions based on specific model parameters and do not constitute recommendations to buy, hold, or sell any financial products. Investors should make independent decisions based on their own risk tolerance. The author assumes no legal liability for any direct or indirect losses resulting from the use of this report.
+市场有风险，投资需谨慎。本报告中所述观点、分析及评分仅代表模型在特定参数下的逻辑推演，不构成对任何金融产品的买入、持有或卖出建议。投资者应根据个人风险承受能力独立决策。作者对因使用本报告内容而导致的任何直接或间接投资损失不承担法律责任。
 
-# Configuration Reference
+# 配置文件参考
 
-This guide lists all customizable configuration files.
+本文档列出了项目中所有可供用户自定义的配置文件。
 
-## 1. Core Configuration (`config/`)
+## 1. 核心配置 (`config/`)
 
 ### `config/settings.py`
 
-- **Purpose**: API keys (from `.env`) and ecosystem settings. Supports multi-key rotation.
-- **Key Variables**: `GOOGLE_AI_KEY`, `FMP_API_KEY`, `FRED_API_KEY`.
+- **用途**: API 密钥管理（读取 `.env`）和环境设置。支持多 Key 轮替。
+- **关键变量**: `GOOGLE_AI_KEY`, `FMP_API_KEY`, `FRED_API_KEY`。
 
 ### `config/analysis_config.py`
 
-- **Purpose**: Analysis thresholds and validation parameters.
-- **Customizable**:
-  - `DATA_SUFFICIENCY_CONFIG`: Historical data completeness thresholds.
-  - `VALUATION_THRESHOLDS`: "Undervalued" vs "Overvalued" boundaries.
-  - `METRIC_BOUNDS`: Sanity checks for financial ratios.
+- **用途**: 分析阈值和验证参数。
+- **可自定义项**:
+  - `DATA_SUFFICIENCY_CONFIG`: 历史数据完整性阈值。
+  - `VALUATION_THRESHOLDS`: 估值“低估/高估”的判断边界。
+  - `METRIC_BOUNDS`: 财务指标的合理范围检查。
 
 ### `config/constants.py`
 
-- **Purpose**: Centralized path constants (`DATA_CACHE_STOCK`, `DATA_REPORTS`).
+- **用途**: 全局路径常量 (`DATA_CACHE_STOCK`, `DATA_REPORTS`)。
 
-## 2. Scoring & Valuation
+## 2. 评分与估值
 
 ### `fundamentals/financial_scorers/scoring_config.py`
 
-- **Purpose**: Weights for financial health scoring (Profitability, Growth, Capital Allocation).
-- **Customizable**: `CATEGORY_WEIGHTS`, `SECTOR_WEIGHT_OVERRIDES`.
+- **用途**: 财务健康度评分权重（盈利、成长、资本配置）。
+- **可自定义项**: `CATEGORY_WEIGHTS`, `SECTOR_WEIGHT_OVERRIDES` (行业修正)。
 
 ### `fundamentals/technical_scorers/scoring_config.py`
 
-- **Purpose**: Weights for technical indicators (RSI, MACD, Trend).
-- **Customizable**: `MA_CONFIG` (Moving Averages), `RSI_CONFIG`.
+- **用途**: 技术指标评分参数 (RSI, 均线, 趋势)。
+- **可自定义项**: `MA_CONFIG` (均线周期), `RSI_CONFIG`。
 
 ### `fundamentals/valuation/valuation_config.py`
 
-- **Purpose**: **Sector-specific valuation weights**.
-- **Customizable**: `SECTOR_WEIGHTS` (11 GICS sectors × 10 models).
+- **用途**: **分行业的估值模型权重**。
+- **可自定义项**: `SECTOR_WEIGHTS` (11 个 GICS 行业 × 10 种估值模型)。
 
 ---
 
-# Utilities Reference
+# 工具与基础设施参考
 
-## 1. Core Infrastructure (`utils/`)
+## 1. 核心架构 (`utils/`)
 
 ### `unified_schema.py`
 
-- **Purpose**: The "Constitution". Pydantic models defining `StockData`, `FinancialStatements`, and `ForecastData`.
+- **用途**: 系统的“宪法”。使用 Pydantic 定义 `StockData`, `ForecastData` 等核心数据模型。
 
 ### `field_registry.py`
 
-- **Purpose**: Maps raw API fields (Yahoo, FMP, EDGAR) to `unified_schema`.
-- **Edit this** to fix data gaps or map new XBRL tags.
+- **用途**: 字段注册表。将不同源 (Yahoo, FMP, EDGAR) 的原始字段映射到统一 Schema。
+- **扩展**: 如发现数据缺失，在此处添加新的 XBRL Tag 或 API 字段名。
 
 ### `currency_normalizer.py`
 
-- **Purpose**: Automatically converts foreign currency (e.g., TWD/HKD) to USD and normalizes ADR share counts.
+- **用途**: 自动处理非美元计价股票。功能包括**汇率转换**和**ADR股数标准化**。
 
-## 2. Helpers
+## 2. 通用工具
 
 ### `numeric_utils.py`
 
-- **Purpose**: Safe math. Use `safe_float()`, `calculate_cagr()`, `safe_divide()`.
+- **用途**: 安全数值计算。请使用 `safe_float()`, `calculate_cagr()`, `safe_divide()` 替代原生运算。
 
 ### `http_utils.py`
 
-- **Purpose**: Network wrapper with **Rate Limiting** and **User-Agent Rotation**.
+- **用途**: 网络请求封装。内置了 **Rate Limiter (限流)** 和 **User-Agent 轮换**。
 
 ### `logger.py`
 
-- **Purpose**: Centralized logging. Use `setup_logger()` instead of `print`.
+- **用途**: 统一日志管理。请使用 `setup_logger()` 记录信息，禁止在生产代码中使用 `print`。

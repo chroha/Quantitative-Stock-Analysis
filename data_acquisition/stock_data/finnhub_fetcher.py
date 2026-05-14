@@ -314,6 +314,50 @@ class FinnhubFetcher(BaseFetcher):
                 continue
         return news_items
 
+    def fetch_earnings_calendar(self, days_ahead: int = 7) -> List[Dict]:
+        """
+        Fetch earnings calendar for the next `days_ahead` days, filtered for S&P 500 companies.
+        """
+        if self._circuit_broken: return []
+        import datetime
+        today = datetime.date.today()
+        end = today + datetime.timedelta(days=days_ahead)
+        
+        params = {
+            'from': today.strftime("%Y-%m-%d"),
+            'to': end.strftime("%Y-%m-%d")
+        }
+        data = self._make_request('calendar/earnings', params)
+        if not data or not isinstance(data, dict): return []
+        
+        calendar = data.get("earningsCalendar", [])
+        
+        # Fetch S&P 500 list from Wikipedia
+        sp500_symbols = set()
+        try:
+            import pandas as pd
+            import requests
+            headers = {'User-Agent': 'Mozilla/5.0'}
+            r = requests.get('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies', headers=headers, timeout=10)
+            if r.status_code == 200:
+                from io import StringIO
+                dfs = pd.read_html(StringIO(r.text))
+                if dfs:
+                    sp500_symbols = set(dfs[0]['Symbol'].str.replace('.', '-', regex=False).tolist())
+        except Exception as e:
+            logger.warning(f"Failed to fetch S&P 500 list: {e}. Filtering will be skipped.")
+            
+        filtered = []
+        for e in calendar:
+            if e.get("epsEstimate") and e.get("hour") in ["amc", "bmo"]:
+                symbol = e.get("symbol", "")
+                # If we successfully fetched the S&P 500 list, filter by it.
+                if sp500_symbols and symbol not in sp500_symbols:
+                    continue
+                filtered.append(e)
+                
+        return sorted(filtered, key=lambda x: x["date"])
+
     def fetch_peers(self) -> List[str]:
         """Fetch company peers."""
         if self._circuit_broken: return []
@@ -431,7 +475,8 @@ class FinnhubFetcher(BaseFetcher):
             url = f"{self.base_url}/{endpoint}"
             current_params = params.copy()
             current_params['token'] = self.api_key
-            current_params['symbol'] = self.symbol
+            if self.symbol != 'MARKET':
+                current_params['symbol'] = self.symbol
             
             try:
                 # Use a shorter timeout and fewer retries

@@ -59,8 +59,7 @@ def build_analysis_prompt(data: Dict[str, Any]) -> str:
 {json_str}
 </stock_data>
 
-Task: Generate a comprehensive investment analysis report in TWO languages (Chinese and English) based on the provided data.
-
+Task: Generate a comprehensive investment analysis report in Chinese based on the provided data.
 **IMPORTANT DATA AVAILABILITY:**
 The appendix (raw data section) now includes "前瞻预测数据 (Forward Estimates)" as a subsection under Section 3. This contains:
 - **Forward Estimates**: Forward EPS, Forward P/E, Earnings Growth (Current Year), Revenue Growth (Next Year)
@@ -87,24 +86,16 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 
 
 **Instructions:**
-1.  **Part 1: Chinese Report**
-    *   Language: Simplified Chinese
-    *   Structure: Follow the template below exactly.
-    *   Content: Deep analysis of Financials, Technicals, and Valuation.
+1.  **Language:** Simplified Chinese
+2.  **Structure:** Follow the template below exactly.
+3.  **Content:** Deep analysis of Financials, Technicals, and Valuation.
     *   All "X" placeholders MUST be replaced with real data from <stock_data>. If data is missing/null, use "-".
-
-2.  **Part 2: English Report**
-    *   Language: English
-    *   Structure: Same structure as the Chinese report.
-    *   Content: English translation of the analysis.
-
-3.  **Formatting:**
-    *   Separate the two reports with a horizontal rule (`---`).
+4.  **Formatting:**
     *   Do NOT use code blocks for the output.
     *   Be professional, concise, and data-driven.
     *   **IMPORTANT:** Every "解读" / "Comment" cell in tables MUST contain at least 10 characters of meaningful text. Do NOT leave cells as "N/A" or blank unless the data value itself is truly missing. Even for 0-weight metrics, provide a brief interpretation.
 
-**Template (Part 1 - Chinese):**
+**Template:**
 
 # 📊 X 分析报告 (X)
 **行业:** X | **价格:** $X
@@ -260,176 +251,6 @@ The appendix (raw data section) now includes "前瞻预测数据 (Forward Estima
 
 > **X 操作:** [买入|持有|观望|卖出]
 **理由:** [约50字总结]
-
----
-
-**Template (Part 2 - English):**
-
-# 📊 X Analysis Report (X)
-**Sector:** X | **Price:** $X
-> **Data Source:** Based on financial data up to {latest_period}, covering {history_years} years history.
-
-## I. Financial Fundamentals (Score: X)
-**Comment:** [Overall Comment - ~100 words]
-
-### 1. Profitability (X/X)
-| Metric | Value | Score | Comment |
-|--------|-------|-------|---------|
-| ROIC | X% | X/{g(prof, 'roic')} | [Brief Comment] |
-| ROE | X% | X/{g(prof, 'roe')} | [Brief Comment] |
-| Op Margin(GAAP) | X% | X/{g(prof, 'op_margin')} | [Brief Comment] |
-| Gross Margin | X% | X/{g(prof, 'gross_margin')} | [Brief Comment] |
-| Net Margin | X% | X/{g(prof, 'net_margin')} | [Brief Comment] |
-
-### 2. Growth (X/X)
-| Metric | Value | Score | Comment |
-|--------|-------|-------|---------|
-| FCF CAGR(5Y) | X% | X/{g(growth, 'fcf_cagr')} | [Brief Comment] |
-| NI CAGR(5Y) | X% | X/{g(growth, 'ni_cagr')} | [Brief Comment] |
-| Rev CAGR(5Y) | X% | X/{g(growth, 'rev_cagr')} | [Brief Comment] |
-| Quality | X | X/{g(growth, 'quality')} | [Brief Comment] |
-| FCF/Debt | X | X/{g(growth, 'debt')} | [Brief Comment] |
-
-### 3. Capital Allocation (X/X)
-| Metric | Value | Score | Comment |
-|--------|-------|-------|---------|
-| Buyback Yield | X% | X/{g(cap, 'buyback')} | [Brief Comment] |
-| Capex | X% | X/{g(cap, 'capex')} | [Brief Comment] |
-| SBC | X | X/{g(cap, 'sbc')} | [Brief Comment] |
-
-### 4. Supplemental Data
-| Metric | Value | Comment |
-|---|---|---|
-| Enterprise Value | X | [Yahoo Value] |
-| EV/EBITDA | X | [Yahoo Value] |
-| Cash/Share | X | [Liquidity per share] |
-| Rev/Share | X | [Revenue per share] |
-| Current Ratio | X | [Solvency check >1.5] |
-| Quick Ratio | X | [Liquidity check >1.0] |
-| Audit Risk | X | [Yahoo audit score] |
-| Board Risk | X | [Yahoo board score] |
-
-## II. Technical Analysis (Score: {tech_total})
-**Comment:** [Overall Comment]
-
-### 1. Trend Strength (X/X)
-| Indicator | Value | Score | Signal | Interpretation |
-|---|---|---|---|---|
-| ADX | {{ tech_trend.adx.val }} | {{ tech_trend.adx.score }}/{{ tech_trend.adx.max }} | {{ tech_trend.adx.signal }} | Trend Strength |
-| Multi MA | - | {{ tech_trend.multi_ma.score }}/{{ tech_trend.multi_ma.max }} | {{ tech_trend.multi_ma.signal }} | MA Arrangement |
-| 52W Position | {{ tech_trend.52w_pos.val }} | {{ tech_trend.52w_pos.score }}/{{ tech_trend.52w_pos.max }} | {{ tech_trend.52w_pos.signal }} | Price Position |
-
-### 2. Momentum (X/X)
-| Indicator | Value | Score | Signal | Interpretation |
-|---|---|---|---|---|
-| RSI | {{ tech_momentum.rsi.val }} | {{ tech_momentum.rsi.score }}/{{ tech_momentum.rsi.max }} | {{ tech_momentum.rsi.signal }} | Momentum State |
-| MACD | - | {{ tech_momentum.macd.score }}/{{ tech_momentum.macd.max }} | {{ tech_momentum.macd.signal }} | Trend Confirmation |
-| ROC | {{ tech_momentum.roc.val }} | {{ tech_momentum.roc.score }}/{{ tech_momentum.roc.max }} | {{ tech_momentum.roc.signal }} | Rate of Change |
-
-### 3. Volatility (X/X)
-| Indicator | Value | Score | Signal | Interpretation |
-|---|---|---|---|---|
-| ATR | {{ tech_volatility.atr.val }} | {{ tech_volatility.atr.score }}/{{ tech_volatility.atr.max }} | {{ tech_volatility.atr.signal }} | Volatility Level |
-| Bollinger | - | {{ tech_volatility.bollinger.score }}/{{ tech_volatility.bollinger.max }} | {{ tech_volatility.bollinger.signal }} | Band Position |
-
-### 4. Price Structure (X/X)
-| Indicator | Value | Score | Signal | Interpretation |
-|---|---|---|---|---|
-| Resistance | {{ tech_structure.resistance.val }} | {{ tech_structure.resistance.score }}/{{ tech_structure.resistance.max }} | {{ tech_structure.resistance.signal }} | Dist to Res |
-| High/Low | - | {{ tech_structure.high_low.score }}/{{ tech_structure.high_low.max }} | {{ tech_structure.high_low.signal }} | Market Structure |
-
-### 5. Volume Analysis (X/X)
-| Indicator | Value | Score | Signal | Interpretation |
-|---|---|---|---|---|
-| OBV | {{ tech_volume.obv.val }} | {{ tech_volume.obv.score }}/{{ tech_volume.obv.max }} | {{ tech_volume.obv.signal }} | On-Balance Vol |
-| Vol Strength | {{ tech_volume.vol_strength.val }} | {{ tech_volume.vol_strength.score }}/{{ tech_volume.vol_strength.max }} | {{ tech_volume.vol_strength.signal }} | Relative Vol |
-
-
-### 6. Supplemental Data
-| Metric | Value | Interpretation |
-|---|---|---|
-| 52W Change | X% | [Absolute 1Y Performance] |
-| vs S&P 500 | X% | [Relative Strength (Alpha)] |
-| Institutions Held | X% | [Analyze institutional ownership stability] |
-| Insiders Held | X% | [Analyze insider confidence] |
-| Short Ratio | X | [Analyze day-to-cover and squeeze risk] |
-| Short % of Float | X% | [Analyze bearish sentiment] |
-
-## III. Market Sentiment & Intelligence
-### 1. Insider Sentiment
-**MSPR:** X | **Net Change:** X
-**Comment:** [Analyze insider trading activity. MSPR > 0 suggests buying pressure. Interpret insider confidence.]
-
-### 2. Peer Comparison
-**Key Competitors:** [List Peers]
-**Comparison:** [Briefly discuss competitive position relative to peers.]
-
-### 3. Key News Intelligence (AI Curated)
-1. **[Headline]** ([Date]) - [Sentiment: Positive/Negative/Neutral]
-   > [Brief summary and potential impact on stock price]
-2. **[Headline]** ([Date]) - [Sentiment: Positive/Negative/Neutral]
-   > [Brief summary and potential impact on stock price]
-3. **[Headline]** ([Date]) - [Sentiment: Positive/Negative/Neutral]
-   > [Brief summary and potential impact on stock price]
-
-## IV. Valuation Analysis (Weighted: $X)
-**Price:** $X | **Upside:** X%
-
-### 1. Forward Metrics
-| Metric | Current | Forward | Change | Interpretation |
-|--------|---------|---------|--------|----------------|
-| P/E Ratio | X | X | X% | [Analyze valuation expansion/contraction vs growth] |
-| EPS | $X | $X | X% | [Compare to historical growth, assess acceleration] |
-| Earnings Growth | X% (5Y) | X% (CY Est) | X ppts | [Historical vs forward comparison, identify inflection] |
-| Revenue Growth | X% (5Y) | X% (NY Est) | X ppts | [Analyze business momentum shift] |
-
-### 2. Earnings Surprises
-**Recent 4 Quarters:** [Summarize overall surprise trend]
-| Period | Actual EPS | Estimate EPS | Difference | Surprise % |
-|--------|-----------|-------------|------------|-----------|
-| X | $X | $X | $X | X% |
-| X | $X | $X | $X | X% |
-| X | $X | $X | $X | X% |
-| X | $X | $X | $X | X% |
-**Avg Surprise:** X% | **Positive:** X/4 | **Interpretation:** [Analyze consistency, management guidance accuracy]
-
-### 3. Analyst Consensus
-| Metric | Value | Comment |
-|---|---|---|
-| Recommendation | X | [Buy/Hold/Sell analysis] |
-| Target (High/Low) | $X - $X | [Compare target range with current price] |
-| Analyst Count | X | [Confidence level based on sample size] |
-
-> Note:
-> 1. Yahoo's EV/EBITDA is the actual current ratio.
-> 2. The EV/EBITDA in `valuation` is the model-derived stock price.
-> 3. If `valuation.ev_ebitda.mult` exists, explicitly state in the Comment: "Based on industry avg multiple of (valuation.ev_ebitda.mult)x". This explains the valuation gap.
-
-| Model | Fair Value | Weight | Upside | Comment |
-|-------|------------|--------|--------|---------|
-| PE Val | $X | X% | X% | [Brief Comment] |
-| PS Val | $X | X% | X% | [Brief Comment] |
-| PB Val | $X | X% | X% | [Brief Comment] |
-| EV/EBITDA| $X | X% | X% | [Mention Industry Avg Multiple here if avail] |
-| PEG Val | $X | X% | X% | [Brief Comment] |
-| DDM Model | $X | X% | X% | [Brief Comment] |
-| DCF Model | $X | X% | X% | [Brief Comment] |
-| Graham | $X | X% | X% | [Brief Comment] |
-| Peter Lynch | $X | X% | X% | [Brief Comment] |
-| Analyst | $X | X% | X% | [Brief Comment] |
-
-**CRITICAL INSTRUCTION**: 
-- **DO NOT REMOVE ROWS**. You MUST display ALL 10 models in the table above.
-- If a model has 0 weight or missing data, set Fair Value to "-" and Comment to "Not used" or "Unable to calculate".
-- Do NOT hide models just because they are not used. The user requires a full view of all 10 models.
-
-## V. Conclusion
-**Key Strengths:** [Points]
-**Key Risks:** [Points]
-**Overall:** [~150 words logic]
-
-> **X Action:** [BUY|HOLD|WATCH|SELL]
-**Reason:** [~50 words summary]
 """
 
 def build_executive_summary_prompt(data: Dict[str, Any]) -> str:

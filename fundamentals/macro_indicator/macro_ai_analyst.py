@@ -2,7 +2,7 @@
 Macro AI Analyst (V4.0 CIO Edition)
 
 Interprets macro data (Cycle, Risk, Valuation, Sectors) and generates a strategic commentary
-in both Chinese and English (Single-shot generation).
+in Chinese (Single-shot generation).
 """
 
 import json
@@ -21,7 +21,7 @@ logger = setup_logger('macro_ai_analyst')
 class MacroAIAnalyst:
     """
     AI Analyst for Macro Strategy.
-    Generates bilingual commentary based on processed macro indicators.
+    Generates Chinese commentary based on processed macro indicators.
     """
     
     def __init__(self):
@@ -29,8 +29,8 @@ class MacroAIAnalyst:
         
     def generate_commentary(self, data: Dict[str, Any], analysis: Dict[str, Any]) -> Dict[str, str]:
         """
-        Generate bilingual commentary using the V4.0 "Cynical CIO" approach.
-        Returns: {'cn': '...', 'en': '...'}
+        Generate Chinese commentary using the V4.0 "Cynical CIO" approach.
+        Returns: {'cn': '...'}
         """
         # 1. Prepare Data Buffet (Full Context + Pre-computed Signals)
         ai_context = self._prepare_v4_context(data, analysis)
@@ -218,12 +218,11 @@ class MacroAIAnalyst:
    - Return them as a `news_cn` array in the same order as the input list.
 
 ### OUTPUT FORMAT (Strict JSON)
-Return JSON with "cn", "en", and "news_cn". Content in Markdown.
+Return JSON with "cn", and "news_cn". Content in Markdown.
 **IMPORTANT:** For the Chinese version ("cn"), use ONLY Chinese titles without any English in parentheses.
 
 {{
   "cn": "### 🦅 首席视点\\\\n\\\\n**📉 核心逻辑：{{Professional Title in Chinese, e.g., 流动性压力与估值错配}}**\\\\n{{Paragraph: A cold, hard look at the macro regime.}}\\\\n\\\\n**🔍 结构性脆弱诊断:**\\\\n- **信息时滞:** {{Discuss CPI latency objectively}}\\\\n- **抵押品压力:** {{Analyze Gold drop as a liquidity/collateral signal}}\\\\n- **信用背离:** {{Discuss Credit vs Equity gap}}\\\\n\\\\n**📰 关键情报:**\\\\n- {{Synthesize key news impact on assets}}\\\\n\\\\n**⚖️ 情景概率:**\\\\n- 🔻 **去杠杆风险 (概率: X%):** {{Mechanism: Margin calls -> Selling}}\\\\n- 🔼 **通胀交易 (概率: Y%):** {{Mechanism: Real assets rally}}\\\\n\\\\n**🇦🇺 澳洲策略:**\\\\n{{Trade Idea based on Terms of Trade divergence}}\\\\n\\\\n**🛡️ 风险管理指令:**\\\\n1. {{Capital Preservation Step}}\\\\n2. {{Alpha Generation Step}}\\\\n3. {{Liquidity Management}}",
-  "en": "...",
   "news_cn": ["华尔街资深人士建议抛售美股", "原油期货因美伊紧张攀升", ...]
 }}
 '''
@@ -265,7 +264,7 @@ Return JSON with "cn", "en", and "news_cn". Content in Markdown.
         logger.error(f"Failed to decode AI JSON after all strategies: {text[:200]}...")
         # Final fallback: strip code block markers and return cleaned text
         fallback = re.sub(r'```(?:json)?', '', text).strip().rstrip('`').strip()
-        return {'cn': fallback, 'en': fallback}
+        return {'cn': fallback}
 
 
 

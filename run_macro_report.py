@@ -31,6 +31,53 @@ from utils.console_utils import symbol as ICON, print_step, print_separator
 
 logger = setup_logger('run_macro_report')
 
+def fetch_top_movers(top_n=10):
+    """Fetch top gainers and losers using finvizfinance (optimized)."""
+    try:
+        from finvizfinance.screener.overview import Overview
+        import pandas as pd
+        
+        # 1. Gainers
+        f_gain = Overview()
+        f_gain.set_filter(filters_dict={
+            "Country": "USA", 
+            "Market Cap.": "Large ($10bln to $200bln)",
+            "Change": "Up 3%"
+        })
+        df_gain = f_gain.screener_view()
+        
+        if not df_gain.empty:
+            df_gain['Change_num'] = df_gain['Change'].astype(str).str.rstrip('%').astype(float)
+            gainers = df_gain.nlargest(top_n, "Change_num")[["Ticker", "Company", "Sector", "Price", "Change", "Volume"]]
+        else:
+            gainers = pd.DataFrame()
+            
+        # 2. Losers
+        f_lose = Overview()
+        f_lose.set_filter(filters_dict={
+            "Country": "USA", 
+            "Market Cap.": "Large ($10bln to $200bln)",
+            "Change": "Down 3%"
+        })
+        df_lose = f_lose.screener_view()
+        
+        if not df_lose.empty:
+            df_lose['Change_num'] = df_lose['Change'].astype(str).str.rstrip('%').astype(float)
+            losers = df_lose.nsmallest(top_n, "Change_num")[["Ticker", "Company", "Sector", "Price", "Change", "Volume"]]
+        else:
+            losers = pd.DataFrame()
+            
+        return {
+            "gainers": gainers.to_dict('records') if not gainers.empty else [],
+            "losers": losers.to_dict('records') if not losers.empty else []
+        }
+    except ImportError:
+        logger.warning("finvizfinance not installed. Please pip install finvizfinance")
+        return {}
+    except Exception as e:
+        logger.warning(f"Failed to fetch top movers: {e}")
+        return {}
+
 def print_header(title):
     print("\n" + "="*80)
     print(f"  {title}")
@@ -150,7 +197,7 @@ def main():
         print(f"  {ICON.FAIL} Analysis modules failed: {e}")
         return
 
-    print_step(3, 4, "Fetching Market News")
+    print_step(3, 4, "Fetching Market News & Earnings")
     market_news = {}
     try:
         fh = FinnhubFetcher("MARKET")
@@ -165,12 +212,23 @@ def main():
         
         print(f"  {ICON.OK} Market News fetched ({len(market_news['general'])} general, {len(market_news['forex'])} forex, {len(market_news['crypto'])} crypto)")
         
+        print("  > Fetching Earnings Calendar...")
+        earnings_calendar = fh.fetch_earnings_calendar(days_ahead=7)
+        print(f"  {ICON.OK} Earnings Calendar fetched ({len(earnings_calendar)} upcoming events)")
+        
+        print("  > Fetching Top Movers (Finviz)...")
+        top_movers = fetch_top_movers(top_n=10)
+        if top_movers:
+            print(f"  {ICON.OK} Top Movers fetched")
+        
         # Attach to macro_data for report generation
         macro_data['market_news'] = market_news
+        macro_data['earnings_calendar'] = earnings_calendar
+        macro_data['top_movers'] = top_movers
         
     except Exception as e:
-        logger.warning(f"Market News Fetch Failed: {e}")
-        print(f"  {ICON.WARN} Market News Fetch Failed: {e}")
+        logger.warning(f"Market News / Earnings Fetch Failed: {e}")
+        print(f"  {ICON.WARN} Market News / Earnings Fetch Failed: {e}")
 
 
     print_step(4, 4, "Generating Reports")
@@ -179,7 +237,7 @@ def main():
     ai_commentary = None
     ai_analyst = None
     try:
-        print(f"  > Generating AI Strategic Commentary (Bilingual)...")
+        print(f"  > Generating AI Strategic Commentary ...")
         ai_analyst = MacroAIAnalyst()
         ai_commentary = ai_analyst.generate_commentary(macro_data, analysis_results)
         print(f"  {ICON.OK} AI Commentary generated.")
@@ -188,7 +246,7 @@ def main():
         print(f"  {ICON.WARN} AI Commentary failed: {e}")
     
     try:
-        # Markdown Dashboard (Bilingual / Detailed)
+        # Markdown Dashboard (Detailed)
         md_gen = MacroMarkdownReport(output_dir=reports_dir)
         md_text = md_gen.generate_report(macro_data, analysis_results, ai_commentary)
         

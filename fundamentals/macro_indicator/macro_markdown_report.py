@@ -23,17 +23,12 @@ class MacroMarkdownReport:
 
     def generate_report(self, data: Dict[str, Any], analysis_results: Dict[str, Any], ai_commentary: Dict[str, str] = None) -> str:
         """
-        Generate the full Bilingual Markdown report (Chinese first, then English).
+        Generate the full Markdown report (Chinese only).
         """
         md = []
         
         # 1. Chinese Version
         md.append(self._generate_single_language_report(data, analysis_results, lang='cn', commentary=ai_commentary))
-        
-        md.append("\n\n---\n")
-        
-        # 2. English Version
-        md.append(self._generate_single_language_report(data, analysis_results, lang='en', commentary=ai_commentary))
         
         return "\n".join(md)
 
@@ -75,21 +70,35 @@ class MacroMarkdownReport:
         md.append(f"## 3. 🧩 {header}")
         md.append(self._render_sector_rotation(dashboard.get('sectors', {}), spy_chg, lang))
         
-        # 5. Market Internals
+        # 4. Earnings Calendar
+        calendar_data = data.get('earnings_calendar', [])
+        if calendar_data:
+            header_calendar = "未来7天财报日历(S&P 500)" if lang == 'cn' else "Earnings Calendar (Next 7 Days, S&P 500)"
+            md.append(f"## 4. 📅 {header_calendar}")
+            md.append(self._render_earnings_calendar(calendar_data, lang))
+        
+        # 5. Top Movers
+        top_movers = data.get('top_movers', {})
+        if top_movers:
+            header_movers = "异动个股Top榜" if lang == 'cn' else "Notable Movers Top List"
+            md.append(f"## 5. 🚀 {header_movers}")
+            md.append(self._render_top_movers(top_movers, lang))
+        
+        # 6. Market Internals
         header = get_label('market_internals', lang)
-        md.append(f"## 4. 🔬 {header}")
+        md.append(f"## 6. 🔬 {header}")
         md.append(self._render_market_internals(dashboard.get('internals', {}), lang))
         
-        # 6. Algo Logic & Diagnostics (Deep Dive)
+        # 7. Algo Logic & Diagnostics (Deep Dive)
         header = get_label('deep_dive', lang)
-        md.append(f"## 5. ⚙️ {header}")
+        md.append(f"## 7. ⚙️ {header}")
         md.append(self._render_deep_dive(analysis_results, data, lang))
         
-        # 7. News Intelligence Chapter
-        md.append(self._render_news_intelligence(data, lang))
+        # 8. News Intelligence Chapter
+        md.append(self._render_news_intelligence(data, lang, chapter_num=8))
         
-        # 8. AI Commentary
-        md.append(self._render_ai_commentary(commentary, lang))
+        # 9. AI Commentary
+        md.append(self._render_ai_commentary(commentary, lang, chapter_num=9))
         
         return "\n".join(md)
 
@@ -501,16 +510,16 @@ class MacroMarkdownReport:
         
         return "\n".join(md)
 
-    def _render_ai_commentary(self, commentary: Dict[str, str], lang: str) -> str:
+    def _render_ai_commentary(self, commentary: Dict[str, str], lang: str, chapter_num: int = 8) -> str:
         """Render AI Commentary Section."""
         if not commentary: return ""
         text = commentary.get(lang, "")
         if not text: return ""
         
         header = "AI 深度解读" if lang == 'cn' else "AI Strategic Analysis"
-        return f"\n## 7. 🧠 {header}\n\n{text}"
+        return f"\n## {chapter_num}. 🧠 {header}\n\n{text}"
 
-    def _render_news_intelligence(self, data: Dict[str, Any], lang: str) -> str:
+    def _render_news_intelligence(self, data: Dict[str, Any], lang: str, chapter_num: int = 7) -> str:
         """Render News Intelligence chapter with categorized headlines."""
         market_news = data.get('market_news', {})
         if not market_news:
@@ -525,7 +534,7 @@ class MacroMarkdownReport:
         
         md = []
         header = "全球市场新闻情报" if lang == 'cn' else "Global Market News Intelligence"
-        md.append(f"\n## 6. 📰 {header}")
+        md.append(f"\n## {chapter_num}. 📰 {header}")
         
         # Translation lookup for Chinese headlines
         translations = data.get('news_translations', {})
@@ -590,5 +599,93 @@ class MacroMarkdownReport:
         if crypto:
             cr_label = "₿ 加密货币" if lang == 'cn' else "₿ Crypto News"
             md.extend(format_news_table(crypto, 5, cr_label))
+        
+        return "\n".join(md)
+
+    def _render_earnings_calendar(self, calendar: List[Dict], lang: str) -> str:
+        """Render earnings calendar table."""
+        if not calendar:
+            return "暂无重要财报。" if lang == 'cn' else "No major earnings."
+            
+        md = []
+        
+        col_date = "日期" if lang == 'cn' else "Date"
+        col_time = "时段" if lang == 'cn' else "Time"
+        col_symbol = "公司" if lang == 'cn' else "Symbol"
+        col_eps = "预期EPS" if lang == 'cn' else "Est. EPS"
+        col_rev = "预期营收" if lang == 'cn' else "Est. Rev"
+        
+        md.append(f"| {col_date} | {col_time} | {col_symbol} | {col_eps} | {col_rev} |")
+        md.append("| :--- | :--- | :--- | :--- | :--- |")
+        
+        for item in calendar:
+            date_str = item.get('date', '-')
+            
+            # Map hours: amc -> 盘后, bmo -> 盘前
+            hour_raw = item.get('hour', '')
+            if hour_raw == 'amc':
+                hour_str = "盘后 (AMC)" if lang == 'cn' else "AMC"
+            elif hour_raw == 'bmo':
+                hour_str = "盘前 (BMO)" if lang == 'cn' else "BMO"
+            else:
+                hour_str = hour_raw
+                
+            symbol = item.get('symbol', '-')
+            eps = item.get('epsEstimate')
+            eps_str = f"${eps:.2f}" if eps is not None else "-"
+            
+            rev = item.get('revenueEstimate')
+            rev_str = f"${rev:,.0f}" if rev is not None else "-"
+            
+            md.append(f"| {date_str} | {hour_str} | **{symbol}** | {eps_str} | {rev_str} |")
+            
+        return "\n".join(md)
+
+    def _render_top_movers(self, top_movers: Dict, lang: str) -> str:
+        """Render top gainers and losers table."""
+        if not top_movers or (not top_movers.get('gainers') and not top_movers.get('losers')):
+            return "暂无异动数据。" if lang == 'cn' else "No notable movers."
+            
+        md = []
+        
+        col_ticker = "代码" if lang == 'cn' else "Ticker"
+        col_company = "公司" if lang == 'cn' else "Company"
+        col_sector = "板块" if lang == 'cn' else "Sector"
+        col_price = "价格" if lang == 'cn' else "Price"
+        col_change = "涨跌幅" if lang == 'cn' else "Change"
+        col_volume = "成交量" if lang == 'cn' else "Volume"
+        
+        def build_table(items, title):
+            if not items: return []
+            lines = [f"### {title}"]
+            lines.append(f"| {col_ticker} | {col_company} | {col_sector} | {col_price} | {col_change} | {col_volume} |")
+            lines.append("| :--- | :--- | :--- | :---: | :---: | :---: |")
+            
+            for item in items:
+                ticker = item.get('Ticker', '-')
+                company = str(item.get('Company', '-'))[:25] # Truncate long names
+                sector = item.get('Sector', '-')
+                price = f"${item.get('Price', 0):.2f}"
+                
+                change_val = item.get('Change', 0)
+                if isinstance(change_val, str):
+                    change_str = change_val
+                    color = "🟢" if not change_val.startswith('-') else "🔴"
+                else:
+                    color = "🟢" if change_val > 0 else "🔴"
+                    change_str = f"{change_val*100:+.2f}%" if isinstance(change_val, float) and abs(change_val) < 1 else str(change_val)
+                    
+                volume = item.get('Volume', '-')
+                
+                lines.append(f"| **{ticker}** | {company} | {sector} | {price} | {color} {change_str} | {volume} |")
+            
+            lines.append("")
+            return lines
+
+        gainers_title = "🔥 今日涨幅榜" if lang == 'cn' else "🔥 Top Gainers"
+        losers_title = "🧊 今日跌幅榜" if lang == 'cn' else "🧊 Top Losers"
+        
+        md.extend(build_table(top_movers.get('gainers', []), gainers_title))
+        md.extend(build_table(top_movers.get('losers', []), losers_title))
         
         return "\n".join(md)

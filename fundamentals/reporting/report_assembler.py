@@ -63,7 +63,7 @@ This report is for informational and educational purposes only and does not cons
             components.append("\n\n" + appendix.strip())
             
         # 3. Disclaimer
-        components.append(ReportAssembler.get_disclaimer('bilingual'))
+        components.append(ReportAssembler.get_disclaimer('cn'))
         
         return "\n".join(components)
 
@@ -81,6 +81,6 @@ This report is for informational and educational purposes only and does not cons
         if markdown_content:
             components.append(markdown_content.strip())
             
-        components.append(ReportAssembler.get_disclaimer('bilingual'))
+        components.append(ReportAssembler.get_disclaimer('cn'))
         
         return "\n".join(components)
